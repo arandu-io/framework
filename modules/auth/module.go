@@ -13,20 +13,46 @@ package auth
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/arandu-io/framework/httpx"
 	"github.com/arandu-io/framework/kernel"
 )
 
-// Module registers the authentication routes.
-type Module struct {
-	svc *Service
+// TenantResolver decides which tenant a request belongs to.
+//
+// It is only consulted on login, which is the one moment where there is no
+// session to ask: everywhere else the tenant comes from the Grant, and therefore
+// from the session. That asymmetry is the point -- a tenant taken from the
+// request body or from a header after login would defeat the isolation the whole
+// policy layer is built on.
+type TenantResolver func(r *http.Request) string
+
+// FixedTenant is the resolver for a single-tenant application: every login
+// belongs to the same tenant.
+func FixedTenant(id string) TenantResolver {
+	return func(*http.Request) string { return id }
 }
 
-// New returns the module. The service is built by the caller, because the wiring
-// is explicit: if you want to know where UserRepo comes from, it is written in
-// the application's main.
-func New(svc *Service) *Module { return &Module{svc: svc} }
+// Module registers the authentication routes.
+type Module struct {
+	svc    *Service
+	tenant TenantResolver
+}
+
+// New returns the module. The service and the tenant resolver are built by the
+// caller, because the wiring is explicit: if you want to know where UserRepo
+// comes from, it is written in the application's main.
+//
+// A nil resolver means the empty tenant, which is what a single-tenant
+// application that never set one ends up with -- consistent, and still isolated,
+// because every row is written with that same value.
+func New(svc *Service, tenant TenantResolver) *Module {
+	if tenant == nil {
+		tenant = FixedTenant("")
+	}
+	return &Module{svc: svc, tenant: tenant}
+}
 
 // Compile-time proof that the module honors the kernel contracts it claims.
 var (

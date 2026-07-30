@@ -37,10 +37,10 @@ func (m *Module) doLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Phase 2 resolves the tenant from the host name. Until then it is a header,
-	// which is fine because the tenant of an authenticated request comes from the
-	// session, not from here.
-	tenant := r.Header.Get("X-Tenant")
+	// The tenant comes from the application, never from the request: a header or
+	// a form field here would let anyone pick which tenant to authenticate
+	// against. Phase 2 adds a resolver that reads the host name.
+	tenant := m.tenant(r)
 
 	u, err := m.svc.Authenticate(r.Context(), tenant, in.Email, in.Password)
 	if err != nil {

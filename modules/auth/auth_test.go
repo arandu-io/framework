@@ -3,6 +3,8 @@ package auth_test
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -247,7 +249,7 @@ func TestSubjectOfCarriesTenantAndRoles(t *testing.T) {
 }
 
 func TestModuleRegistersItsRoutes(t *testing.T) {
-	m := auth.New(auth.NewService(repoWithoutDB(), nil, nil))
+	m := auth.New(auth.NewService(repoWithoutDB(), nil, nil), nil)
 
 	if m.Name() != "auth" {
 		t.Fatalf("Name = %q, want auth", m.Name())
@@ -262,5 +264,19 @@ func TestModuleRegistersItsRoutes(t *testing.T) {
 	}
 	if strings.Contains(migrations[0].Up, "text[]") {
 		t.Error("roles must be jsonb: a Postgres array needs a driver specific type to scan")
+	}
+}
+
+// TestTenantComesFromTheApplication: a tenant chosen by the request is a tenant
+// chosen by the attacker. The resolver is the only source on login, and after
+// login the tenant lives in the Grant.
+func TestTenantComesFromTheApplication(t *testing.T) {
+	resolver := auth.FixedTenant("tenant-from-config")
+
+	r := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+	r.Header.Set("X-Tenant", "tenant-from-attacker")
+
+	if got := resolver(r); got != "tenant-from-config" {
+		t.Fatalf("resolved tenant = %q, want the one the application configured", got)
 	}
 }
