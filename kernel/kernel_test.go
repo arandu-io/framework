@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/arandu-io/framework/config"
+	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/httpx"
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/observability"
@@ -55,12 +56,15 @@ func (s *stub) Migrations() []kernel.Migration {
 
 func testConfig(env config.Env) config.Config {
 	return config.Config{
-		AppName:     "test",
-		Env:         env,
-		HTTPAddr:    ":0",
-		AppKey:      make([]byte, config.AppKeyLen),
-		DatabaseURL: "postgres://localhost/test",
-		LogLevel:    slog.LevelError,
+		AppName:  "test",
+		Env:      env,
+		HTTPAddr: ":0",
+		AppKey:   make([]byte, config.AppKeyLen),
+		Database: config.DatabaseConfig{
+			Connection: data.DialectSQLite,
+			Database:   "database/database.sqlite",
+		},
+		LogLevel: slog.LevelError,
 	}
 }
 

@@ -38,8 +38,11 @@ type Config struct {
 	// AppKey signs session cookies and CSRF tokens. Exactly AppKeyLen bytes.
 	AppKey []byte
 
-	DatabaseURL string
-	RedisURL    string
+	// Database is the connection, described the way Laravel's .env describes it,
+	// because that is the file an Arandu project will be read next to.
+	Database DatabaseConfig
+
+	RedisURL string
 
 	SessionTTL time.Duration
 	CSRFTTL    time.Duration
@@ -61,12 +64,16 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	database, err := loadDatabase()
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
 		AppName:       env("APP_NAME", "arandu-app"),
 		Env:           Env(env("APP_ENV", string(EnvDev))),
 		HTTPAddr:      env("HTTP_ADDR", ":8080"),
 		AppKey:        key,
-		DatabaseURL:   env("DATABASE_URL", ""),
+		Database:      database,
 		RedisURL:      env("REDIS_URL", ""),
 		SessionTTL:    duration("SESSION_TTL", 12*time.Hour),
 		CSRFTTL:       duration("CSRF_TTL", 2*time.Hour),
@@ -88,8 +95,8 @@ func (c Config) Validate() error {
 	if len(c.AppKey) != AppKeyLen {
 		return fmt.Errorf("APP_KEY must be %d bytes, got %d (run `aru key:generate`)", AppKeyLen, len(c.AppKey))
 	}
-	if c.DatabaseURL == "" {
-		return fmt.Errorf("DATABASE_URL is required")
+	if err := c.Database.Validate(); err != nil {
+		return err
 	}
 	if c.Env == EnvProd && c.LogLevel == slog.LevelDebug {
 		return fmt.Errorf("LOG_LEVEL=debug is forbidden in production: it leaks request data into the log")

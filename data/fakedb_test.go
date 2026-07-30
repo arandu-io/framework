@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 )
 
 // A minimal database/sql driver, so the data package can be tested without a
@@ -139,12 +140,15 @@ type fakeResult struct{}
 func (fakeResult) LastInsertId() (int64, error) { return 0, nil }
 func (fakeResult) RowsAffected() (int64, error) { return 1, nil }
 
+// fakeRows answers the shape of the migrations table: id, batch, applied_at.
+// One shape is enough because it is the only query the data package issues on
+// its own -- repository queries belong to the modules that own them.
 type fakeRows struct {
 	values []string
 	i      int
 }
 
-func (r *fakeRows) Columns() []string { return []string{"id"} }
+func (r *fakeRows) Columns() []string { return []string{"id", "batch", "applied_at"} }
 func (r *fakeRows) Close() error      { return nil }
 
 func (r *fakeRows) Next(dest []driver.Value) error {
@@ -152,6 +156,10 @@ func (r *fakeRows) Next(dest []driver.Value) error {
 		return io.EOF
 	}
 	dest[0] = r.values[r.i]
+	if len(dest) > 1 {
+		dest[1] = int64(1)
+		dest[2] = time.Unix(0, 0).UTC()
+	}
 	r.i++
 	return nil
 }

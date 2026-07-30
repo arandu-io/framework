@@ -2,11 +2,13 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
+	"strings"
+	"time"
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/security"
@@ -15,6 +17,9 @@ import (
 // ErrUserNotFound is returned when no row matches, so callers do not have to
 // import database/sql to compare against sql.ErrNoRows.
 var ErrUserNotFound = errors.New("auth: user not found")
+
+// ErrEmailTaken is returned when the tenant already has that address.
+var ErrEmailTaken = errors.New("auth: email already registered in this tenant")
 
 // Pagination bounds for List. A request that asks for everything gets the
 // maximum, never everything: an unbounded query is how one page load takes a
@@ -30,6 +35,10 @@ const (
 // the check proves the grant was issued for this exact action. Phase 2 generates
 // these bodies from queries.sql with sqlc; the signature and the check do not
 // change when it does.
+//
+// The SQL is written with "?" placeholders and with types every supported
+// database shares, so the same statements run on SQLite and on PostgreSQL. The
+// dialect rebinds the placeholders; nothing else needs translating.
 type UserRepo struct {
 	db *data.DB
 }
@@ -50,24 +59,31 @@ func (r *UserRepo) Find(ctx context.Context, g security.Grant, id string) (User,
 	}
 	// The tenant comes from the Grant, never from the request.
 	row := r.db.QueryRowContext(ctx,
-		`SELECT `+userColumns+` FROM users WHERE id = $1 AND tenant_id = $2`,
+		`SELECT `+userColumns+` FROM users WHERE id = ? AND tenant_id = ?`,
 		id, data.Tenant(g))
 	return scanUser(row)
 }
 
 // FindByEmail returns one user by email, scoped to the grant's tenant.
+//
+// The address is normalized the same way on write and on read, which is what
+// makes a plain UNIQUE index behave case-insensitively without a database
+// specific collation.
 func (r *UserRepo) FindByEmail(ctx context.Context, g security.Grant, email string) (User, error) {
 	if err := g.Check(ActionUserView); err != nil {
 		return User{}, err
 	}
 	row := r.db.QueryRowContext(ctx,
-		`SELECT `+userColumns+` FROM users WHERE email = $1 AND tenant_id = $2`,
-		email, data.Tenant(g))
+		`SELECT `+userColumns+` FROM users WHERE email = ? AND tenant_id = ?`,
+		NormalizeEmail(email), data.Tenant(g))
 	return scanUser(row)
 }
 
-// Create inserts the user and returns it with the id and timestamp the database
-// assigned.
+// Create inserts the user and returns it as stored.
+//
+// The id and the timestamp are generated here rather than by the database: a
+// DEFAULT that produces a uuid is spelled differently in every engine, and
+// generating them in Go is what keeps one schema working everywhere.
 func (r *UserRepo) Create(ctx context.Context, g security.Grant, u User) (User, error) {
 	if err := g.Check(ActionUserCreate); err != nil {
 		return User{}, err
@@ -75,16 +91,30 @@ func (r *UserRepo) Create(ctx context.Context, g security.Grant, u User) (User, 
 	if u.Password == "" {
 		return User{}, fmt.Errorf("auth: refusing to store a user without a password hash")
 	}
+
 	roles, err := json.Marshal(rolesOrEmpty(u.Roles))
 	if err != nil {
 		return User{}, err
 	}
-	row := r.db.QueryRowContext(ctx,
-		`INSERT INTO users (tenant_id, email, password, roles)
-		      VALUES ($1, $2, $3, $4)
-		   RETURNING `+userColumns,
-		data.Tenant(g), u.Email, u.Password, roles)
-	return scanUser(row)
+	if u.ID == "" {
+		if u.ID, err = NewID(); err != nil {
+			return User{}, err
+		}
+	}
+	u.TenantID = data.Tenant(g)
+	u.Email = NormalizeEmail(u.Email)
+	u.CreatedAt = time.Now().UTC()
+
+	_, err = r.db.ExecContext(ctx,
+		`INSERT INTO users (`+userColumns+`) VALUES (?, ?, ?, ?, ?, ?)`,
+		u.ID, u.TenantID, u.Email, u.Password, roles, u.CreatedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return User{}, ErrEmailTaken
+		}
+		return User{}, err
+	}
+	return u, nil
 }
 
 // Update writes the mutable fields. The tenant is not one of them: moving a user
@@ -97,13 +127,21 @@ func (r *UserRepo) Update(ctx context.Context, g security.Grant, u User) (User, 
 	if err != nil {
 		return User{}, err
 	}
-	row := r.db.QueryRowContext(ctx,
-		`UPDATE users
-		    SET email = $1, password = $2, roles = $3
-		  WHERE id = $4 AND tenant_id = $5
-		RETURNING `+userColumns,
+	u.Email = NormalizeEmail(u.Email)
+
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE users SET email = ?, password = ?, roles = ? WHERE id = ? AND tenant_id = ?`,
 		u.Email, u.Password, roles, u.ID, data.Tenant(g))
-	return scanUser(row)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return User{}, ErrEmailTaken
+		}
+		return User{}, err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return User{}, ErrUserNotFound
+	}
+	return u, nil
 }
 
 // Delete removes one user within the grant's tenant.
@@ -112,7 +150,7 @@ func (r *UserRepo) Delete(ctx context.Context, g security.Grant, id string) erro
 		return err
 	}
 	res, err := r.db.ExecContext(ctx,
-		`DELETE FROM users WHERE id = $1 AND tenant_id = $2`, id, data.Tenant(g))
+		`DELETE FROM users WHERE id = ? AND tenant_id = ?`, id, data.Tenant(g))
 	if err != nil {
 		return err
 	}
@@ -151,13 +189,16 @@ func (r *UserRepo) List(ctx context.Context, g security.Grant, q data.Query) ([]
 		limit = maxLimit
 	}
 
-	query := `SELECT ` + userColumns + ` FROM users WHERE tenant_id = $1`
+	query := `SELECT ` + userColumns + ` FROM users WHERE tenant_id = ?`
 	args := []any{data.Tenant(g)}
 	if q.Cursor != "" {
-		query += ` AND (created_at, id) > (SELECT created_at, id FROM users WHERE id = $2 AND tenant_id = $1)`
-		args = append(args, q.Cursor)
+		// Row values -- (a, b) > (c, d) -- are not portable, so the comparison is
+		// written out. It is the same index scan, spelled for every engine.
+		query += ` AND (created_at > (SELECT created_at FROM users WHERE id = ? AND tenant_id = ?)
+		            OR (created_at = (SELECT created_at FROM users WHERE id = ? AND tenant_id = ?) AND id > ?))`
+		args = append(args, q.Cursor, args[0], q.Cursor, args[0], q.Cursor)
 	}
-	query += ` ORDER BY ` + column + `, id LIMIT $` + strconv.Itoa(len(args)+1)
+	query += ` ORDER BY ` + column + `, id LIMIT ?`
 	args = append(args, limit)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -181,9 +222,8 @@ func (r *UserRepo) List(ctx context.Context, g security.Grant, q data.Query) ([]
 // serves single-row and multi-row queries.
 type rowScanner interface{ Scan(dest ...any) error }
 
-// scanUser reads one row. Roles are stored as jsonb and scanned as bytes on
-// purpose: a Postgres text[] needs a driver specific array type, and the core
-// has no driver dependency.
+// scanUser reads one row. Roles are stored as TEXT holding JSON: a Postgres
+// array needs a driver specific type, and jsonb does not exist in SQLite.
 func scanUser(row rowScanner) (User, error) {
 	var (
 		u     User
@@ -204,11 +244,49 @@ func scanUser(row rowScanner) (User, error) {
 	return u, nil
 }
 
-// rolesOrEmpty keeps a nil slice out of the database: jsonb 'null' and jsonb
-// '[]' read back differently, and only one of them means "no roles".
+// rolesOrEmpty keeps a nil slice out of the database: JSON 'null' and JSON '[]'
+// read back differently, and only one of them means "no roles".
 func rolesOrEmpty(r []string) []string {
 	if r == nil {
 		return []string{}
 	}
 	return r
+}
+
+// NormalizeEmail lowercases and trims the address.
+//
+// Addresses are case-insensitive in practice, and storing them normalized is what
+// keeps a plain UNIQUE index correct on every engine -- rather than a functional
+// index in Postgres and a collation in MySQL.
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+// NewID returns a version 4 UUID as text.
+//
+// Ids are generated by the application, not by the database: gen_random_uuid,
+// UUID() and randomblob are three different spellings of the same idea, and
+// depending on any of them would tie the schema to one engine.
+func NewID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("auth: reading random bytes: %w", err)
+	}
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+}
+
+// isUniqueViolation recognizes a duplicate key across engines by message, which
+// is ugly and is the price of not importing a driver into the core: SQLite says
+// "UNIQUE constraint failed", Postgres says "duplicate key value violates unique
+// constraint", MySQL says "Duplicate entry".
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique constraint") ||
+		strings.Contains(msg, "duplicate key") ||
+		strings.Contains(msg, "duplicate entry")
 }

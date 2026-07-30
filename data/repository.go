@@ -41,18 +41,33 @@ type Query struct {
 	Filter map[string]any
 }
 
-// DB wraps *sql.DB to instrument the Collector. Repositories use this type
-// rather than *sql.DB, which is what makes every query show up on the debug page
-// with the file and line that issued it.
+// DB wraps *sql.DB to instrument the Collector and to rebind placeholders for
+// the connection's dialect. Repositories use this type rather than *sql.DB, which
+// is what makes every query show up on the debug page with the file and line that
+// issued it.
 //
 // It holds no driver import: the driver is chosen by the application, so the
 // core keeps its two dependencies.
 type DB struct {
-	inner *sql.DB
+	inner   *sql.DB
+	dialect Dialect
 }
 
 // Wrap returns an instrumented handle over an open *sql.DB.
-func Wrap(db *sql.DB) *DB { return &DB{inner: db} }
+//
+// The dialect is what queries written with "?" are rebound to. An empty dialect
+// means SQLite, which is the development default.
+func Wrap(db *sql.DB, dialect Dialect) *DB {
+	if dialect == "" {
+		dialect = DialectSQLite
+	}
+	return &DB{inner: db, dialect: dialect}
+}
+
+// Dialect reports the flavour this handle speaks. Repositories use it only when
+// a statement genuinely cannot be written portably -- which should be rare, and
+// is a smell worth explaining in a comment when it happens.
+func (d *DB) Dialect() Dialect { return d.dialect }
 
 // Unwrap returns the underlying handle, for the rare case that needs a driver
 // specific feature. Prefer the wrapper: what goes through Unwrap does not show
@@ -64,6 +79,7 @@ func (d *DB) PingContext(ctx context.Context) error { return d.inner.PingContext
 
 // QueryContext runs a query and records it.
 func (d *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	query = d.dialect.Rebind(query)
 	start := time.Now()
 	rows, err := d.inner.QueryContext(ctx, query, args...)
 	observability.FromContext(ctx).RecordQuery(query, args, time.Since(start), -1, err)
@@ -72,6 +88,7 @@ func (d *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.
 
 // ExecContext runs a statement and records it, with the affected row count.
 func (d *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	query = d.dialect.Rebind(query)
 	start := time.Now()
 	res, err := d.inner.ExecContext(ctx, query, args...)
 	rows := -1
@@ -90,6 +107,7 @@ func (d *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Re
 // the actual work to Row.Scan, so a slow row shows up on the timeline as scan
 // time rather than query time.
 func (d *DB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	query = d.dialect.Rebind(query)
 	start := time.Now()
 	row := d.inner.QueryRowContext(ctx, query, args...)
 	observability.FromContext(ctx).RecordQuery(query, args, time.Since(start), 1, nil)

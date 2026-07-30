@@ -14,7 +14,7 @@ import (
 func TestQueryIsRecordedWithItsOrigin(t *testing.T) {
 	sqldb, _ := newFakeDB()
 	defer sqldb.Close()
-	db := data.Wrap(sqldb)
+	db := data.Wrap(sqldb, data.DialectPostgres)
 
 	col := observability.NewCollector("req-1")
 	ctx := observability.WithCollector(context.Background(), col)
@@ -48,7 +48,7 @@ func TestQueryIsRecordedWithItsOrigin(t *testing.T) {
 func TestExecRecordsAffectedRows(t *testing.T) {
 	sqldb, _ := newFakeDB()
 	defer sqldb.Close()
-	db := data.Wrap(sqldb)
+	db := data.Wrap(sqldb, data.DialectPostgres)
 
 	col := observability.NewCollector("req-1")
 	ctx := observability.WithCollector(context.Background(), col)
@@ -67,7 +67,7 @@ func TestQueryRecordsTheError(t *testing.T) {
 	defer sqldb.Close()
 	state.failOn = "FROM users"
 	state.failErr = errors.New("relation \"users\" does not exist")
-	db := data.Wrap(sqldb)
+	db := data.Wrap(sqldb, data.DialectPostgres)
 
 	col := observability.NewCollector("req-1")
 	ctx := observability.WithCollector(context.Background(), col)
@@ -86,7 +86,7 @@ func TestQueryRecordsTheError(t *testing.T) {
 func TestRecordingIsFreeInProduction(t *testing.T) {
 	sqldb, _ := newFakeDB()
 	defer sqldb.Close()
-	db := data.Wrap(sqldb)
+	db := data.Wrap(sqldb, data.DialectPostgres)
 
 	ctx := context.Background()
 	if observability.FromContext(ctx) != nil {

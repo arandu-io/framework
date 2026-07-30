@@ -8,17 +8,21 @@ import (
 	"time"
 
 	"github.com/arandu-io/framework/config"
+	"github.com/arandu-io/framework/data"
 )
 
 func validConfig() config.Config {
 	return config.Config{
-		AppName:     "test",
-		Env:         config.EnvDev,
-		HTTPAddr:    ":8080",
-		AppKey:      make([]byte, config.AppKeyLen),
-		DatabaseURL: "postgres://localhost/test",
-		SessionTTL:  time.Hour,
-		CSRFTTL:     time.Hour,
+		AppName:  "test",
+		Env:      config.EnvDev,
+		HTTPAddr: ":8080",
+		AppKey:   make([]byte, config.AppKeyLen),
+		Database: config.DatabaseConfig{
+			Connection: data.DialectSQLite,
+			Database:   "database/database.sqlite",
+		},
+		SessionTTL: time.Hour,
+		CSRFTTL:    time.Hour,
 	}
 }
 
@@ -56,12 +60,12 @@ func TestValidateRejectsWrongKeyLength(t *testing.T) {
 	}
 }
 
-func TestValidateRequiresDatabaseURL(t *testing.T) {
+func TestValidateRequiresADatabase(t *testing.T) {
 	cfg := validConfig()
-	cfg.DatabaseURL = ""
+	cfg.Database.Database = ""
 
 	if err := cfg.Validate(); err == nil {
-		t.Fatal("an empty DATABASE_URL was accepted: the failure would surface on the first request instead of at boot")
+		t.Fatal("an empty DB_DATABASE was accepted: the failure would surface on the first query instead of at boot")
 	}
 }
 
@@ -99,7 +103,7 @@ func TestLoadDecodesBase64Key(t *testing.T) {
 		raw[i] = byte(i)
 	}
 	t.Setenv("APP_KEY", "base64:"+base64.StdEncoding.EncodeToString(raw))
-	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("DB_CONNECTION", "sqlite")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -116,7 +120,7 @@ func TestLoadDecodesBase64Key(t *testing.T) {
 
 func TestLoadRejectsBrokenBase64Key(t *testing.T) {
 	t.Setenv("APP_KEY", "base64:not!valid!base64")
-	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("DB_CONNECTION", "sqlite")
 
 	if _, err := config.Load(); err == nil {
 		t.Fatal("a malformed base64 APP_KEY was accepted")
@@ -125,7 +129,7 @@ func TestLoadRejectsBrokenBase64Key(t *testing.T) {
 
 func TestLoadAppliesDefaults(t *testing.T) {
 	t.Setenv("APP_KEY", strings.Repeat("k", config.AppKeyLen))
-	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("DB_CONNECTION", "sqlite")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -151,7 +155,7 @@ func TestLoadAppliesDefaults(t *testing.T) {
 
 func TestLoadReadsTTLInSeconds(t *testing.T) {
 	t.Setenv("APP_KEY", strings.Repeat("k", config.AppKeyLen))
-	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("DB_CONNECTION", "sqlite")
 	t.Setenv("SESSION_TTL", "60")
 
 	cfg, err := config.Load()
