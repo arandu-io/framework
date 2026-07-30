@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # A formatting difference is a failure, not a comment on a pull request.
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: vet
+        run: go vet ./...
+
+      # The race detector is what keeps the per-request Collector honest: it is
+      # shared by every goroutine a request fans out to.
+      - name: test
+        run: go test -race ./...
+
+      # Exit criterion 5 of phase 1: the core depends on the standard library and
+      # golang.org/x/crypto, and nothing else. x/sys comes in transitively,
+      # required by x/crypto itself.
+      - name: dependency budget
+        run: |
+          unexpected=$(go list -m all | tail -n +2 | grep -v '^golang.org/x/' || true)
+          if [ -n "$unexpected" ]; then
+            echo "third-party dependency in the core:"
+            echo "$unexpected"
+            exit 1
+          fi
