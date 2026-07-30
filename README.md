@@ -58,4 +58,4 @@ Phase 1. The exit criteria are in `arandu-io/docs`, `03-roadmap-fases.md`.
 
 ## License
 
-To be decided before phase 2.
+MIT, the same license Laravel uses. See `LICENSE.md`.
