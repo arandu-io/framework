@@ -2,24 +2,47 @@ package events
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/arandu-io/framework/httpx"
 	"github.com/arandu-io/framework/kernel"
 )
 
-// Module brings the outbox table.
+// Module brings the outbox table, and runs the relay when one is wired.
 //
 // It registers no routes: it exists so the table travels with the framework
 // rather than being copied into every project's migrations. Register it in
 // cmd/app/main.go next to the modules that store events.
-type Module struct{}
+type Module struct {
+	relay *Relay
+	// stop cancels the relay loop at shutdown.
+	stop context.CancelFunc
+	done chan struct{}
+}
 
-// NewModule returns the module.
+// NewModule returns the module with no relay: the table exists, events are
+// stored, and nothing publishes them yet.
+//
+// That is a useful state rather than a broken one. Storing is what cannot be
+// recovered later; publishing can start on the day there is something to
+// publish to.
 func NewModule() *Module { return &Module{} }
+
+// WithRelay returns the module running the relay in this process.
+//
+// In-process, like the scheduler and for the same reason: a second deployable
+// for background work is a second thing to monitor, page on, and forget to
+// restart. With more than one replica, give the relay a Locker -- otherwise
+// each one publishes every event.
+func WithRelay(r *Relay) *Module { return &Module{relay: r} }
 
 var (
 	_ kernel.Module     = (*Module)(nil)
 	_ kernel.Migratable = (*Module)(nil)
+	_ kernel.Bootable   = (*Module)(nil)
+	_ kernel.Closable   = (*Module)(nil)
+	_ kernel.Health     = (*Module)(nil)
 )
 
 // Name is the module identifier.
@@ -65,9 +88,88 @@ CREATE INDEX idx_outbox_tenant ON outbox (tenant_id, occurred_at);
 `,
 			Down: `DROP TABLE outbox;`,
 		},
+		{
+			// A separate migration rather than an edit to the one above,
+			// because the first one has already run somewhere. RULE 16: the
+			// column is nullable, so the previous binary keeps working during a
+			// rollout -- it simply never writes it.
+			ID: "2026_07_31_000002_add_outbox_dead_letter",
+			Up: `
+ALTER TABLE outbox ADD COLUMN failed_at TIMESTAMP;
+
+-- The relay reads pending events on every tick, and "pending" now means
+-- neither published nor parked.
+CREATE INDEX idx_outbox_unfinished ON outbox (failed_at, published_at, occurred_at);
+`,
+			Down: `
+DROP INDEX idx_outbox_unfinished;
+ALTER TABLE outbox DROP COLUMN failed_at;
+`,
+		},
 	}
 }
 
-// Health reports nothing yet. The check that matters -- how long the oldest
-// unpublished event has been waiting -- belongs to the relay, in phase 3.
-func (*Module) Boot(context.Context) error { return nil }
+// Boot starts the relay loop.
+func (m *Module) Boot(ctx context.Context) error {
+	if m.relay == nil {
+		return nil
+	}
+
+	// The loop outlives the boot context, which is cancelled once boot returns.
+	// It is stopped by Close, which the kernel calls on shutdown.
+	loop, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	m.stop = cancel
+	m.done = make(chan struct{})
+
+	go func() {
+		defer close(m.done)
+		_ = m.relay.Run(loop)
+	}()
+	return nil
+}
+
+// Close stops the relay and waits for the pass in flight.
+//
+// Waiting matters: a pass interrupted between publishing and marking published
+// delivers the event again on the next start, and that is the duplicate this
+// framework can avoid rather than the one it cannot.
+func (m *Module) Close(ctx context.Context) error {
+	if m.stop == nil {
+		return nil
+	}
+	m.stop()
+
+	select {
+	case <-m.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// maxLag is how far behind the relay may fall before the health check fails.
+//
+// A minute is generous for a loop that ticks every second. Past it, something
+// is wrong -- the relay is not running, the publisher is refusing everything,
+// or another replica holds the lock and died.
+const maxLag = time.Minute
+
+// Health fails when the outbox is falling behind.
+//
+// A relay that stopped looks exactly like a relay with nothing to do, and the
+// age of the oldest pending event is what tells them apart. Without this, the
+// first sign is a customer asking why they never got the email.
+func (m *Module) Health(ctx context.Context) error {
+	if m.relay == nil {
+		return nil
+	}
+
+	lag, err := m.relay.Lag(ctx)
+	if err != nil {
+		return err
+	}
+	if lag > maxLag {
+		return fmt.Errorf("the oldest unpublished event has been waiting %s -- is the relay running?", lag.Truncate(time.Second))
+	}
+	return nil
+}

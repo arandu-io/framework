@@ -12,6 +12,7 @@ package events
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -132,21 +133,50 @@ func (o *Outbox) Store(ctx context.Context, g security.Grant, list []Event) erro
 	return nil
 }
 
-// Pending returns the events that have not been published, oldest first.
-//
-// The relay that consumes this arrives in phase 3. It exists now because the
-// rows do: an outbox nobody can read is a table that silently fills up.
+// Pending returns one tenant's unpublished events, oldest first.
 func (o *Outbox) Pending(ctx context.Context, tenant string, limit int) ([]Stored, error) {
-	if limit <= 0 {
-		limit = 100
-	}
+	return o.query(ctx, `
+		WHERE published_at IS NULL AND failed_at IS NULL AND tenant_id = ?
+		ORDER BY occurred_at
+		LIMIT ?`, tenant, sane(limit))
+}
+
+// PendingAll returns unpublished events across every tenant, oldest first.
+//
+// It takes no Grant, and that is deliberate rather than an oversight of RULE 17.
+// The authorization already happened, at write time, and it is recorded in the
+// row -- authorized_by and action are right there. The relay decides nothing:
+// it delivers what was already permitted. This is the same shape as the migrator
+// reading its own table, and it is the only read in the framework that works
+// this way.
+//
+// It is also why the relay is infrastructure and not a route. Nothing here is
+// reachable from a request.
+func (o *Outbox) PendingAll(ctx context.Context, limit int) ([]Stored, error) {
+	return o.query(ctx, `
+		WHERE published_at IS NULL AND failed_at IS NULL
+		ORDER BY occurred_at
+		LIMIT ?`, sane(limit))
+}
+
+// Parked returns the events that gave up, newest failure first.
+//
+// A dead letter queue nobody can list is a table that grows. `aru doctor`
+// reports the count, because an event that never left is a business process
+// that silently did not happen.
+func (o *Outbox) Parked(ctx context.Context, limit int) ([]Stored, error) {
+	return o.query(ctx, `
+		WHERE failed_at IS NOT NULL
+		ORDER BY failed_at DESC
+		LIMIT ?`, sane(limit))
+}
+
+// query runs the standard projection with a caller-supplied tail.
+func (o *Outbox) query(ctx context.Context, tail string, args ...any) ([]Stored, error) {
 	rows, err := o.db.QueryContext(ctx, `
 		SELECT id, tenant_id, event, aggregate, aggregate_id, payload,
-		       authorized_by, action, occurred_at, attempts
-		FROM outbox
-		WHERE published_at IS NULL AND tenant_id = ?
-		ORDER BY occurred_at
-		LIMIT ?`, tenant, limit)
+		       authorized_by, action, occurred_at, attempts, last_error
+		FROM outbox`+tail, args...)
 	if err != nil {
 		return nil, fmt.Errorf("events: reading the outbox: %w", err)
 	}
@@ -155,13 +185,74 @@ func (o *Outbox) Pending(ctx context.Context, tenant string, limit int) ([]Store
 	var out []Stored
 	for rows.Next() {
 		var s Stored
+		var lastError sql.NullString
 		if err := rows.Scan(&s.ID, &s.TenantID, &s.Name, &s.Aggregate, &s.AggregateID,
-			&s.Payload, &s.AuthorizedBy, &s.Action, &s.OccurredAt, &s.Attempts); err != nil {
+			&s.Payload, &s.AuthorizedBy, &s.Action, &s.OccurredAt, &s.Attempts, &lastError); err != nil {
 			return nil, fmt.Errorf("events: reading the outbox: %w", err)
 		}
+		s.LastError = lastError.String
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+func sane(limit int) int {
+	if limit <= 0 {
+		return 100
+	}
+	return limit
+}
+
+// Park stops retrying an event and records why.
+//
+// An event that failed ten times will not succeed on the eleventh, and a relay
+// stuck on it stops delivering everything behind it. Parking keeps the row --
+// the payload is the only copy of what happened -- and takes it out of the way.
+func (o *Outbox) Park(ctx context.Context, id string, cause error) error {
+	message := ""
+	if cause != nil {
+		message = cause.Error()
+	}
+	_, err := o.db.ExecContext(ctx,
+		`UPDATE outbox SET failed_at = ?, attempts = attempts + 1, last_error = ? WHERE id = ?`,
+		time.Now().UTC(), message, id)
+	if err != nil {
+		return fmt.Errorf("events: parking %s: %w", id, err)
+	}
+	return nil
+}
+
+// Retry puts a parked event back in line, with its attempt count reset.
+//
+// The operator fixed the broker, or the consumer, or the payload. Without this
+// the only way back is SQL by hand, which is how a dead letter queue becomes a
+// table nobody touches.
+func (o *Outbox) Retry(ctx context.Context, id string) error {
+	_, err := o.db.ExecContext(ctx,
+		`UPDATE outbox SET failed_at = NULL, attempts = 0, last_error = NULL WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("events: retrying %s: %w", id, err)
+	}
+	return nil
+}
+
+// Lag is how long the oldest unpublished event has been waiting.
+//
+// A relay that stopped looks exactly like a relay with nothing to do. This is
+// the only number that tells them apart, which is why it feeds the health check
+// and the hint on the error page rather than a dashboard.
+func (o *Outbox) Lag(ctx context.Context) (time.Duration, error) {
+	var oldest sql.NullTime
+	err := o.db.QueryRowContext(ctx, `
+		SELECT min(occurred_at) FROM outbox
+		WHERE published_at IS NULL AND failed_at IS NULL`).Scan(&oldest)
+	if err != nil {
+		return 0, fmt.Errorf("events: measuring the outbox lag: %w", err)
+	}
+	if !oldest.Valid {
+		return 0, nil
+	}
+	return time.Since(oldest.Time), nil
 }
 
 // MarkPublished records that an event left.
@@ -206,6 +297,11 @@ type Stored struct {
 	Action       string
 	OccurredAt   time.Time
 	Attempts     int
+	// LastError is why the most recent attempt failed. It is stored rather than
+	// logged because the thing anyone needs at 3am is "this event failed twelve
+	// times with this message", and a log line from six hours ago does not
+	// answer it.
+	LastError string
 }
 
 // Decode unmarshals the payload into v.

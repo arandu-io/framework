@@ -103,18 +103,19 @@ func TestTheEventCarriesWhenItHappened(t *testing.T) {
 // and MySQL with one definition, because there is one migration path.
 func TestTheOutboxMigrationIsPortable(t *testing.T) {
 	migrations := events.NewModule().Migrations()
-	if len(migrations) != 1 {
-		t.Fatalf("%d migrations, want 1", len(migrations))
+	if len(migrations) == 0 {
+		t.Fatal("no migrations")
 	}
 
-	up := migrations[0].Up
-	for _, engineSpecific := range []string{"jsonb", "uuid ", "timestamptz", "SERIAL", "AUTO_INCREMENT", "WHERE published_at IS NULL"} {
-		if strings.Contains(up, engineSpecific) {
-			t.Errorf("the migration uses %q, which is one engine's spelling", engineSpecific)
+	for _, m := range migrations {
+		for _, engineSpecific := range []string{"jsonb", "uuid ", "timestamptz", "SERIAL", "AUTO_INCREMENT", "WHERE published_at IS NULL"} {
+			if strings.Contains(m.Up, engineSpecific) {
+				t.Errorf("%s uses %q, which is one engine's spelling", m.ID, engineSpecific)
+			}
 		}
-	}
-	if migrations[0].Down == "" {
-		t.Error("the migration cannot be rolled back")
+		if m.Down == "" {
+			t.Errorf("%s cannot be rolled back", m.ID)
+		}
 	}
 }
 
