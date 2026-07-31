@@ -42,18 +42,39 @@ type Kernel struct {
 	pipeline []httpx.Middleware
 	srv      *http.Server
 	booted   bool
+	// recorder is the ring buffer behind the console. It exists in development
+	// and under a tracing secret, and is nil otherwise -- which is what makes
+	// the console cost nothing in production rather than cost little.
+	recorder *observability.Recorder
 }
 
 // New assembles the kernel. It opens no connection and listens on no port --
 // that is Boot and Run.
 func New(cfg config.Config) *Kernel {
 	log := observability.NewLogger(string(cfg.Env), cfg.LogLevel)
-	return &Kernel{
+	k := &Kernel{
 		cfg:    cfg,
 		log:    log,
 		router: httpx.NewRouter(),
 	}
+
+	// The kernel owns the recorder because it is what mounts the console route.
+	// One owner: an application that built its own would end up with a console
+	// showing a different buffer than the one the middleware fills.
+	if cfg.IsDev() || cfg.TracingSecret != "" {
+		k.recorder = observability.NewRecorder(observability.DefaultRecorderSize)
+	}
+	return k
 }
+
+// Recorder returns the request buffer behind /_arandu/debug, or nil outside
+// development.
+//
+// Pass it to middleware.Observe. It is not wired automatically because the
+// pipeline is assembled in the application, in the open, and a middleware that
+// reached back into the kernel for state would be the kind of hidden coupling
+// the explicit wiring exists to avoid.
+func (k *Kernel) Recorder() *observability.Recorder { return k.recorder }
 
 // Config returns the configuration the kernel was built with.
 func (k *Kernel) Config() config.Config { return k.cfg }
@@ -116,8 +137,10 @@ func (k *Kernel) Boot(ctx context.Context) error {
 func (k *Kernel) mountInternalRoutes() {
 	internal := k.router.ForModule("arandu")
 	internal.Get("/_arandu/health", k.handleHealth)
-	if k.cfg.IsDev() {
-		internal.Get("/_arandu/debug", observability.HandleDebugConsole)
+	if k.recorder != nil {
+		console := observability.NewConsole(k.recorder, k.cfg.Editor)
+		internal.Get(observability.ConsolePath, console.Handler)
+		internal.Get(observability.ConsolePath+"/{id}", console.Handler)
 	}
 }
 

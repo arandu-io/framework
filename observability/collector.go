@@ -71,6 +71,7 @@ type Collector struct {
 	Dumps    []DumpRecord
 	Events   []EventRecord
 	External []ExternalRecord
+	Renders  []RenderRecord
 }
 
 // QueryRecord is one database call, with the file and line that issued it --
@@ -97,6 +98,16 @@ type EventRecord struct {
 	Name    string
 	Payload any
 	At      time.Duration
+}
+
+// RenderRecord is one template render.
+//
+// It is what separates "the page is slow because of the database" from "the
+// page is slow because of the view", which are two different afternoons.
+type RenderRecord struct {
+	Name     string
+	Duration time.Duration
+	At       time.Duration
 }
 
 // ExternalRecord is one outbound HTTP call.
@@ -172,6 +183,20 @@ func (c *Collector) RecordExternal(method, url string, status int, d time.Durati
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.External = append(c.External, ExternalRecord{Method: method, URL: url, Status: status, Duration: d})
+}
+
+// RecordRender stores one template render.
+//
+// porang calls it around a component; anything rendering HTML can call it too.
+// The name is what shows on the timeline, so it should be the template, not the
+// function.
+func (c *Collector) RecordRender(name string, d time.Duration) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Renders = append(c.Renders, RenderRecord{Name: name, Duration: d, At: time.Since(c.Start)})
 }
 
 // SlowQueries returns the queries at or above the limit. It feeds the "slow

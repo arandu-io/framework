@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/arandu-io/framework/observability"
@@ -21,7 +22,10 @@ const nPlusOneThreshold = 5
 //
 // tracingSecret enables the Collector outside development for requests carrying
 // it in X-Arandu-Trace. Leave it empty to keep production at zero cost.
-func Observe(dev bool, tracingSecret string) func(http.Handler) http.Handler {
+//
+// recorder is the buffer behind /_arandu/debug. Pass kernel.Recorder(); nil
+// records nothing, which is what production does.
+func Observe(dev bool, tracingSecret string, recorder *observability.Recorder) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
@@ -50,16 +54,36 @@ func Observe(dev bool, tracingSecret string) func(http.Handler) http.Handler {
 			rw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rw, r.WithContext(ctx))
 
+			duration := time.Since(start)
 			attrs := []any{
 				"status", rw.status,
-				"duration_ms", time.Since(start).Milliseconds(),
+				"duration_ms", duration.Milliseconds(),
 				"bytes", rw.bytes,
 			}
-			if col := observability.FromContext(ctx); col != nil {
+
+			col := observability.FromContext(ctx)
+			if col != nil {
 				attrs = append(attrs, "queries", len(col.Queries), "sql_ms", col.QueryTime().Milliseconds())
-				if n := col.SuspectedNPlusOne(nPlusOneThreshold); len(n) > 0 {
-					attrs = append(attrs, "suspected_n_plus_one", len(n))
+
+				// The warning names the statement and how many times it ran,
+				// because "suspected_n_plus_one: 1" in a log line tells you a
+				// problem exists and nothing about which one.
+				for sql, n := range col.SuspectedNPlusOne(nPlusOneThreshold) {
+					log.Warn("likely N+1",
+						"statement", strings.Join(strings.Fields(sql), " "),
+						"times", n,
+						"console", observability.ConsolePath+"/"+id)
 				}
+
+				recorder.Record(observability.Recorded{
+					RequestID: id,
+					Method:    r.Method,
+					Path:      r.URL.Path,
+					Status:    rw.status,
+					Duration:  duration,
+					At:        start,
+					Collector: col,
+				})
 			}
 			log.Info("request completed", attrs...)
 		})

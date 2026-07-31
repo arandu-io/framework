@@ -3,8 +3,9 @@ package errorpage
 import (
 	"os"
 	"runtime"
-	"strconv"
 	"strings"
+
+	"github.com/arandu-io/framework/observability"
 )
 
 // StackFrame is one frame of the stack, already enriched with the source
@@ -77,18 +78,11 @@ func snippet(file string, line, radius int) ([]string, int) {
 	return lines[from:to], from + 1
 }
 
-// EditorLink builds the link that opens the file straight in the IDE. The
-// editor comes from config.Config.Editor.
+// EditorLink builds the link that opens the file straight in the IDE.
+//
+// It forwards to observability.EditorLink, which is where the one
+// implementation lives: the console needs the same links, and two copies is two
+// places to add the next editor.
 func EditorLink(editor, file string, line int) string {
-	at := strconv.Itoa(line)
-	switch editor {
-	case "cursor":
-		return "cursor://file" + file + ":" + at
-	case "goland":
-		return "jetbrains://goland/navigate/reference?path=" + file + ":" + at
-	case "zed":
-		return "zed://file" + file + ":" + at
-	default:
-		return "vscode://file" + file + ":" + at
-	}
+	return observability.EditorLink(editor, file, line)
 }

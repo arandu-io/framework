@@ -18,7 +18,7 @@ import (
 func pipeline(dev bool, h http.Handler) http.Handler {
 	return httpx.Chain(h,
 		middleware.Recover(dev, errorpage.Options{Editor: "vscode"}),
-		middleware.Observe(dev, ""),
+		middleware.Observe(dev, "", nil),
 		middleware.SecurityHeaders(dev),
 	)
 }
@@ -97,7 +97,7 @@ func TestTracingSecretEnablesTheCollector(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		enabled = observability.FromContext(r.Context()) != nil
 	})
-	h := httpx.Chain(handler, middleware.Observe(false, "let-me-in"))
+	h := httpx.Chain(handler, middleware.Observe(false, "let-me-in", nil))
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("X-Arandu-Trace", "let-me-in")
@@ -150,7 +150,7 @@ func TestRequestIDIsSanitized(t *testing.T) {
 		r.Header.Set("X-Request-ID", id)
 
 		httpx.Chain(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			middleware.Observe(true, "")).ServeHTTP(rec, r)
+			middleware.Observe(true, "", nil)).ServeHTTP(rec, r)
 
 		got := rec.Header().Get("X-Request-ID")
 		if kept && got != id {
@@ -219,7 +219,7 @@ func TestStatusWriterSupportsFlush(t *testing.T) {
 		flushed = true
 	})
 
-	httpx.Chain(handler, middleware.Observe(true, "")).
+	httpx.Chain(handler, middleware.Observe(true, "", nil)).
 		ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/stream", nil))
 
 	if !flushed {
