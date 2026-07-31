@@ -116,3 +116,17 @@ func TestHasRole(t *testing.T) {
 		t.Fatal("HasRole must be case sensitive: roles are identifiers, not prose")
 	}
 }
+
+// TestSystemGrantRequiresATenant is RULE 14 in the type system: a system grant
+// with no tenant would read across every customer of the system, so it is not
+// expressible -- the empty tenant yields the zero Grant, which fails Check.
+func TestSystemGrantRequiresATenant(t *testing.T) {
+	g := security.SystemGrant(actionView, "")
+
+	if err := g.Check(actionView); !errors.Is(err, security.ErrForbidden) {
+		t.Fatalf("error = %v, want ErrForbidden", err)
+	}
+	if g.Subject().Tenant != "" {
+		t.Fatal("a refused system grant must carry no subject at all")
+	}
+}

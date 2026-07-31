@@ -26,10 +26,17 @@ import (
 // from the session. That asymmetry is the point -- a tenant taken from the
 // request body or from a header after login would defeat the isolation the whole
 // policy layer is built on.
+//
+// Phase 2 adds the resolver that reads the host name, which is the default for
+// a real multi-tenant deployment.
 type TenantResolver func(r *http.Request) string
 
 // FixedTenant is the resolver for a single-tenant application: every login
 // belongs to the same tenant.
+//
+// This is not a "single-tenant mode". It is the same code path with a constant
+// where the resolver would be, which is why an application that starts single
+// and grows into multi changes one line and no queries.
 func FixedTenant(id string) TenantResolver {
 	return func(*http.Request) string { return id }
 }

@@ -91,11 +91,19 @@ func (g Grant) Subject() Subject { return g.subject }
 // Action exposes what was authorized.
 func (g Grant) Action() Action { return g.action }
 
-// SystemGrant exists for jobs and migrations that run outside a request, and
-// for the login path, where there is no subject yet.
+// SystemGrant exists for jobs that run outside a request, and for the login
+// path, where there is no subject yet.
 //
-// Every call site is auditable: `aru doctor --strict` lists them all.
+// The tenant is required and cannot be empty. A system grant without a tenant
+// would read across every customer of the system, which in a SaaS is the worst
+// bug there is -- so it is not expressible: an empty tenant yields the zero
+// Grant, and the zero Grant fails Check.
+//
+// Every call site is auditable, and `aru doctor --strict` lists them all.
 func SystemGrant(a Action, tenant string) Grant {
+	if tenant == "" {
+		return Grant{}
+	}
 	return Grant{
 		subject: Subject{ID: "system", Tenant: tenant, Roles: []string{"system"}},
 		action:  a,
