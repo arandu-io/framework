@@ -208,3 +208,50 @@ func TestStatusListsPendingAndApplied(t *testing.T) {
 		t.Errorf("pending migration = %+v, want batch 0", status[1])
 	}
 }
+
+// TestASemicolonInACommentDoesNotSplit: the first migration whose comment
+// contains one used to send the tail of the sentence to the database as a
+// statement, and the error named a word from the prose.
+func TestASemicolonInACommentDoesNotSplit(t *testing.T) {
+	sqldb, state := newFakeDB()
+	db := data.Wrap(sqldb, data.DialectSQLite)
+
+	_, err := data.Migrate(context.Background(), db, []data.Migration{{
+		ID: "one",
+		Up: `
+-- A partial index would be tighter; MySQL does not have one.
+CREATE TABLE outbox (id TEXT PRIMARY KEY);
+CREATE INDEX idx_outbox ON outbox (id);
+`,
+	}})
+	if err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	for _, s := range state.statements() {
+		if strings.HasPrefix(strings.TrimSpace(s), "MySQL") {
+			t.Fatalf("the comment was split into a statement: %q", s)
+		}
+	}
+	if !state.sawStatement("CREATE TABLE outbox") || !state.sawStatement("CREATE INDEX idx_outbox") {
+		t.Errorf("the statements did not survive the split: %v", state.statements())
+	}
+}
+
+// TestASemicolonInALiteralDoesNotSplit: a default value or a seeded row can
+// legitimately contain one.
+func TestASemicolonInALiteralDoesNotSplit(t *testing.T) {
+	sqldb, state := newFakeDB()
+	db := data.Wrap(sqldb, data.DialectSQLite)
+
+	_, err := data.Migrate(context.Background(), db, []data.Migration{{
+		ID: "one",
+		Up: `INSERT INTO setting (key, value) VALUES ('separators', 'a;b;c');`,
+	}})
+	if err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	if !state.sawStatement("VALUES ('separators', 'a;b;c')") {
+		t.Errorf("the literal was split: %v", state.statements())
+	}
+}

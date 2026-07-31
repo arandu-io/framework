@@ -215,15 +215,70 @@ func ensureMigrationsTable(ctx context.Context, db *DB) error {
 
 // splitStatements breaks a migration body into individual statements.
 //
-// It is deliberately naive -- split on ";", drop what is blank -- and that is
-// safe for the DDL a migration contains. A migration that needs a semicolon
-// inside a literal has outgrown this and belongs in Atlas, in phase 2.
+// Semicolons inside comments and string literals do not split, which sounds
+// pedantic until the first migration whose comment contains one: the tail of the
+// sentence reaches the database as a statement, and the error names a word from
+// the prose.
 func splitStatements(body string) []string {
 	var out []string
-	for _, s := range strings.Split(body, ";") {
-		if strings.TrimSpace(s) != "" {
-			out = append(out, s)
+	var current strings.Builder
+
+	runes := []rune(body)
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+
+		switch {
+		case c == '-' && i+1 < len(runes) && runes[i+1] == '-':
+			// Line comment: copy it through so the statement sent to the
+			// database still reads like the migration that was written.
+			for i < len(runes) && runes[i] != '\n' {
+				current.WriteRune(runes[i])
+				i++
+			}
+			current.WriteRune('\n')
+
+		case c == '/' && i+1 < len(runes) && runes[i+1] == '*':
+			for i < len(runes) {
+				current.WriteRune(runes[i])
+				if runes[i] == '*' && i+1 < len(runes) && runes[i+1] == '/' {
+					current.WriteRune('/')
+					i++
+					break
+				}
+				i++
+			}
+
+		case c == '\'' || c == '"':
+			quote := c
+			current.WriteRune(c)
+			i++
+			for i < len(runes) {
+				current.WriteRune(runes[i])
+				// Doubling is how SQL escapes a quote inside a literal.
+				if runes[i] == quote {
+					if i+1 < len(runes) && runes[i+1] == quote {
+						current.WriteRune(quote)
+						i++
+					} else {
+						break
+					}
+				}
+				i++
+			}
+
+		case c == ';':
+			if strings.TrimSpace(current.String()) != "" {
+				out = append(out, current.String())
+			}
+			current.Reset()
+
+		default:
+			current.WriteRune(c)
 		}
+	}
+
+	if strings.TrimSpace(current.String()) != "" {
+		out = append(out, current.String())
 	}
 	return out
 }
