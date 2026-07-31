@@ -133,7 +133,7 @@ func (c *fakeConn) QueryContext(_ context.Context, query string, args []driver.N
 type fakeTx struct{ db *fakeDB }
 
 func (t *fakeTx) Commit() error   { return t.db.record("COMMIT", nil) }
-func (t *fakeTx) Rollback() error { return nil }
+func (t *fakeTx) Rollback() error { return t.db.record("ROLLBACK", nil) }
 
 type fakeResult struct{}
 
