@@ -122,3 +122,27 @@ func TestTheOutboxMigrationIsPortable(t *testing.T) {
 func grant(tenant string) security.Grant {
 	return security.SystemGrant("outbox.store", tenant)
 }
+
+// TestTheDiagnosisIsSilentWhenNothingIsWrong: a diagnosis that always says
+// something is a diagnosis nobody reads, and the error page has limited room
+// before people stop looking at it.
+func TestTheDiagnosisIsSilentWhenNothingIsWrong(t *testing.T) {
+	if got := events.NewModule().Diagnose(context.Background()); len(got) != 0 {
+		t.Fatalf("a module with no relay diagnosed %v", got)
+	}
+}
+
+// TestAModuleWithNoRelayIsHealthy: storing without publishing is a real state,
+// not a broken one. Storing is what cannot be recovered later; publishing can
+// start the day there is something to publish to.
+func TestAModuleWithNoRelayIsHealthy(t *testing.T) {
+	if err := events.NewModule().Health(context.Background()); err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	if err := events.NewModule().Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if err := events.NewModule().Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/arandu-io/framework/observability"
@@ -137,16 +138,7 @@ func (r *Relay) pass(ctx context.Context) error {
 // not depending on the adapter. The alternative -- an exported sentinel in the
 // core that kv would have to import -- inverts the dependency the wrong way.
 func isLocked(err error) bool {
-	return err != nil && contains(err.Error(), "lock is held")
-}
-
-func contains(haystack, needle string) bool {
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if haystack[i:i+len(needle)] == needle {
-			return true
-		}
-	}
-	return false
+	return err != nil && strings.Contains(err.Error(), "lock is held")
 }
 
 // publishBatch publishes the oldest unpublished events.
@@ -201,6 +193,12 @@ func (r *Relay) publishBatch(ctx context.Context) error {
 // way always leaks into production.
 func (r *Relay) Drain(ctx context.Context) error {
 	return r.publishBatch(ctx)
+}
+
+// Parked returns the events that gave up, for the diagnosis and for whoever is
+// deciding whether to retry them.
+func (r *Relay) Parked(ctx context.Context, limit int) ([]Stored, error) {
+	return r.outbox.Parked(ctx, limit)
 }
 
 // Lag is how long the oldest unpublished event has been waiting.

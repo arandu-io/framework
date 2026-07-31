@@ -251,6 +251,23 @@ func (k *Kernel) Migrations() []Migration {
 	return out
 }
 
+// Diagnose asks every module that implements Diagnostic what is wrong right
+// now, and returns what they say.
+//
+// Pass it to errorpage.Options.Diagnose. It is not wired automatically because
+// the pipeline is assembled in the open, in the application.
+func (k *Kernel) Diagnose(ctx context.Context) []string {
+	var out []string
+	for _, m := range k.modules {
+		d, ok := m.(Diagnostic)
+		if !ok {
+			continue
+		}
+		out = append(out, d.Diagnose(ctx)...)
+	}
+	return out
+}
+
 // Routes returns the registered routes. It is empty before Boot, because a
 // module only registers its routes when it boots.
 func (k *Kernel) Routes() []httpx.Route { return k.router.Routes() }

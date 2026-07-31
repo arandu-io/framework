@@ -36,6 +36,20 @@ type Closable interface {
 	Close(ctx context.Context) error
 }
 
+// Diagnostic is optional: the module reports what it knows about the state of
+// the system, in sentences a person can act on.
+//
+// It feeds the error page. The most useful hint is often about something that
+// happened outside the failing request -- the outbox stuck for four minutes, a
+// job that has not run -- and a page that only looks at the request cannot see
+// any of it.
+//
+// Return nothing when there is nothing wrong. A diagnosis that always says
+// something is a diagnosis nobody reads.
+type Diagnostic interface {
+	Diagnose(ctx context.Context) []string
+}
+
 // Migratable is optional: the module declares its migrations, and the Kernel
 // collects them from every registered module in registration order.
 type Migratable interface {

@@ -43,6 +43,7 @@ var (
 	_ kernel.Bootable   = (*Module)(nil)
 	_ kernel.Closable   = (*Module)(nil)
 	_ kernel.Health     = (*Module)(nil)
+	_ kernel.Diagnostic = (*Module)(nil)
 )
 
 // Name is the module identifier.
@@ -153,6 +154,37 @@ func (m *Module) Close(ctx context.Context) error {
 // is wrong -- the relay is not running, the publisher is refusing everything,
 // or another replica holds the lock and died.
 const maxLag = time.Minute
+
+// hintLag is when a backlog stops being normal and starts being worth
+// mentioning on an error page. It is well below the threshold that fails the
+// health check: by the time the health check trips, somebody is already paged.
+const hintLag = 30 * time.Second
+
+// Diagnose says what is wrong with event delivery, in a sentence.
+//
+// This is the hint doc 27 asks for: "invoice.paid has been waiting four minutes
+// -- is the relay running?". It shows up on the error page, next to the failure
+// somebody is already looking at, which is the moment they are most likely to
+// act on it.
+func (m *Module) Diagnose(ctx context.Context) []string {
+	if m.relay == nil {
+		return nil
+	}
+	var out []string
+
+	if lag, err := m.relay.Lag(ctx); err == nil && lag > hintLag {
+		out = append(out, fmt.Sprintf(
+			"The oldest unpublished event has been waiting %s. Is the relay running, and is the publisher accepting?",
+			lag.Truncate(time.Second)))
+	}
+
+	if parked, err := m.relay.Parked(ctx, 5); err == nil && len(parked) > 0 {
+		out = append(out, fmt.Sprintf(
+			"%d event(s) gave up after repeated failures, the most recent being %s: %s. They stay in the outbox until retried.",
+			len(parked), parked[0].Name, parked[0].LastError))
+	}
+	return out
+}
 
 // Health fails when the outbox is falling behind.
 //

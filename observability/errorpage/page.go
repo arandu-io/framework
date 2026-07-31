@@ -10,6 +10,7 @@
 package errorpage
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -27,6 +28,15 @@ type Options struct {
 	// AppModule is the module path of the application, used to tell app frames
 	// from framework and stdlib frames.
 	AppModule string
+	// Diagnose collects what the registered modules have to say about the state
+	// of the system right now. Pass kernel.Diagnose.
+	//
+	// It exists because the most useful hint is often about something that
+	// happened outside this request: the outbox has been stuck for four minutes,
+	// the scheduler last ran an hour ago. A page that only looks at the request
+	// cannot see any of it, and that is exactly the state where somebody is
+	// staring at an error wondering what changed.
+	Diagnose func(ctx context.Context) []string
 }
 
 type viewData struct {
@@ -67,6 +77,9 @@ func Render(w http.ResponseWriter, r *http.Request, panicValue any, col *observa
 		d.QueryTime = col.QueryTime()
 	}
 	d.Hints = hints(d)
+	if opts.Diagnose != nil {
+		d.Hints = append(d.Hints, opts.Diagnose(r.Context())...)
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusInternalServerError)
