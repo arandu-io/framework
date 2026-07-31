@@ -14,6 +14,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -77,7 +78,7 @@ func NewOutbox(db *data.DB) *Outbox { return &Outbox{db: db} }
 // It is an error rather than a fallback, and that is the whole guarantee: an
 // event stored next to a row that then rolled back is worse than no event, and
 // an event stored after the commit is one process crash away from being lost.
-var ErrNoTransaction = fmt.Errorf("events: Store must run inside data.Transaction")
+var ErrNoTransaction = errors.New("events: Store must run inside data.Transaction")
 
 // Store writes the events, inside the caller's transaction.
 //
@@ -242,17 +243,26 @@ func (o *Outbox) Retry(ctx context.Context, id string) error {
 // the only number that tells them apart, which is why it feeds the health check
 // and the hint on the error page rather than a dashboard.
 func (o *Outbox) Lag(ctx context.Context) (time.Duration, error) {
-	var oldest sql.NullTime
+	// ORDER BY ... LIMIT 1 rather than min(occurred_at), and the reason is
+	// portability rather than speed: an aggregate loses the declared type of
+	// the column, and SQLite then hands back a string that will not scan into a
+	// time.Time. Selecting the column keeps the conversion the driver already
+	// does everywhere else. The index makes both the same query plan.
+	var oldest time.Time
 	err := o.db.QueryRowContext(ctx, `
-		SELECT min(occurred_at) FROM outbox
-		WHERE published_at IS NULL AND failed_at IS NULL`).Scan(&oldest)
+		SELECT occurred_at FROM outbox
+		WHERE published_at IS NULL AND failed_at IS NULL
+		ORDER BY occurred_at
+		LIMIT 1`).Scan(&oldest)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Nothing pending. Zero, not an error: an empty outbox is the state a
+		// healthy system spends most of its time in.
+		return 0, nil
+	}
 	if err != nil {
 		return 0, fmt.Errorf("events: measuring the outbox lag: %w", err)
 	}
-	if !oldest.Valid {
-		return 0, nil
-	}
-	return time.Since(oldest.Time), nil
+	return time.Since(oldest), nil
 }
 
 // MarkPublished records that an event left.
