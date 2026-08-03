@@ -177,7 +177,8 @@ func (o *Outbox) query(ctx context.Context, tail string, args ...any) ([]Stored,
 	rows, err := o.db.QueryContext(ctx, `
 		SELECT id, tenant_id, event, aggregate, aggregate_id, payload,
 		       authorized_by, action, occurred_at, attempts, last_error
-		FROM outbox`+tail, args...)
+		FROM outbox
+		`+tail, args...)
 	if err != nil {
 		return nil, fmt.Errorf("events: reading the outbox: %w", err)
 	}
