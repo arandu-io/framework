@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/observability"
 )
 
@@ -28,13 +29,11 @@ func (f PublisherFunc) Publish(ctx context.Context, e Stored) error { return f(c
 
 // Locker keeps N replicas from publishing the same event N times.
 //
-// The signature is the one github.com/arandu-io/kv implements, so wiring the
-// distributed lock is one line. Leaving it nil is correct for a single replica
-// and wrong for two -- and the failure is duplicate delivery, which consumers
-// have to tolerate anyway.
-type Locker interface {
-	Run(ctx context.Context, name string, ttl time.Duration, fn func(context.Context) error) error
-}
+// It is an alias for kernel.Locker rather than a second declaration: the
+// scheduler needs the same thing, and two identical interfaces in two packages
+// is a signature that can drift in one of them. github.com/arandu-io/kv
+// implements it, and wiring the distributed lock is one line.
+type Locker = kernel.Locker
 
 // RelayOptions configures the relay.
 type RelayOptions struct {

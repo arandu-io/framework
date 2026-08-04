@@ -251,6 +251,24 @@ func (k *Kernel) Migrations() []Migration {
 	return out
 }
 
+// Tasks collects the scheduled work from every registered module, in
+// registration order.
+//
+// Same shape as Migrations(): the module declares, the kernel collects, and the
+// scheduler module runs. Pass it to scheduler.NewModule, which is why that one
+// is registered last.
+func (k *Kernel) Tasks() []Task {
+	var out []Task
+	for _, m := range k.modules {
+		s, ok := m.(Schedulable)
+		if !ok {
+			continue
+		}
+		out = append(out, s.Schedule()...)
+	}
+	return out
+}
+
 // Diagnose asks every module that implements Diagnostic what is wrong right
 // now, and returns what they say.
 //
