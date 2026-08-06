@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/arandu-io/framework/config"
 	"github.com/arandu-io/framework/data"
@@ -288,5 +290,157 @@ func TestRequestLoggerIsTheApplicationLogger(t *testing.T) {
 func TestFormatRoutesWithoutRoutes(t *testing.T) {
 	if got := kernel.FormatRoutes(nil); !strings.Contains(got, "no routes") {
 		t.Fatalf("FormatRoutes(nil) = %q", got)
+	}
+}
+
+// TestTheConsoleIsClosedInProduction is a hole an audit found and reproduced
+// over a real socket, and it is the worst kind: the code read as if it were
+// closed, and four comments said so.
+//
+// The recorder exists whenever a tracing secret is configured -- that is what
+// makes production tracing possible at all. The routes were mounted from the
+// same condition, and the secret was checked only by the middleware that
+// decides whether to RECORD. So anyone could GET /_arandu/debug with no
+// session, no cookie and no header, and read the buffer: SQL with its bound
+// arguments, dumps, event payloads, across every tenant.
+func TestTheConsoleIsClosedInProduction(t *testing.T) {
+	cfg := config.Config{
+		Env:           config.EnvProd,
+		AppKey:        make([]byte, 32),
+		TracingSecret: "s3cret-operator-only",
+		HTTPAddr:      ":0",
+	}
+	k := kernel.New(cfg)
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	t.Cleanup(func() { _ = k.Shutdown() })
+	handler := k.Handler()
+
+	// Anonymous, which is what an internet scan looks like.
+	for _, path := range []string{
+		observability.ConsolePath,
+		observability.ConsolePath + "/anything",
+		observability.ConsolePath + "?format=json",
+	} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s answered %d to an anonymous request in production", path, rec.Code)
+		}
+	}
+
+	// A wrong secret behaves exactly like none, or the endpoint becomes an
+	// oracle for guessing it.
+	wrong := httptest.NewRequest(http.MethodGet, observability.ConsolePath, nil)
+	wrong.Header.Set(observability.TracingHeader, "not-the-secret")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, wrong)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("a wrong secret answered %d", rec.Code)
+	}
+
+	// The operator, with the secret, still gets in -- otherwise the feature is
+	// gone rather than fixed.
+	right := httptest.NewRequest(http.MethodGet, observability.ConsolePath, nil)
+	right.Header.Set(observability.TracingHeader, "s3cret-operator-only")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, right)
+	if rec.Code != http.StatusOK {
+		t.Errorf("the operator with the secret got %d", rec.Code)
+	}
+
+	// And health stays open, because a load balancer has no header.
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/_arandu/health", nil))
+	if rec.Code == http.StatusNotFound {
+		t.Error("the health check was gated too")
+	}
+}
+
+// TestAnEmptySecretDoesNotOpenTheConsole: an empty secret is the zero value of
+// the configuration, and treating it as "no gate" would open the console for
+// every application that never set one.
+func TestAnEmptySecretDoesNotOpenTheConsole(t *testing.T) {
+	k := kernel.New(config.Config{Env: config.EnvProd, AppKey: make([]byte, 32), HTTPAddr: ":0"})
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	t.Cleanup(func() { _ = k.Shutdown() })
+
+	for _, header := range []string{"", "anything"} {
+		r := httptest.NewRequest(http.MethodGet, observability.ConsolePath, nil)
+		if header != "" {
+			r.Header.Set(observability.TracingHeader, header)
+		}
+		rec := httptest.NewRecorder()
+		k.Handler().ServeHTTP(rec, r)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("with no secret configured and header %q, the console answered %d", header, rec.Code)
+		}
+	}
+}
+
+// backgroundSpy records whether its loop was started. Atomic, because Start
+// runs on the goroutine that serves and the test reads from its own.
+type backgroundSpy struct {
+	booted  atomic.Bool
+	started atomic.Bool
+}
+
+func (*backgroundSpy) Name() string         { return "spy" }
+func (*backgroundSpy) Routes(*httpx.Router) {}
+
+func (b *backgroundSpy) Boot(context.Context) error { b.booted.Store(true); return nil }
+
+func (b *backgroundSpy) Start(context.Context) error { b.started.Store(true); return nil }
+
+// TestBootDoesNotStartBackgroundLoops is a bug an audit found.
+//
+// Every command boots -- `aru work`, `aru routes`, `aru schedule:list`,
+// `aru schedule:run`. When the scheduler and the relay started their loops in
+// Boot, every worker replica ran a scheduler of its own, and `aru schedule:run`
+// -- the command for running exactly one task by hand -- started the loop that
+// runs all of them. The lock made it harmless, not correct.
+func TestBootDoesNotStartBackgroundLoops(t *testing.T) {
+	spy := &backgroundSpy{}
+	k := kernel.New(testConfig(config.EnvProd)).Register(spy)
+
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if !spy.booted.Load() {
+		t.Error("the module was not booted")
+	}
+	if spy.started.Load() {
+		t.Error("Boot started the background loop; only Run may do that")
+	}
+}
+
+// TestRunStartsBackgroundLoops is the other half: the process that serves does
+// run them, or a scheduled task silently never happens.
+func TestRunStartsBackgroundLoops(t *testing.T) {
+	spy := &backgroundSpy{}
+	cfg := testConfig(config.EnvProd)
+	cfg.HTTPAddr = "127.0.0.1:0"
+	k := kernel.New(cfg).Register(spy)
+
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	ctx, stop := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- k.Run(ctx) }()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for !spy.started.Load() && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	stop()
+	<-done
+
+	if !spy.started.Load() {
+		t.Fatal("Run did not start the background loop")
 	}
 }

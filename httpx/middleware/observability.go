@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
 	"strings"
@@ -47,7 +48,7 @@ func Observe(dev bool, tracingSecret string, recorder *observability.Recorder) f
 
 			// The Collector costs memory: only install it in development or
 			// under the tracing secret.
-			if dev || (tracingSecret != "" && r.Header.Get("X-Arandu-Trace") == tracingSecret) {
+			if dev || (tracingSecret != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get(observability.TracingHeader)), []byte(tracingSecret)) == 1) {
 				ctx = observability.WithCollector(ctx, observability.NewCollector(id))
 			}
 
@@ -63,7 +64,7 @@ func Observe(dev bool, tracingSecret string, recorder *observability.Recorder) f
 
 			col := observability.FromContext(ctx)
 			if col != nil {
-				attrs = append(attrs, "queries", len(col.Queries), "sql_ms", col.QueryTime().Milliseconds())
+				attrs = append(attrs, "queries", col.QueryCount(), "sql_ms", col.QueryTime().Milliseconds())
 
 				// The warning names the statement and how many times it ran,
 				// because "suspected_n_plus_one: 1" in a log line tells you a

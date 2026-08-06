@@ -7,6 +7,7 @@ package kernel
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -67,13 +68,24 @@ func New(cfg config.Config) *Kernel {
 	return k
 }
 
-// Recorder returns the request buffer behind /_arandu/debug, or nil outside
-// development.
+// Recorder returns the buffer behind /_arandu/debug, or nil when nothing is
+// recording.
 //
-// Pass it to middleware.Observe. It is not wired automatically because the
-// pipeline is assembled in the application, in the open, and a middleware that
-// reached back into the kernel for state would be the kind of hidden coupling
-// the explicit wiring exists to avoid.
+// Pass it to middleware.Observe, and to the background loops that deserve the
+// same page:
+//
+//	k.Use(middleware.Observe(k.Recorder(), cfg.TracingSecret))
+//	w := jobs.NewWorker(store, jobs.WorkerOptions{Recorder: k.Recorder()})
+//	scheduler.NewModule(k.Tasks(), scheduler.Options{Recorder: k.Recorder()})
+//
+// The nil is the point. Outside development, without a tracing secret, there is
+// no recorder -- so those loops build no Collector, record nothing, and cost
+// nothing. They used to build one unconditionally and throw it away.
+//
+// It is not wired automatically because the pipeline is assembled in the
+// application, in the open, and a middleware that reached back into the kernel
+// for state would be the kind of hidden coupling the explicit wiring exists to
+// avoid.
 func (k *Kernel) Recorder() *observability.Recorder { return k.recorder }
 
 // Config returns the configuration the kernel was built with.
@@ -132,15 +144,75 @@ func (k *Kernel) Boot(ctx context.Context) error {
 	return nil
 }
 
-// mountInternalRoutes exposes the framework's own routes. In production only
-// /_arandu/health answers; everything else requires Env dev.
+// startBackground starts the loops of every Background module.
+//
+// A loop that fails to start stops the process, for the same reason a module
+// that fails to boot does: an application whose scheduler silently did not
+// start looks healthy and does no scheduled work, and nobody finds out until
+// the invoices are a day late.
+func (k *Kernel) startBackground(ctx context.Context) error {
+	for _, m := range k.modules {
+		b, ok := m.(Background)
+		if !ok {
+			continue
+		}
+		if err := b.Start(ctx); err != nil {
+			return fmt.Errorf("arandu: starting module %q: %w", m.Name(), err)
+		}
+		k.log.Info("background loop started", "module", m.Name())
+	}
+	return nil
+}
+
+// mountInternalRoutes exposes the framework's own routes.
+//
+// /_arandu/health answers everywhere. The console answers in development, and
+// outside it only to a request carrying the tracing secret -- which is not the
+// same as "only when a tracing secret is configured".
+//
+// That distinction was a hole. The recorder exists whenever the secret is set,
+// so the routes were mounted in production, and the secret was checked only by
+// the middleware that decides whether to RECORD. Anyone could then read the
+// buffer: SQL with bound arguments, dumps, event payloads, across every tenant,
+// with no session and no header. Found by audit, reproduced over a real socket.
 func (k *Kernel) mountInternalRoutes() {
 	internal := k.router.ForModule("arandu")
 	internal.Get("/_arandu/health", k.handleHealth)
-	if k.recorder != nil {
-		console := observability.NewConsole(k.recorder, k.cfg.Editor)
-		internal.Get(observability.ConsolePath, console.Handler)
-		internal.Get(observability.ConsolePath+"/{id}", console.Handler)
+
+	if k.recorder == nil {
+		return
+	}
+	console := observability.NewConsole(k.recorder, k.cfg.Editor)
+	handler := console.Handler
+	if !k.cfg.IsDev() {
+		handler = requireTracingSecret(k.cfg.TracingSecret, handler)
+	}
+	internal.Get(observability.ConsolePath, handler)
+	internal.Get(observability.ConsolePath+"/{id}", handler)
+}
+
+// requireTracingSecret gates the console outside development.
+//
+// It answers 404 rather than 401, because a 401 confirms that the console is
+// there. Somebody scanning for /_arandu/debug learns nothing from a 404 that
+// they did not already know.
+//
+// The comparison is constant-time: a byte-by-byte one leaks the secret to
+// anybody willing to measure, and this secret is the whole gate.
+func requireTracingSecret(secret string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// An empty secret cannot authorize anything. It is also the zero value
+		// of the configuration, so treating it as "no gate" would open the
+		// console for every application that never set one.
+		if secret == "" {
+			http.NotFound(w, r)
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get(observability.TracingHeader)), []byte(secret)) != 1 {
+			http.NotFound(w, r)
+			return
+		}
+		next(w, r)
 	}
 }
 
@@ -183,6 +255,12 @@ func (k *Kernel) Handler() http.Handler {
 func (k *Kernel) Run(ctx context.Context) error {
 	if !k.booted {
 		return errors.New("arandu: Run called before Boot")
+	}
+
+	// The background loops start here rather than at boot, so only the process
+	// that serves runs them. See kernel.Background.
+	if err := k.startBackground(ctx); err != nil {
+		return err
 	}
 
 	k.srv = &http.Server{

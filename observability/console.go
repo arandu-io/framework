@@ -12,6 +12,14 @@ import (
 // ConsolePath is where the console is mounted.
 const ConsolePath = "/_arandu/debug"
 
+// TracingHeader carries the secret that turns tracing on outside development,
+// and that the console requires to answer there.
+//
+// A constant rather than a string in three places: the middleware reads it, the
+// kernel gates on it, and `aru trace` sends it. Three literals is three chances
+// to change one and not the others.
+const TracingHeader = "X-Arandu-Trace"
+
 // Console serves the request inspector at /_arandu/debug.
 //
 // This is the Telescope equivalent, and it is core rather than a package you
@@ -92,11 +100,11 @@ func (c *Console) listData() map[string]any {
 			"Class":    e.StatusClass(),
 			"Duration": ms(e.Duration),
 			"At":       e.At.Format("15:04:05"),
-			"Queries":  len(e.Collector.Queries),
+			"Queries":  e.Collector.QueryCount(),
 			"SQL":      ms(e.Collector.QueryTime()),
 			"NPlusOne": len(e.Collector.SuspectedNPlusOne(c.nPlusOne)) > 0,
 			"Slow":     len(e.Collector.SlowQueries(c.slowQuery)) > 0,
-			"Dumps":    len(e.Collector.Dumps),
+			"Dumps":    len(e.Collector.Dumps()),
 		})
 	}
 	return map[string]any{"Rows": rows, "Empty": len(rows) == 0}
@@ -107,8 +115,8 @@ func (c *Console) detailData(e Recorded) map[string]any {
 	timeline := col.Timeline(e.Duration)
 	repeated := col.SuspectedNPlusOne(c.nPlusOne)
 
-	queries := make([]map[string]any, 0, len(col.Queries))
-	for _, q := range col.Queries {
+	queries := make([]map[string]any, 0, col.QueryCount())
+	for _, q := range col.Queries() {
 		queries = append(queries, map[string]any{
 			"SQL":      collapse(q.SQL),
 			"Args":     preview(q.Args),
@@ -122,8 +130,8 @@ func (c *Console) detailData(e Recorded) map[string]any {
 		})
 	}
 
-	dumps := make([]map[string]any, 0, len(col.Dumps))
-	for _, d := range col.Dumps {
+	dumps := make([]map[string]any, 0, len(col.Dumps()))
+	for _, d := range col.Dumps() {
 		dumps = append(dumps, map[string]any{
 			"Label":  d.Label,
 			"Value":  format(d.Value),
@@ -133,20 +141,20 @@ func (c *Console) detailData(e Recorded) map[string]any {
 		})
 	}
 
-	events := make([]map[string]any, 0, len(col.Events))
-	for _, ev := range col.Events {
+	events := make([]map[string]any, 0, len(col.Events()))
+	for _, ev := range col.Events() {
 		events = append(events, map[string]any{"Name": ev.Name, "Payload": format(ev.Payload), "At": ms(ev.At)})
 	}
 
-	external := make([]map[string]any, 0, len(col.External))
-	for _, x := range col.External {
+	external := make([]map[string]any, 0, len(col.External()))
+	for _, x := range col.External() {
 		external = append(external, map[string]any{
 			"Method": x.Method, "URL": x.URL, "Status": x.Status, "Duration": ms(x.Duration),
 		})
 	}
 
-	renders := make([]map[string]any, 0, len(col.Renders))
-	for _, rr := range col.Renders {
+	renders := make([]map[string]any, 0, len(col.Renders()))
+	for _, rr := range col.Renders() {
 		renders = append(renders, map[string]any{"Name": rr.Name, "Duration": ms(rr.Duration), "At": ms(rr.At)})
 	}
 
@@ -190,11 +198,11 @@ func (c *Console) findings(col *Collector, timeline Timeline) []string {
 			ms(q.Duration), short(q.Caller.File), q.Caller.Line, collapse(q.SQL)))
 	}
 
-	if len(col.Queries) > 0 && timeline.Percent(timeline.SQL) > 60 {
+	if col.QueryCount() > 0 && timeline.Percent(timeline.SQL) > 60 {
 		out = append(out, fmt.Sprintf("%d%% of this request was spent in the database",
 			timeline.Percent(timeline.SQL)))
 	}
-	if len(col.External) > 0 && timeline.Percent(timeline.External) > 40 {
+	if len(col.External()) > 0 && timeline.Percent(timeline.External) > 40 {
 		out = append(out, fmt.Sprintf("%d%% of this request was spent waiting on an outbound call",
 			timeline.Percent(timeline.External)))
 	}
