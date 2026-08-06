@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 )
 
 // ErrForbidden is the only authorization error. Handlers translate it to 403.
@@ -57,6 +58,12 @@ type Grant struct {
 	subject Subject
 	action  Action
 	valid   bool
+	// reason is why an invalid Grant is invalid, when something knew.
+	//
+	// The zero Grant carries none, and its message is the right one for it: a
+	// caller who never authorized anything is told to. A Grant refused by
+	// SystemGrant is a different mistake, and Check says which.
+	reason string
 }
 
 // Authorize runs the policy and, when allowed, issues the Grant.
@@ -77,6 +84,14 @@ func Authorize[T any](ctx context.Context, p Policy[T], s Subject, a Action, res
 // catches copy-paste between repository methods.
 func (g Grant) Check(expected Action) error {
 	if !g.valid {
+		// A refused SystemGrant says why it was refused. It used to fall through
+		// to the message below, which tells the caller to call Authorize -- and
+		// in a job or a scheduled task there is no request to authorize from, so
+		// the advice is impossible to follow and points away from the real
+		// cause, which is the tenant. Found by audit.
+		if g.reason != "" {
+			return fmt.Errorf("%w: %s", ErrForbidden, g.reason)
+		}
 		return fmt.Errorf("%w: missing grant for %s (call security.Authorize first)", ErrForbidden, expected)
 	}
 	if g.action != expected {
@@ -100,9 +115,38 @@ func (g Grant) Action() Action { return g.action }
 // Grant, and the zero Grant fails Check.
 //
 // Every call site is auditable, and `aru doctor --strict` lists them all.
+// tenantName is what a tenant identifier may contain.
+//
+// Closed on purpose. A tenant is concatenated into a storage path, a cache key,
+// a scheduler lock name and a queue key -- so a tenant carrying "/" or ":"
+// collides with another tenant's namespace, and one carrying ".." leaves it.
+//
+// Found by audit: tenant "acme/reports" storing key "q1.pdf" and tenant "acme"
+// storing "reports/q1.pdf" resolved to the same object, each holding a
+// perfectly valid Grant of its own. No Policy was violated -- the path is built
+// after the Policy runs.
+//
+// UUIDs, slugs and numeric ids all pass. Anything that could be read as a
+// separator does not.
+var tenantName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+
+// ValidTenant reports whether a tenant identifier is safe to use as a namespace.
+//
+// Exported because the adapters build keys from it and a second, slightly
+// different definition in each of them is how one of them ends up permissive.
+func ValidTenant(tenant string) bool { return tenantName.MatchString(tenant) }
+
 func SystemGrant(a Action, tenant string) Grant {
-	if tenant == "" {
-		return Grant{}
+	// An invalid tenant produces the zero Grant, which passes no Check -- the
+	// same answer an empty one has always produced, for the same reason: a
+	// tenant that cannot be trusted as a namespace cannot scope anything.
+	if !ValidTenant(tenant) {
+		if tenant == "" {
+			return Grant{reason: fmt.Sprintf(
+				"a system grant for %s was asked for with no tenant. Nothing can be scoped without one, and a query that is not scoped reads every customer. The tenant comes from the job, the task or the row that caused this work", a)}
+		}
+		return Grant{reason: fmt.Sprintf(
+			"a system grant for %s was asked for with the tenant %q, which cannot be one: a tenant is concatenated into a storage path, a cache key and a lock name, so it is limited to letters, digits, - and _, up to 64 characters", a, tenant)}
 	}
 	return Grant{
 		subject: Subject{ID: "system", Tenant: tenant, Roles: []string{"system"}},

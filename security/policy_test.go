@@ -130,3 +130,52 @@ func TestSystemGrantRequiresATenant(t *testing.T) {
 		t.Fatal("a refused system grant must carry no subject at all")
 	}
 }
+
+// TestARefusedSystemGrantSaysWhy is a bug an audit found in the message rather
+// than in the behaviour.
+//
+// SystemGrant refuses an empty or malformed tenant by returning the zero Grant,
+// which is correct. But Check then produced the zero Grant's message -- "call
+// security.Authorize first" -- and in a job or a scheduled task there is no
+// request to authorize from, so the advice is impossible to follow and points
+// away from the actual cause.
+func TestARefusedSystemGrantSaysWhy(t *testing.T) {
+	cases := []struct {
+		what   string
+		tenant string
+		says   string
+	}{
+		{"no tenant at all", "", "with no tenant"},
+		{"a tenant that would escape its namespace", "acme/reports", "cannot be one"},
+		{"a tenant carrying the key separator", "acme:session", "cannot be one"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.what, func(t *testing.T) {
+			g := security.SystemGrant("invoice.send", c.tenant)
+			err := g.Check("invoice.send")
+			if err == nil {
+				t.Fatal("the grant passed Check")
+			}
+			if !errors.Is(err, security.ErrForbidden) {
+				t.Errorf("error = %v, want ErrForbidden", err)
+			}
+			if !strings.Contains(err.Error(), c.says) {
+				t.Errorf("the message does not name the cause:\n%v", err)
+			}
+			if strings.Contains(err.Error(), "security.Authorize") {
+				t.Errorf("the message still sends the reader to Authorize, which a job cannot call:\n%v", err)
+			}
+		})
+	}
+}
+
+// TestTheZeroGrantStillSaysAuthorize: the other message is right for the other
+// mistake, and this keeps the fix above from swallowing it.
+func TestTheZeroGrantStillSaysAuthorize(t *testing.T) {
+	var g security.Grant
+	err := g.Check("invoice.send")
+	if err == nil || !strings.Contains(err.Error(), "security.Authorize") {
+		t.Fatalf("the zero Grant no longer points at Authorize: %v", err)
+	}
+}

@@ -123,3 +123,54 @@ func TestOneTenantCannotBuildAnotherTenantsPath(t *testing.T) {
 		t.Fatal("a key naming another tenant reached that tenant's path")
 	}
 }
+
+// TestATenantCannotBeAPathItself is the hole an audit found: the key was
+// checked and the tenant was not.
+//
+// Tenant "acme/reports" storing "q1.pdf" and tenant "acme" storing
+// "reports/q1.pdf" resolved to the same object, each holding a perfectly valid
+// Grant of its own. No Policy was violated -- the path is built after the
+// Policy runs, which is exactly why this check has to live in Path.
+func TestATenantCannotBeAPathItself(t *testing.T) {
+	for _, tenant := range []string{
+		"acme/reports", // collides with tenant "acme" storing "reports/..."
+		"../../etc",    // leaves the prefix entirely
+		"a:b",          // a separator in kv
+		"a\x00b",       // truncates in every syscall that takes a path
+		"..",
+		"/",
+		"a b",
+	} {
+		if _, err := storage.Path(grant(tenant), "file.pdf"); err == nil {
+			t.Errorf("tenant %q was accepted as a path segment", tenant)
+		}
+	}
+}
+
+// TestTwoTenantsNeverResolveToTheSameObject: the collision itself, written down.
+func TestTwoTenantsNeverResolveToTheSameObject(t *testing.T) {
+	// Both are refused now, but the assertion is about the outcome rather than
+	// the mechanism: if a future change lets one through, this fails.
+	first, errFirst := storage.Path(grant("acme/reports"), "q1.pdf")
+	second, errSecond := storage.Path(grant("acme"), "reports/q1.pdf")
+
+	if errFirst == nil && errSecond == nil && first == second {
+		t.Fatalf("two tenants resolved to the same object: %q", first)
+	}
+}
+
+// TestAnOrdinaryTenantStillWorks: the check has to let through what a real
+// application uses, or people work around it.
+func TestAnOrdinaryTenantStillWorks(t *testing.T) {
+	for _, tenant := range []string{
+		"11111111-1111-4111-8111-111111111111", // a UUID
+		"acme",                                 // a slug
+		"acme-brasil",
+		"tenant_42",
+		"42",
+	} {
+		if _, err := storage.Path(grant(tenant), "file.pdf"); err != nil {
+			t.Errorf("tenant %q was refused: %v", tenant, err)
+		}
+	}
+}

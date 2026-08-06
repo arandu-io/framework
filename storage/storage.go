@@ -15,6 +15,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"path"
 	"strings"
@@ -73,6 +74,17 @@ func Path(g security.Grant, key string) (string, error) {
 	tenant := data.Tenant(g)
 	if tenant == "" {
 		return "", ErrNoTenant
+	}
+	// The key is checked below, and for a long time the tenant was not -- so
+	// tenant "acme/reports" with key "q1.pdf" and tenant "acme" with key
+	// "reports/q1.pdf" resolved to the same object, each holding a valid Grant.
+	// No Policy was violated: the path is built after the Policy runs.
+	//
+	// security.SystemGrant refuses an invalid tenant now, but a Grant built by
+	// Authorize carries whatever the session holds, so the check belongs here
+	// too -- this is the line that turns a tenant into a namespace.
+	if !security.ValidTenant(tenant) {
+		return "", fmt.Errorf("%w: %q cannot be a path segment", ErrNoTenant, tenant)
 	}
 	clean, err := CleanKey(key)
 	if err != nil {
