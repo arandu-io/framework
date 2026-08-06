@@ -45,6 +45,15 @@ type Options struct {
 	Tenants Tenants
 	// Now is the clock, for tests. Nil means time.Now.
 	Now func() time.Time
+	// Recorder receives each finished run, so the task shows on /_arandu/debug
+	// with its queries and its timeline -- exactly like a request.
+	//
+	// Nil means no instrumentation, and that is what production looks like: no
+	// Collector is built and every Record method is a no-op on a nil receiver.
+	// It used to build one on every run and throw it away, so production paid
+	// for recording and the console the doc promised never showed a task. Found
+	// by audit. Pass kernel.Recorder() to turn it on.
+	Recorder *observability.Recorder
 }
 
 // entry is one task with its parsed schedule.
@@ -261,9 +270,14 @@ func (s *Scheduler) execute(ctx context.Context, e *entry, tenant string, at tim
 	// A Collector, so the task shows up on the debug console with its queries
 	// and its timeline. "The nightly task is slow" is the same investigation as
 	// "the page is slow", and it deserves the same page.
+	//
+	// Only when a recorder is wired: see Options.Recorder.
 	id := fmt.Sprintf("%s@%d", e.task.ID, at.Unix())
-	col := observability.NewCollector(id)
-	runCtx = observability.WithCollector(runCtx, col)
+	var col *observability.Collector
+	if s.opts.Recorder != nil {
+		col = observability.NewCollector(id)
+		runCtx = observability.WithCollector(runCtx, col)
+	}
 
 	log := observability.Log(runCtx).With("component", "scheduler", "task", e.task.ID, "tenant", tenant)
 	runCtx = observability.WithLogger(runCtx, log)
@@ -277,6 +291,19 @@ func (s *Scheduler) execute(ctx context.Context, e *entry, tenant string, at tim
 	err := e.task.Run(runCtx, g)
 	duration := time.Since(start)
 
+	if col != nil {
+		// Method and Path name the task rather than a route, so the console
+		// list reads "task billing.nightly" next to "GET /invoices".
+		s.opts.Recorder.Record(observability.Recorded{
+			RequestID: id,
+			Method:    "task",
+			Path:      e.task.ID,
+			Duration:  duration,
+			At:        start,
+			Collector: col,
+		})
+	}
+
 	e.mu.Lock()
 	e.lastRun = at
 	e.lastError = ""
@@ -288,14 +315,14 @@ func (s *Scheduler) execute(ctx context.Context, e *entry, tenant string, at tim
 	if err != nil {
 		log.Error("task failed",
 			"duration_ms", duration.Milliseconds(),
-			"queries", len(col.Queries),
+			"queries", col.QueryCount(),
 			"error", err)
 		return err
 	}
 
 	log.Info("task done",
 		"duration_ms", duration.Milliseconds(),
-		"queries", len(col.Queries),
+		"queries", col.QueryCount(),
 		"sql_ms", col.QueryTime().Milliseconds())
 	return nil
 }
