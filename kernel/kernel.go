@@ -366,13 +366,13 @@ func (k *Kernel) Diagnose(ctx context.Context) []string {
 
 // Routes returns the registered routes. It is empty before Boot, because a
 // module only registers its routes when it boots.
-func (k *Kernel) Routes() []httpx.Route { return k.router.Routes() }
+func (k *Kernel) Routes() []*httpx.Route { return k.router.Routes() }
 
 // FormatRoutes renders the route table for the terminal, grouped by module and
 // sorted by pattern. It is here, and not in the CLI, so that every project
 // prints the same table.
-func FormatRoutes(routes []httpx.Route) string {
-	sorted := append([]httpx.Route{}, routes...)
+func FormatRoutes(routes []*httpx.Route) string {
+	sorted := append([]*httpx.Route{}, routes...)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		if sorted[i].Module != sorted[j].Module {
 			return sorted[i].Module < sorted[j].Module
@@ -390,7 +390,13 @@ func FormatRoutes(routes []httpx.Route) string {
 			module = r.Module
 			fmt.Fprintf(&b, "\n%s\n", module)
 		}
-		fmt.Fprintf(&b, "  %-7s %s\n", r.Method, r.Pattern)
+		// The name column is what `php artisan route:list` shows, and what a
+		// developer copies into route("...") instead of typing the path.
+		if name := r.RouteName(); name != "" {
+			fmt.Fprintf(&b, "  %-7s %-34s %s\n", r.Method, r.Pattern, name)
+		} else {
+			fmt.Fprintf(&b, "  %-7s %s\n", r.Method, r.Pattern)
+		}
 	}
 	if b.Len() == 0 {
 		return "no routes registered\n"

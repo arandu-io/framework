@@ -127,7 +127,7 @@ func TestRoutesMetadataCarriesTheModule(t *testing.T) {
 	if len(routes) != 3 {
 		t.Fatalf("registered %d routes, want 3", len(routes))
 	}
-	byPattern := map[string]httpx.Route{}
+	byPattern := map[string]*httpx.Route{}
 	for _, rt := range routes {
 		byPattern[rt.Method+" "+rt.Pattern] = rt
 	}
