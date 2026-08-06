@@ -1,0 +1,38 @@
+/* The source of the stylesheet, compiled by the tailwindcss standalone binary.
+ *
+ * There is no package.json and no node_modules: the binary is a single file that
+ * the aru CLI downloads and caches, pinned by version, the same way Go handles
+ * its own toolchain. See doc 14 and RULE 13.
+ *
+ * @source tells Tailwind where to look for class names. It scans the .templ
+ * files, which is where the components write them. */
+@import "tailwindcss";
+
+@source "../layout/**/*.templ";
+@source "../components/**/*.templ";
+
+/* Anything a project reuses goes here rather than being repeated across
+ * components. Kept deliberately small: a design system that starts as a
+ * stylesheet ends as a stylesheet nobody can change. */
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
+  /* HTMX swaps content in place, and without this the page jumps to whatever the
+   * browser considers the top. */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* The indicator is how a user knows a request is in flight. HTMX toggles the
+   * class; without a rule for it, every request looks like nothing happened. */
+  .htmx-indicator {
+    opacity: 0;
+    transition: opacity 150ms ease-in;
+  }
+  .htmx-request .htmx-indicator,
+  .htmx-request.htmx-indicator {
+    opacity: 1;
+  }
+}

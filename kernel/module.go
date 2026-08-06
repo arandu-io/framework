@@ -54,6 +54,20 @@ type Background interface {
 	Start(ctx context.Context) error
 }
 
+// RendererProvider is optional: the module supplies the view renderer.
+//
+// The view package implements it. The kernel cannot import that package -- it
+// implements kernel.Module, so the import would be a cycle -- and an
+// application calling a wiring function by hand is a line somebody forgets. An
+// optional interface solves both: the kernel asks every module whether it
+// brings a renderer, before any route is registered.
+//
+// Two modules providing one is a wiring mistake, and the kernel refuses to boot
+// rather than pick one.
+type RendererProvider interface {
+	Renderer() httpx.Renderer
+}
+
 // Closable is optional: implement it to release resources on shutdown.
 type Closable interface {
 	Close(ctx context.Context) error

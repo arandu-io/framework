@@ -116,6 +116,12 @@ func (k *Kernel) Boot(ctx context.Context) error {
 		return errors.New("arandu: kernel already booted")
 	}
 
+	// The renderer is found before any route is registered, because a route is
+	// wired with the renderer its handlers will use. See RendererProvider.
+	if err := k.findRenderer(); err != nil {
+		return err
+	}
+
 	seen := make(map[string]struct{}, len(k.modules))
 	for _, m := range k.modules {
 		name := m.Name()
@@ -141,6 +147,29 @@ func (k *Kernel) Boot(ctx context.Context) error {
 
 	k.mountInternalRoutes()
 	k.booted = true
+	return nil
+}
+
+// findRenderer asks the modules which one brings the view layer.
+func (k *Kernel) findRenderer() error {
+	var found httpx.Renderer
+	var by string
+
+	for _, m := range k.modules {
+		p, ok := m.(RendererProvider)
+		if !ok {
+			continue
+		}
+		if found != nil {
+			return fmt.Errorf("arandu: modules %q and %q both provide a view renderer -- register one", by, m.Name())
+		}
+		found, by = p.Renderer(), m.Name()
+	}
+
+	if found != nil {
+		k.router = k.router.WithRenderer(found)
+		k.log.Debug("view renderer wired", "module", by)
+	}
 	return nil
 }
 
