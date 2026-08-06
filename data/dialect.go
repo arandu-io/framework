@@ -65,24 +65,70 @@ func (d Dialect) Rebind(query string) string {
 	}
 
 	var (
-		b       strings.Builder
-		n       int
-		inQuote bool
+		b strings.Builder
+		n int
 	)
 	b.Grow(len(query) + 8)
 
 	for i := 0; i < len(query); i++ {
 		c := query[i]
 		switch {
-		case c == '\'':
-			// Doubled quotes ('') are an escaped quote inside a literal, and
-			// leave the quoting state unchanged.
-			inQuote = !inQuote
+		case c == '-' && i+1 < len(query) && query[i+1] == '-':
+			// A line comment is copied through untouched.
+			//
+			// It used to be treated as ordinary text, so an apostrophe in prose
+			// opened a string literal that never closed:
+			//
+			//	SELECT id FROM invoice -- don't page this by hand
+			//	WHERE tenant_id = ?
+			//
+			// left the ? unbound, and PostgreSQL answered with a syntax error
+			// about a character position, three lines from the comment that
+			// caused it. splitStatements had already learned this lesson for
+			// semicolons; this had not. Found by audit.
+			for i < len(query) && query[i] != '\n' {
+				b.WriteByte(query[i])
+				i++
+			}
+			if i < len(query) {
+				b.WriteByte('\n')
+			}
+
+		case c == '/' && i+1 < len(query) && query[i+1] == '*':
+			for i < len(query) {
+				b.WriteByte(query[i])
+				if query[i] == '*' && i+1 < len(query) && query[i+1] == '/' {
+					b.WriteByte('/')
+					i++
+					break
+				}
+				i++
+			}
+
+		case c == '\'' || c == '"':
+			// A literal, or a quoted identifier. Neither holds a placeholder.
+			quote := c
 			b.WriteByte(c)
-		case c == '?' && !inQuote:
+			i++
+			for i < len(query) {
+				b.WriteByte(query[i])
+				// Doubling is how SQL escapes a quote inside a literal.
+				if query[i] == quote {
+					if i+1 < len(query) && query[i+1] == quote {
+						b.WriteByte(quote)
+						i++
+					} else {
+						break
+					}
+				}
+				i++
+			}
+
+		case c == '?':
 			n++
 			b.WriteByte('$')
 			b.WriteString(strconv.Itoa(n))
+
 		default:
 			b.WriteByte(c)
 		}

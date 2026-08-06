@@ -88,3 +88,58 @@ func contains(haystack, needle string) bool {
 	}
 	return false
 }
+
+// TestAnApostropheInACommentDoesNotEatThePlaceholder is a bug an audit found,
+// and it is the same one splitStatements had already learned: prose inside SQL
+// is prose, not SQL.
+//
+// The rebinder toggled its "inside a literal" flag on every apostrophe, so one
+// in an English contraction opened a string that never closed -- and every
+// placeholder after it went to PostgreSQL as a literal ?, which answers with a
+// syntax error about a character position, lines away from the comment.
+func TestAnApostropheInACommentDoesNotEatThePlaceholder(t *testing.T) {
+	cases := []struct {
+		what  string
+		query string
+		want  string
+	}{
+		{
+			"an apostrophe in a line comment",
+			"SELECT id FROM invoice -- don't page this by hand\nWHERE tenant_id = ?",
+			"SELECT id FROM invoice -- don't page this by hand\nWHERE tenant_id = $1",
+		},
+		{
+			"an apostrophe in a block comment",
+			"/* it isn't indexed */ SELECT id FROM invoice WHERE tenant_id = ?",
+			"/* it isn't indexed */ SELECT id FROM invoice WHERE tenant_id = $1",
+		},
+		{
+			"a comment at the end, with no newline",
+			"SELECT ? -- that's all",
+			"SELECT $1 -- that's all",
+		},
+		{
+			"a real literal still hides its question mark",
+			"SELECT id FROM t WHERE label = 'why?' AND tenant_id = ?",
+			"SELECT id FROM t WHERE label = 'why?' AND tenant_id = $1",
+		},
+		{
+			"an escaped quote inside a literal",
+			"SELECT id FROM t WHERE label = 'it''s ?' AND tenant_id = ?",
+			"SELECT id FROM t WHERE label = 'it''s ?' AND tenant_id = $1",
+		},
+		{
+			"a quoted identifier",
+			`SELECT "order?" FROM t WHERE tenant_id = ?`,
+			`SELECT "order?" FROM t WHERE tenant_id = $1`,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.what, func(t *testing.T) {
+			if got := data.DialectPostgres.Rebind(c.query); got != c.want {
+				t.Errorf("Rebind\n got: %s\nwant: %s", got, c.want)
+			}
+		})
+	}
+}

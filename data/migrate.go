@@ -10,6 +10,25 @@ import (
 // MigrationsTable is where applied migration ids are recorded.
 const MigrationsTable = "arandu_migrations"
 
+// KeyText is how a text column that takes part in a key is declared.
+//
+// TEXT is the portable spelling for text, and it is the wrong one for anything
+// indexed: MySQL stores TEXT off-page and refuses it in a key without a prefix
+// length, so `id TEXT PRIMARY KEY` fails with "BLOB/TEXT column used in key
+// specification without a key length". That is the first statement `aru
+// migrate` runs, which means MySQL never got past creating the tracking table
+// -- and every project table repeated the same mistake. Found by audit.
+//
+// VARCHAR(255) is accepted by all three: PostgreSQL treats it as varchar,
+// SQLite gives it TEXT affinity because the name contains CHAR, and MySQL
+// indexes it. 255 rather than something tighter so there is one width to
+// remember, and because two of them in a composite index still fit under
+// InnoDB's key limit.
+//
+// The rule: TEXT for free-form content nobody indexes, KeyText for an id, a
+// tenant, or anything a UNIQUE or an index names.
+const KeyText = "VARCHAR(255)"
+
 // Migration is a versioned, immutable-once-published schema change.
 //
 // The id carries its own order -- "2026_07_29_000001_create_users_table" -- for
@@ -199,11 +218,12 @@ func nextBatch(ctx context.Context, db *DB) (int, error) {
 }
 
 func ensureMigrationsTable(ctx context.Context, db *DB) error {
-	// TEXT, INTEGER and TIMESTAMP are the three types every supported database
-	// spells the same way. There is no DEFAULT: the values come from Go, so the
-	// tracking table needs no database function.
+	// INTEGER and TIMESTAMP are spelled the same way by every supported
+	// database, and the key column uses KeyText -- see there for why TEXT is
+	// not portable in a key. There is no DEFAULT: the values come from Go, so
+	// the tracking table needs no database function.
 	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS `+MigrationsTable+` (
-		id         TEXT PRIMARY KEY,
+		id         `+KeyText+` PRIMARY KEY,
 		batch      INTEGER NOT NULL,
 		applied_at TIMESTAMP NOT NULL
 	)`)

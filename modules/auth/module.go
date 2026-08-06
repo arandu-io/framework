@@ -102,9 +102,10 @@ func (m *Module) Migrations() []kernel.Migration {
 	return []kernel.Migration{{
 		ID: "20260729_0001_create_users",
 		Up: `CREATE TABLE users (
-			id          TEXT PRIMARY KEY,
-			tenant_id   TEXT NOT NULL,
-			email       TEXT NOT NULL,
+			id          VARCHAR(255) PRIMARY KEY,
+			-- Indexed, so VARCHAR rather than TEXT: see data.KeyText.
+			tenant_id   VARCHAR(255) NOT NULL,
+			email       VARCHAR(255) NOT NULL,
 			password    TEXT NOT NULL,
 			roles       TEXT NOT NULL,
 			created_at  TIMESTAMP NOT NULL,
