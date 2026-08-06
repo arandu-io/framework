@@ -25,10 +25,10 @@ func TestQueryIsRecordedWithItsOrigin(t *testing.T) {
 	}
 	rows.Close()
 
-	if len(col.Queries) != 1 {
-		t.Fatalf("recorded %d queries, want 1", len(col.Queries))
+	if col.QueryCount() != 1 {
+		t.Fatalf("recorded %d queries, want 1", col.QueryCount())
 	}
-	q := col.Queries[0]
+	q := col.Queries()[0]
 	if !strings.Contains(q.SQL, "FROM users") {
 		t.Fatalf("recorded SQL = %q", q.SQL)
 	}
@@ -57,8 +57,8 @@ func TestExecRecordsAffectedRows(t *testing.T) {
 		t.Fatalf("ExecContext: %v", err)
 	}
 
-	if len(col.Queries) != 1 || col.Queries[0].Rows != 1 {
-		t.Fatalf("recorded = %+v, want one record with Rows=1", col.Queries)
+	if col.QueryCount() != 1 || col.Queries()[0].Rows != 1 {
+		t.Fatalf("recorded = %+v, want one record with Rows=1", col.Queries())
 	}
 }
 
@@ -76,8 +76,8 @@ func TestQueryRecordsTheError(t *testing.T) {
 		t.Fatal("QueryContext succeeded, want the driver error")
 	}
 
-	if len(col.Queries) != 1 || col.Queries[0].Err == nil {
-		t.Fatalf("the failed query must be recorded with its error, got %+v", col.Queries)
+	if col.QueryCount() != 1 || col.Queries()[0].Err == nil {
+		t.Fatalf("the failed query must be recorded with its error, got %+v", col.Queries())
 	}
 }
 

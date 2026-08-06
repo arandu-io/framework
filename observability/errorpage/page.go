@@ -40,7 +40,16 @@ type Options struct {
 }
 
 type viewData struct {
-	Title     string
+	// Title is the headline: what happened, in the words of whatever failed.
+	//
+	// It used to be the Go type of the panic value, so the biggest text on the
+	// page read "*errors.errorString" -- true, and useless. The product's whole
+	// claim is a debug page that names the probable cause; the headline is the
+	// first thing it says. Found by audit.
+	Title string
+	// Kind is the Go type, kept as the subtitle: it matters when the message is
+	// generic, and it is never what somebody reads first.
+	Kind      string
 	Message   string
 	RequestID string
 	Method    string
@@ -58,10 +67,32 @@ type viewData struct {
 	Editor    string
 }
 
+// headline turns whatever was panicked with into one line somebody can read.
+//
+// The first line only, and bounded: a panic value carrying a stack trace or a
+// serialized payload would otherwise push everything else off the screen.
+func headline(v any) string {
+	text := strings.TrimSpace(fmt.Sprint(v))
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		text = strings.TrimSpace(text[:i])
+	}
+	if text == "" {
+		// Something was panicked with that prints as nothing. The type is all
+		// there is, and it beats an empty headline.
+		return fmt.Sprintf("%T", v)
+	}
+	const limit = 140
+	if len(text) > limit {
+		return text[:limit] + "..."
+	}
+	return text
+}
+
 // Render draws the full error page.
 func Render(w http.ResponseWriter, r *http.Request, panicValue any, col *observability.Collector, opts Options) {
 	d := viewData{
-		Title:   fmt.Sprintf("%T", panicValue),
+		Title:   headline(panicValue),
+		Kind:    fmt.Sprintf("%T", panicValue),
 		Message: fmt.Sprint(panicValue),
 		Method:  r.Method,
 		Path:    r.URL.Path,
@@ -71,7 +102,7 @@ func Render(w http.ResponseWriter, r *http.Request, panicValue any, col *observa
 	}
 	if col != nil {
 		d.RequestID = col.RequestID
-		d.Queries, d.Dumps, d.Events, d.External = col.Queries, col.Dumps, col.Events, col.External
+		d.Queries, d.Dumps, d.Events, d.External = col.Queries(), col.Dumps(), col.Events(), col.External()
 		d.NPlusOne = col.SuspectedNPlusOne(nPlusOneThreshold)
 		d.Elapsed = time.Since(col.Start)
 		d.QueryTime = col.QueryTime()
@@ -89,9 +120,9 @@ func Render(w http.ResponseWriter, r *http.Request, panicValue any, col *observa
 // RenderDump draws the dump page, for the DumpDie flow. It answers 200: the
 // request was aborted on purpose, not by a failure.
 func RenderDump(w http.ResponseWriter, r *http.Request, col *observability.Collector, opts Options) {
-	d := viewData{Title: "Dump", Method: r.Method, Path: r.URL.Path, Editor: opts.Editor}
+	d := viewData{Title: "Dump", Kind: "dump", Method: r.Method, Path: r.URL.Path, Editor: opts.Editor}
 	if col != nil {
-		d.RequestID, d.Dumps, d.Queries = col.RequestID, col.Dumps, col.Queries
+		d.RequestID, d.Dumps, d.Queries = col.RequestID, col.Dumps(), col.Queries()
 		d.Elapsed = time.Since(col.Start)
 		d.QueryTime = col.QueryTime()
 	}
@@ -200,7 +231,7 @@ th{color:var(--dim);font-weight:500}
 .err{color:var(--red)}
 </style></head><body>
 <header>
-  <h1>{{.Title}} <span>— arandu debug (development only)</span></h1>
+  <h1>{{.Title}} <span>{{if .Kind}}{{.Kind}} — {{end}}arandu debug (development only)</span></h1>
   <div class="msg">{{.Message}}</div>
   <div class="meta">{{.Method}} {{.Path}} · request_id {{.RequestID}} · {{.Elapsed}} total · {{.QueryTime}} in SQL · {{len .Queries}} queries</div>
 </header>

@@ -43,10 +43,10 @@ func TestRecordQueryCapturesEverything(t *testing.T) {
 	failure := errors.New("deadlock detected")
 	col.RecordQuery("SELECT 1", []any{1, "two"}, 5*time.Millisecond, 3, failure)
 
-	if len(col.Queries) != 1 {
-		t.Fatalf("recorded %d queries, want 1", len(col.Queries))
+	if col.QueryCount() != 1 {
+		t.Fatalf("recorded %d queries, want 1", col.QueryCount())
 	}
-	q := col.Queries[0]
+	q := col.Queries()[0]
 	if q.SQL != "SELECT 1" || q.Rows != 3 || q.Duration != 5*time.Millisecond || !errors.Is(q.Err, failure) {
 		t.Fatalf("record = %+v", q)
 	}
@@ -96,10 +96,10 @@ func TestDumpRecordsOriginAndOffset(t *testing.T) {
 
 	observability.Dump(ctx, "payload", map[string]int{"n": 1})
 
-	if len(col.Dumps) != 1 {
-		t.Fatalf("recorded %d dumps, want 1", len(col.Dumps))
+	if len(col.Dumps()) != 1 {
+		t.Fatalf("recorded %d dumps, want 1", len(col.Dumps()))
 	}
-	d := col.Dumps[0]
+	d := col.Dumps()[0]
 	if d.Label != "payload" {
 		t.Fatalf("label = %q", d.Label)
 	}
@@ -123,8 +123,8 @@ func TestDumpDiePanicsWithTheRecognizedSentinel(t *testing.T) {
 		if !observability.IsDumpDie(v) {
 			t.Fatalf("panic value = %v, which Recover would treat as a real 500", v)
 		}
-		if len(col.Dumps) != 1 {
-			t.Fatalf("DumpDie must record the value before aborting, got %d dumps", len(col.Dumps))
+		if len(col.Dumps()) != 1 {
+			t.Fatalf("DumpDie must record the value before aborting, got %d dumps", len(col.Dumps()))
 		}
 	}()
 
@@ -154,7 +154,54 @@ func TestConcurrentRecordingIsSafe(t *testing.T) {
 		<-done
 	}
 
-	if len(col.Queries) != 8 || len(col.Events) != 8 {
-		t.Fatalf("queries = %d, events = %d, want 8 each", len(col.Queries), len(col.Events))
+	if col.QueryCount() != 8 || len(col.Events()) != 8 {
+		t.Fatalf("queries = %d, events = %d, want 8 each", col.QueryCount(), len(col.Events()))
+	}
+}
+
+// TestEveryCollectorMethodIsSafeToCall exists because of a deadlock introduced
+// while fixing a race.
+//
+// The slices became unexported with accessors that copy under the lock, and one
+// method that already held the lock was rewritten to call an accessor. A
+// sync.Mutex is not reentrant, so the process stopped -- and it stopped in the
+// console, which is the one page somebody opens when something is already wrong.
+//
+// Calling every exported method on a populated collector would have caught it in
+// a second: a deadlock fails as a test timeout. This is that second.
+func TestEveryCollectorMethodIsSafeToCall(t *testing.T) {
+	col := observability.NewCollector("req-1")
+	col.RecordQuery("SELECT 1", nil, time.Millisecond, 1, nil)
+	col.RecordQuery("SELECT 1", nil, time.Millisecond, 1, nil)
+	col.RecordEvent("invoice.paid", nil)
+	col.RecordExternal("GET", "https://example.test", 200, time.Millisecond)
+	col.RecordRender("invoice/show", time.Millisecond)
+	observability.Dump(observability.WithCollector(context.Background(), col), "label", 1)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = col.Queries()
+		_ = col.Dumps()
+		_ = col.Events()
+		_ = col.External()
+		_ = col.Renders()
+		_ = col.QueryCount()
+		_ = col.QueryTime()
+		_ = col.SlowQueries(0)
+		_ = col.SuspectedNPlusOne(2)
+		_ = col.Timeline(time.Second)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a Collector method did not return: something took the lock it already held")
+	}
+
+	// And the same on a nil receiver, which is what production is.
+	var none *observability.Collector
+	if none.QueryCount() != 0 || none.QueryTime() != 0 || none.Queries() != nil || none.Timeline(time.Second).Total != time.Second {
+		t.Error("a nil Collector is not a no-op")
 	}
 }

@@ -17,7 +17,7 @@ func Dump(ctx context.Context, label string, value any) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Dumps = append(c.Dumps, DumpRecord{
+	c.dumps = append(c.dumps, DumpRecord{
 		Label:  label,
 		Value:  value,
 		Caller: caller(2),

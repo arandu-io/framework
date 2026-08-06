@@ -157,14 +157,17 @@ func (c *Collector) Timeline(total time.Duration) Timeline {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// The unexported slices, not the accessors: sync.Mutex is not reentrant, and
+	// an accessor called from inside the lock deadlocks the process. Every
+	// method that already holds the lock reads the fields directly.
 	t := Timeline{Total: total}
-	for _, q := range c.Queries {
+	for _, q := range c.queries {
 		t.SQL += q.Duration
 	}
-	for _, r := range c.Renders {
+	for _, r := range c.renders {
 		t.Render += r.Duration
 	}
-	for _, e := range c.External {
+	for _, e := range c.external {
 		t.External += e.Duration
 	}
 

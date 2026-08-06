@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Errors maps a field to its messages. It serializes straight into the HTMX
@@ -93,5 +94,32 @@ func Email(e Errors, field, value string) {
 	at := strings.IndexByte(value, '@')
 	if at <= 0 || at == len(value)-1 || !strings.Contains(value[at:], ".") {
 		e.Add(field, "is not a valid email address")
+	}
+}
+
+// NotZero reports a value that was never filled in.
+//
+// It is Required for everything that is not text. Required takes a string and
+// the generator used to hand it a literal "" for an int, a date or an amount --
+// so every required field of those types failed validation with "is required"
+// no matter what was sent, and the generated create endpoint could not be used
+// at all. Found by audit.
+//
+// A time.Time is asked rather than compared: a parsed "0001-01-01T00:00:00Z"
+// carries a location the zero value does not, so == says they differ when they
+// do not.
+//
+// Bool has no meaningful zero to reject -- false is an answer, not an absence --
+// and the specification refuses `required` on a bool for that reason.
+func NotZero[T comparable](e Errors, field string, value T) {
+	if t, ok := any(value).(time.Time); ok {
+		if t.IsZero() {
+			e.Add(field, "is required")
+		}
+		return
+	}
+	var zero T
+	if value == zero {
+		e.Add(field, "is required")
 	}
 }

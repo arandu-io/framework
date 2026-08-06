@@ -67,11 +67,16 @@ type Collector struct {
 	Start     time.Time
 	RequestID string
 
-	Queries  []QueryRecord
-	Dumps    []DumpRecord
-	Events   []EventRecord
-	External []ExternalRecord
-	Renders  []RenderRecord
+	// The slices are unexported and reachable only through the accessors below,
+	// which copy under the lock. They used to be exported and read directly by
+	// the console, the recorder, the worker and the scheduler -- every one of
+	// those reads raced against a goroutine the handler had started and not
+	// waited for, and the race detector says so. Found by audit.
+	queries  []QueryRecord
+	dumps    []DumpRecord
+	events   []EventRecord
+	external []ExternalRecord
+	renders  []RenderRecord
 }
 
 // QueryRecord is one database call, with the file and line that issued it --
@@ -160,7 +165,7 @@ func (c *Collector) RecordQuery(sql string, args []any, d time.Duration, rows in
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Queries = append(c.Queries, QueryRecord{
+	c.queries = append(c.queries, QueryRecord{
 		SQL: sql, Args: args, Duration: d, Rows: rows, Err: err, Caller: caller(3),
 	})
 }
@@ -172,7 +177,7 @@ func (c *Collector) RecordEvent(name string, payload any) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Events = append(c.Events, EventRecord{Name: name, Payload: payload, At: time.Since(c.Start)})
+	c.events = append(c.events, EventRecord{Name: name, Payload: payload, At: time.Since(c.Start)})
 }
 
 // RecordExternal stores one outbound HTTP call.
@@ -182,7 +187,7 @@ func (c *Collector) RecordExternal(method, url string, status int, d time.Durati
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.External = append(c.External, ExternalRecord{Method: method, URL: url, Status: status, Duration: d})
+	c.external = append(c.external, ExternalRecord{Method: method, URL: url, Status: status, Duration: d})
 }
 
 // RecordRender stores one template render.
@@ -196,7 +201,7 @@ func (c *Collector) RecordRender(name string, d time.Duration) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Renders = append(c.Renders, RenderRecord{Name: name, Duration: d, At: time.Since(c.Start)})
+	c.renders = append(c.renders, RenderRecord{Name: name, Duration: d, At: time.Since(c.Start)})
 }
 
 // SlowQueries returns the queries at or above the limit. It feeds the "slow
@@ -208,7 +213,7 @@ func (c *Collector) SlowQueries(limit time.Duration) []QueryRecord {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var out []QueryRecord
-	for _, q := range c.Queries {
+	for _, q := range c.queries {
 		if q.Duration >= limit {
 			out = append(out, q)
 		}
@@ -226,7 +231,7 @@ func (c *Collector) SuspectedNPlusOne(threshold int) map[string]int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	count := map[string]int{}
-	for _, q := range c.Queries {
+	for _, q := range c.queries {
 		count[q.SQL]++
 	}
 	for sql, n := range count {
@@ -245,10 +250,78 @@ func (c *Collector) QueryTime() time.Duration {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var total time.Duration
-	for _, q := range c.Queries {
+	for _, q := range c.queries {
 		total += q.Duration
 	}
 	return total
+}
+
+// Queries returns a copy of the recorded database calls.
+//
+// A copy, and under the lock: the caller is usually the console rendering a
+// request that has already finished, but a handler that started a goroutine and
+// did not wait for it is still writing. Handing out the slice would hand out a
+// race.
+func (c *Collector) Queries() []QueryRecord {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]QueryRecord(nil), c.queries...)
+}
+
+// Dumps returns a copy of the recorded dumps.
+func (c *Collector) Dumps() []DumpRecord {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]DumpRecord(nil), c.dumps...)
+}
+
+// Events returns a copy of the recorded application events.
+func (c *Collector) Events() []EventRecord {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]EventRecord(nil), c.events...)
+}
+
+// External returns a copy of the recorded outbound HTTP calls.
+func (c *Collector) External() []ExternalRecord {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]ExternalRecord(nil), c.external...)
+}
+
+// Renders returns a copy of the recorded template renders.
+func (c *Collector) Renders() []RenderRecord {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]RenderRecord(nil), c.renders...)
+}
+
+// QueryCount is how many database calls the request made.
+//
+// It exists so the common case -- a log line saying how many -- does not copy
+// the whole slice to call len on it.
+func (c *Collector) QueryCount() int {
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.queries)
 }
 
 func caller(skip int) Frame {

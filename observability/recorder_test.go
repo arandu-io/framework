@@ -213,7 +213,7 @@ func TestTheQueryErrorSurvives(t *testing.T) {
 	c := observability.NewCollector("req-1")
 	c.RecordQuery("SELECT 1", nil, time.Millisecond, 0, errors.New("no such table: customer"))
 
-	if len(c.Queries) != 1 || c.Queries[0].Err == nil {
+	if c.QueryCount() != 1 || c.Queries()[0].Err == nil {
 		t.Fatal("the query error was not recorded")
 	}
 }

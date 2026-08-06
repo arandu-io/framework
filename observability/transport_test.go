@@ -32,10 +32,10 @@ func TestTheOutboundCallReachesTheTimeline(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	if len(col.External) != 1 {
-		t.Fatalf("%d outbound calls recorded, want 1", len(col.External))
+	if len(col.External()) != 1 {
+		t.Fatalf("%d outbound calls recorded, want 1", len(col.External()))
 	}
-	call := col.External[0]
+	call := col.External()[0]
 	if call.Method != http.MethodGet || call.Status != http.StatusTeapot {
 		t.Errorf("recorded %+v", call)
 	}
@@ -65,7 +65,7 @@ func TestTheQueryStringIsNotRecorded(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	if got := col.External[0].URL; strings.Contains(got, "s3cret") || strings.Contains(got, "?") {
+	if got := col.External()[0].URL; strings.Contains(got, "s3cret") || strings.Contains(got, "?") {
 		t.Errorf("the query string reached the console: %q", got)
 	}
 }
@@ -83,11 +83,11 @@ func TestAFailedCallIsStillRecorded(t *testing.T) {
 		t.Fatal("connecting to nothing succeeded")
 	}
 
-	if len(col.External) != 1 {
+	if len(col.External()) != 1 {
 		t.Fatalf("a failed call was not recorded")
 	}
-	if col.External[0].Status != 0 {
-		t.Errorf("status = %d, want 0 for a call that never got a response", col.External[0].Status)
+	if col.External()[0].Status != 0 {
+		t.Errorf("status = %d, want 0 for a call that never got a response", col.External()[0].Status)
 	}
 }
 
