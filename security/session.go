@@ -34,6 +34,15 @@ var (
 // single instance. The redis adapter provides the distributed store with active
 // invalidation; see docs/05-repositorios.md.
 type SessionBackend interface {
+	// Get returns the subject, or ErrSessionExpired when the backend does not
+	// hold the id -- expired, evicted, or destroyed by a logout elsewhere.
+	//
+	// ErrSessionExpired specifically, not the backend's own not-found error.
+	// Callers branch on it to send somebody back to the login page, and a
+	// backend that returns something else makes swapping the store change the
+	// behaviour of the application. Found by audit: the kv backend returned its
+	// own kv.ErrNotFound, so an expired session in Redis fell through to the
+	// generic error path that a single-instance deployment never reached.
 	Get(ctx context.Context, id string) (Subject, error)
 	Put(ctx context.Context, id string, s Subject, ttl time.Duration) error
 	Delete(ctx context.Context, id string) error

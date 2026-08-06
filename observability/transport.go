@@ -46,9 +46,16 @@ func (t roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	if resp != nil {
 		status = resp.StatusCode
 	}
-	// A URL can carry a token in the query string, and the console is a page
-	// somebody screenshots. The path stays; the query does not.
-	FromContext(r.Context()).RecordExternal(r.Method, redactURL(r), status, time.Since(start))
+	// The nil check comes first. RecordExternal is a no-op on a nil Collector,
+	// which is what production is -- but the arguments are evaluated before the
+	// call, so redactURL built and formatted a URL on every outbound request
+	// that nothing would ever read. "Zero cost, not low cost" is the claim in
+	// the Collector's own doc comment. Found by audit.
+	if col := FromContext(r.Context()); col != nil {
+		// A URL can carry a token in the query string, and the console is a page
+		// somebody screenshots. The path stays; the query does not.
+		col.RecordExternal(r.Method, redactURL(r), status, time.Since(start))
+	}
 
 	return resp, err
 }

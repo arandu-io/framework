@@ -236,13 +236,23 @@ func TestRecordingCostsNothingWithTracingOff(t *testing.T) {
 	// The arguments exist beforehand, which is what the real path does:
 	// data.DB passes the same slice it just handed to the driver.
 	args := []any{"c-1"}
-	payload := map[string]any{"id": "c-1"}
+	// A struct value, not a map. This test used to pass a map[string]any, which
+	// is already a reference and boxes into an interface for free -- so it
+	// proved nothing about the call the generated service actually makes, which
+	// passes the entity by value. Converting a struct value to `any` allocates
+	// at the call site, before the nil receiver is ever reached. The test was
+	// written around the one case that costs. Found by audit.
+	entity := customer{ID: "c-1", Name: "Acme", Balance: 100}
 
 	allocs := testing.AllocsPerRun(200, func() {
 		col.RecordQuery("SELECT * FROM invoice WHERE customer_id = ?", args, time.Millisecond, 1, nil)
-		col.RecordEvent("customer.created", payload)
 		col.RecordExternal("GET", "https://api.example/rates", 200, time.Millisecond)
 		col.RecordRender("customer/list.templ", time.Millisecond)
+		// Guarded, which is what the doc comment on RecordEvent asks for and
+		// what the generated service does. See the test below for why.
+		if col != nil {
+			col.RecordEvent("customer.created", entity)
+		}
 	})
 
 	if allocs != 0 {
@@ -264,4 +274,44 @@ func TestReadingCostsNothingWithTracingOff(t *testing.T) {
 	if allocs != 0 {
 		t.Fatalf("reading with tracing off allocated %v times per run, want 0", allocs)
 	}
+}
+
+// TestAnUnguardedEventCostsOneAllocation records why the guard exists, so
+// nobody removes it as noise.
+//
+// RecordEvent is a no-op on a nil Collector, which reads like it costs nothing.
+// It does not: converting a struct value to `any` allocates at the CALL SITE,
+// before the receiver is ever looked at. In production, where nothing will read
+// it, that is one heap allocation per event.
+//
+// The measurement used to pass a map[string]any, which is already a reference
+// and boxes for free -- so it proved nothing about the call the generated
+// service actually makes. Found by audit.
+func TestAnUnguardedEventCostsOneAllocation(t *testing.T) {
+	var col *observability.Collector
+	entity := customer{ID: "c-1", Name: "Acme", Balance: 100}
+
+	unguarded := testing.AllocsPerRun(200, func() {
+		col.RecordEvent("customer.created", entity)
+	})
+	if unguarded == 0 {
+		t.Skip("the compiler stopped boxing this value; the guard costs nothing either way")
+	}
+
+	guarded := testing.AllocsPerRun(200, func() {
+		if col != nil {
+			col.RecordEvent("customer.created", entity)
+		}
+	})
+	if guarded != 0 {
+		t.Errorf("the guarded form still allocated %v times per run", guarded)
+	}
+}
+
+// customer is an entity by value, which is the shape a generated service
+// records. See TestRecordingCostsNothingWithTracingOff.
+type customer struct {
+	ID      string
+	Name    string
+	Balance int64
 }

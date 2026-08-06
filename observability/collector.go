@@ -171,6 +171,18 @@ func (c *Collector) RecordQuery(sql string, args []any, d time.Duration, rows in
 }
 
 // RecordEvent stores one application event.
+//
+// Guard the call when the payload is a struct value:
+//
+//	if col := observability.FromContext(ctx); col != nil {
+//	    col.RecordEvent("invoice.paid", invoice)
+//	}
+//
+// This method is a no-op on a nil receiver, but converting a struct value to
+// `any` allocates at the CALL SITE, before the receiver is ever looked at. So
+// the unguarded form costs one heap allocation per event in production, where
+// nothing will ever read it. A payload that is already a pointer, a map or a
+// string boxes for free and needs no guard.
 func (c *Collector) RecordEvent(name string, payload any) {
 	if c == nil {
 		return

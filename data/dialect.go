@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Dialect is the SQL flavour of a connection.
@@ -134,4 +135,25 @@ func (d Dialect) Rebind(query string) string {
 		}
 	}
 	return b.String()
+}
+
+// Day truncates a time to midnight UTC, which is what a date column means.
+//
+// It exists because DATE is the one type in the portable subset that the three
+// engines do not agree about. PostgreSQL drops the time part on write, so the
+// value read back differs from the one written. SQLite gives DATE numeric
+// affinity and stores whatever the driver sends, time and zone included -- so
+// the same code, on the same day, returns different values depending on the
+// engine, and a comparison between two dates is true on one and false on the
+// other. Found by audit.
+//
+// Normalizing on the way in makes the engines agree: what SQLite stores is what
+// PostgreSQL would have stored anyway. `aru make:module` emits it for every
+// field declared as a date.
+func Day(t time.Time) time.Time {
+	if t.IsZero() {
+		return t
+	}
+	utc := t.UTC()
+	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
 }

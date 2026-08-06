@@ -98,7 +98,12 @@ func (s *Service) CreateUser(ctx context.Context, actor security.Subject, in Cre
 	if err != nil {
 		return User{}, err
 	}
-	observability.FromContext(ctx).RecordEvent("auth.user.created", created)
+	// Guarded: created is a struct value, and boxing it into `any` allocates at
+	// the call site even though the method is a no-op on a nil Collector. See
+	// Collector.RecordEvent.
+	if col := observability.FromContext(ctx); col != nil {
+		col.RecordEvent("auth.user.created", created)
+	}
 	return created, nil
 }
 
