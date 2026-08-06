@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/arandu-io/framework/observability"
@@ -26,6 +27,18 @@ type WorkerOptions struct {
 	// MaxAttempts is how many failures a job gets before it is parked.
 	// Default 5.
 	MaxAttempts int
+	// Recorder receives each finished job, so it shows on /_arandu/debug with
+	// its queries and its timeline -- exactly like a request.
+	//
+	// Nil means no instrumentation, and that is what production looks like: no
+	// Collector is built, FromContext returns nil, and every Record method is a
+	// no-op on a nil receiver. Zero cost, not low cost.
+	//
+	// It used to build a Collector on every job unconditionally and then throw
+	// it away -- so production paid for recording every query with its bound
+	// arguments and its caller frames, and nobody could read any of it. Found by
+	// audit. Pass kernel.Recorder() to turn it on.
+	Recorder *observability.Recorder
 	// Backoff returns how long to wait before attempt n. Default is
 	// exponential, capped at an hour.
 	Backoff func(attempt int) time.Duration
@@ -144,15 +157,30 @@ func (w *Worker) Run(ctx context.Context) error {
 			continue
 		}
 
-		// Sequential within a batch rather than one goroutine per job: the
-		// batch is already sized by Concurrency, and running them in parallel
-		// here would multiply that by itself.
+		// The batch runs in parallel, because the lease was taken for all of it
+		// at once.
+		//
+		// It used to run serially, which made Concurrency a lie in the one way
+		// that costs data: Reserve hid all n jobs for the same Lease, so with
+		// Concurrency 4, Lease 5m and a two-minute handler, the fourth job
+		// started at minute six -- past its own lease, already visible to
+		// another worker, and running in both. At-least-once turned into
+		// exactly-twice for the tail of every batch. Found by audit.
+		//
+		// The batch is sized by Concurrency, so running all of it at once is
+		// exactly Concurrency jobs in flight, not Concurrency squared.
+		var wg sync.WaitGroup
 		for _, j := range reserved {
 			if ctx.Err() != nil {
-				return nil
+				break
 			}
-			w.runOne(ctx, j)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				w.runOne(ctx, j)
+			}()
 		}
+		wg.Wait()
 	}
 }
 
@@ -165,8 +193,7 @@ func (w *Worker) wait(ctx context.Context) bool {
 	}
 }
 
-// runOne executes a job with its own Collector, so it shows up on the console
-// with its queries and its timeline -- exactly like a request.
+// runOne executes a job, instrumented when there is somewhere to send it.
 //
 // That is the point of instrumenting it: "the nightly job is slow" is the same
 // investigation as "the page is slow", and it deserves the same page.
@@ -184,8 +211,12 @@ func (w *Worker) runOne(ctx context.Context, j Job) {
 	jobCtx, cancel := context.WithTimeout(ctx, w.opts.Lease)
 	defer cancel()
 
-	col := observability.NewCollector(j.ID)
-	jobCtx = observability.WithCollector(jobCtx, col)
+	// Only when a recorder is wired. See WorkerOptions.Recorder.
+	var col *observability.Collector
+	if w.opts.Recorder != nil {
+		col = observability.NewCollector(j.ID)
+		jobCtx = observability.WithCollector(jobCtx, col)
+	}
 	log := observability.Log(jobCtx).With("job", j.Name, "job_id", j.ID, "tenant", j.TenantID)
 	jobCtx = observability.WithLogger(jobCtx, log)
 
@@ -193,8 +224,29 @@ func (w *Worker) runOne(ctx context.Context, j Job) {
 	err := handler.Handle(jobCtx, GrantFor(j), j)
 	duration := time.Since(start)
 
+	if col != nil {
+		// Method and Path name the job rather than a route, so the console list
+		// reads "job invoice.send" next to "GET /invoices".
+		w.opts.Recorder.Record(observability.Recorded{
+			RequestID: j.ID,
+			Method:    "job",
+			Path:      j.Name,
+			Duration:  duration,
+			At:        start,
+			Collector: col,
+		})
+	}
+
 	if err != nil {
-		attempts := j.Attempts + 1
+		// Attempts already counts this delivery -- Reserve incremented it. Adding
+		// one here counted it twice, so MaxAttempts of N delivered N-1 times and
+		// MaxAttempts of 2 parked on the first failure with no retry at all.
+		// Found by audit; the in-memory queue used by the worker tests did not
+		// increment, which is why it never showed up here.
+		attempts := j.Attempts
+		if attempts < 1 {
+			attempts = 1
+		}
 		park := attempts >= w.opts.MaxAttempts
 		retryAt := time.Now().Add(w.opts.Backoff(attempts))
 
@@ -219,6 +271,6 @@ func (w *Worker) runOne(ctx context.Context, j Job) {
 
 	log.Info("job done",
 		"duration_ms", duration.Milliseconds(),
-		"queries", len(col.Queries),
+		"queries", col.QueryCount(),
 		"sql_ms", col.QueryTime().Milliseconds())
 }

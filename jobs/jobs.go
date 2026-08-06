@@ -52,8 +52,9 @@ type Job struct {
 	Action       string
 	// RunAt is when it becomes eligible. Zero means now.
 	RunAt time.Time
-	// Attempts counts the deliveries so far, and LastError is why the most
-	// recent one failed. Stored rather than logged, because the thing anyone
+	// Attempts counts the deliveries INCLUDING the current one: a job being
+	// handled for the first time has Attempts == 1. LastError is why the most
+	// recent one failed -- stored rather than logged, because the thing anyone
 	// needs at 3am is "this failed twelve times with this message".
 	Attempts  int
 	LastError string
@@ -95,6 +96,12 @@ type Queue interface {
 	// Reserve takes up to n jobs off a queue and hides them for the lease.
 	// Jobs whose lease expires become visible again -- which is what makes a
 	// worker crash recoverable and delivery at-least-once.
+	//
+	// The returned jobs carry Attempts INCLUDING this delivery: a job handed
+	// over for the first time has Attempts == 1. A driver that returns the
+	// count from before the delivery makes the worker park a job one attempt
+	// early, and with MaxAttempts of 2 it parks on the first failure and never
+	// retries at all.
 	Reserve(ctx context.Context, queue string, n int, lease time.Duration) ([]Job, error)
 	// Ack removes a finished job.
 	Ack(ctx context.Context, j Job) error
@@ -168,3 +175,45 @@ func New(g security.Grant, queue, name string, payload any) (Job, error) {
 func GrantFor(j Job) security.Grant {
 	return security.SystemGrant(security.Action(j.Action), j.TenantID)
 }
+
+// Authorized reports whether a job may be pushed under this Grant.
+//
+// Every driver calls it at the top of Push, and it closes an escalation the
+// contract otherwise allows. New builds a job from the Grant, so what it
+// produces always matches -- but Push takes a Job, and a Job is a struct anybody
+// can fill in:
+//
+//	j := jobs.Job{ID: id, Name: "invoice.send", Action: "invoice.delete", TenantID: other}
+//	queue.Push(ctx, viewGrant, j)
+//
+// The worker rebuilds the Grant from the row -- GrantFor gives
+// SystemGrant(j.Action, j.TenantID) -- so the handler would run with an action
+// nobody authorized, in a tenant nobody authorized, and every Policy downstream
+// would say yes because the Grant looks legitimate. The queue would be the one
+// way past the authorization the whole framework exists to enforce. Found by
+// audit.
+//
+// Checked here rather than in each driver, because a driver that forgets is a
+// driver that reopens it.
+func Authorized(g security.Grant, j Job) error {
+	tenant := data.Tenant(g)
+	if tenant == "" {
+		return ErrNoTenant
+	}
+	if j.Name == "" {
+		return ErrNoName
+	}
+	if j.TenantID != "" && j.TenantID != tenant {
+		return fmt.Errorf("%w: the job says %q and the Grant says %q",
+			ErrForged, j.TenantID, tenant)
+	}
+	if j.Action != "" && j.Action != string(g.Action()) {
+		return fmt.Errorf("%w: the job says %q and the Grant authorizes %q. Build it with jobs.New, which takes both from the Grant",
+			ErrForged, j.Action, g.Action())
+	}
+	return nil
+}
+
+// ErrForged is returned when a job claims an action or a tenant the Grant
+// pushing it does not carry.
+var ErrForged = errors.New("jobs: the job does not match the Grant pushing it")

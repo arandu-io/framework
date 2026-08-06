@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/arandu-io/framework/jobs"
+	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
 )
 
@@ -153,7 +154,13 @@ func (q *fakeQueue) Reserve(_ context.Context, _ string, n int, _ time.Duration)
 	if n > len(q.ready) {
 		n = len(q.ready)
 	}
-	out := q.ready[:n]
+	out := make([]jobs.Job, 0, n)
+	for _, j := range q.ready[:n] {
+		// Like the real drivers: the delivery is counted when the job is
+		// handed over, so Attempts includes this one.
+		j.Attempts++
+		out = append(out, j)
+	}
 	q.ready = q.ready[n:]
 	return out, nil
 }
@@ -319,4 +326,148 @@ func waitFor(t *testing.T, cond func() bool, message string) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	t.Fatal(message)
+}
+
+// TestTheBatchRunsInParallel is a bug an audit found.
+//
+// Reserve hides the whole batch for one Lease, and the batch used to run one
+// job at a time. With Concurrency 4, Lease 5m and a two-minute handler, the
+// fourth job started at minute six -- past its own lease, visible again to
+// another worker, and running in both. At-least-once became exactly-twice for
+// the tail of every batch.
+//
+// The handler here waits for all four to arrive. Serially, none of them ever
+// does, and the test times out instead of passing slowly.
+func TestTheBatchRunsInParallel(t *testing.T) {
+	const batch = 4
+
+	q := &fakeQueue{}
+	for range batch {
+		j, err := jobs.New(grant(), "", "slow.thing", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := q.Push(context.Background(), grant(), j); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	arrived := make(chan struct{}, batch)
+	release := make(chan struct{})
+
+	w := jobs.NewWorker(q, jobs.WorkerOptions{
+		Concurrency: batch,
+		Poll:        time.Millisecond,
+	})
+	w.HandleFunc("slow.thing", func(ctx context.Context, _ security.Grant, _ jobs.Job) error {
+		arrived <- struct{}{}
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+
+	ctx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	for i := range batch {
+		select {
+		case <-arrived:
+		case <-ctx.Done():
+			t.Fatalf("only %d of %d jobs in the batch were running at once", i, batch)
+		}
+	}
+	close(release)
+	stop()
+	<-done
+}
+
+// TestProductionBuildsNoCollector is the promise in the Collector's own doc
+// comment: "zero cost, not low cost".
+//
+// The worker built one on every job and threw it away, so production paid to
+// record every query with its bound arguments and its caller frames, and nobody
+// could read any of it. The allocation is the symptom; retaining the arguments
+// of every statement is the cost that matters.
+func TestProductionBuildsNoCollector(t *testing.T) {
+	q := &fakeQueue{}
+	j, err := jobs.New(grant(), "", "invoice.send", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Push(context.Background(), grant(), j); err != nil {
+		t.Fatal(err)
+	}
+
+	seen := make(chan *observability.Collector, 1)
+	w := jobs.NewWorker(q, jobs.WorkerOptions{Poll: time.Millisecond})
+	w.HandleFunc("invoice.send", func(ctx context.Context, _ security.Grant, _ jobs.Job) error {
+		seen <- observability.FromContext(ctx)
+		return nil
+	})
+
+	ctx, stop := context.WithTimeout(context.Background(), 2*time.Second)
+	defer stop()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	select {
+	case col := <-seen:
+		if col != nil {
+			t.Error("a worker with no Recorder still built a Collector")
+		}
+	case <-ctx.Done():
+		t.Fatal("the job never ran")
+	}
+	stop()
+	<-done
+}
+
+// TestARecorderPutsTheJobOnTheConsole is the other half, and the promise doc 16
+// makes: a task or a job is investigated on the same page as a request. The
+// collector used to be created and dropped, so the console never showed one.
+func TestARecorderPutsTheJobOnTheConsole(t *testing.T) {
+	q := &fakeQueue{}
+	j, err := jobs.New(grant(), "", "invoice.send", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Push(context.Background(), grant(), j); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := observability.NewRecorder(8)
+	w := jobs.NewWorker(q, jobs.WorkerOptions{Poll: time.Millisecond, Recorder: recorder})
+	w.HandleFunc("invoice.send", func(ctx context.Context, _ security.Grant, _ jobs.Job) error {
+		// Something a person would want to see on the page.
+		observability.FromContext(ctx).RecordEvent("invoice.rendered", nil)
+		return nil
+	})
+
+	ctx, stop := context.WithTimeout(context.Background(), 2*time.Second)
+	defer stop()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for recorder.Len() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	stop()
+	<-done
+
+	recent := recorder.Recent(1)
+	if len(recent) != 1 {
+		t.Fatal("the finished job never reached the console")
+	}
+	if recent[0].Method != "job" || recent[0].Path != "invoice.send" {
+		t.Errorf("the console entry reads %q %q, want job invoice.send", recent[0].Method, recent[0].Path)
+	}
+	if events := recent[0].Collector.Events(); len(events) != 1 || events[0].Name != "invoice.rendered" {
+		t.Errorf("what the handler recorded did not survive: %+v", events)
+	}
 }
