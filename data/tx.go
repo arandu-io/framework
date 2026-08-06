@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -20,7 +21,13 @@ import (
 // It is also how the outbox works at all: events.Outbox.Store writes through the
 // same DB handle the repository just wrote through, and lands in the same
 // transaction without anyone threading a handle through the call.
-type txKey struct{}
+//
+// The key carries the handle the transaction belongs to. It used to be an empty
+// struct, so one context held one transaction no matter how many databases the
+// application had: a write issued through the analytics handle inside a
+// transaction on the primary joined the primary's transaction and executed
+// against the wrong database, silently and with no error. Found by audit.
+type txKey struct{ db *DB }
 
 // Tx is an instrumented transaction.
 //
@@ -44,7 +51,12 @@ type Tx struct {
 // the same operation, and the shape this framework wants is one write, one
 // outcome.
 func Transaction(ctx context.Context, db *DB, fn func(context.Context) error) error {
-	if _, ok := ctx.Value(txKey{}).(*Tx); ok {
+	if db == nil {
+		return errors.New("data: Transaction needs a database handle")
+	}
+	// Reentrant per handle: a transaction on this database joins; one on a
+	// different database opens its own, because they are different databases.
+	if _, ok := ctx.Value(txKey{db}).(*Tx); ok {
 		return fn(ctx)
 	}
 
@@ -64,7 +76,7 @@ func Transaction(ctx context.Context, db *DB, fn func(context.Context) error) er
 		_ = inner.Rollback()
 	}()
 
-	if err := fn(context.WithValue(ctx, txKey{}, tx)); err != nil {
+	if err := fn(context.WithValue(ctx, txKey{db}, tx)); err != nil {
 		return err
 	}
 
@@ -75,19 +87,23 @@ func Transaction(ctx context.Context, db *DB, fn func(context.Context) error) er
 	return nil
 }
 
-// InTransaction reports whether the context is inside one.
+// InTransaction reports whether the context is inside a transaction on db.
 //
 // The outbox uses it to refuse to store an event outside a transaction, which is
 // the whole guarantee: an event written next to a row that rolled back is worse
 // than no event at all.
-func InTransaction(ctx context.Context) bool {
-	_, ok := ctx.Value(txKey{}).(*Tx)
+//
+// It takes the handle because "in a transaction" is only meaningful about one
+// database. An outbox on the analytics handle is not protected by a transaction
+// open on the primary.
+func InTransaction(ctx context.Context, db *DB) bool {
+	_, ok := ctx.Value(txKey{db}).(*Tx)
 	return ok
 }
 
-// txFrom returns the open transaction, if any.
-func txFrom(ctx context.Context) (*Tx, bool) {
-	tx, ok := ctx.Value(txKey{}).(*Tx)
+// txFrom returns the open transaction on db, if any.
+func txFrom(ctx context.Context, db *DB) (*Tx, bool) {
+	tx, ok := ctx.Value(txKey{db}).(*Tx)
 	return tx, ok
 }
 

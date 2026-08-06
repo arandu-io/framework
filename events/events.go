@@ -89,7 +89,7 @@ func (o *Outbox) Store(ctx context.Context, g security.Grant, list []Event) erro
 	if len(list) == 0 {
 		return nil
 	}
-	if !data.InTransaction(ctx) {
+	if !data.InTransaction(ctx, o.db) {
 		return ErrNoTransaction
 	}
 

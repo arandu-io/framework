@@ -85,7 +85,7 @@ func (d *DB) PingContext(ctx context.Context) error { return d.inner.PingContext
 // repository written once work in both places, and what puts the outbox write in
 // the same transaction as the row it describes.
 func (d *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	if tx, ok := txFrom(ctx); ok {
+	if tx, ok := txFrom(ctx, d); ok {
 		return tx.queryContext(ctx, query, args...)
 	}
 	query = d.dialect.Rebind(query)
@@ -99,7 +99,7 @@ func (d *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.
 //
 // Inside data.Transaction it runs on the open transaction.
 func (d *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	if tx, ok := txFrom(ctx); ok {
+	if tx, ok := txFrom(ctx, d); ok {
 		return tx.execContext(ctx, query, args...)
 	}
 	query = d.dialect.Rebind(query)
@@ -121,7 +121,7 @@ func (d *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Re
 // the actual work to Row.Scan, so a slow row shows up on the timeline as scan
 // time rather than query time.
 func (d *DB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	if tx, ok := txFrom(ctx); ok {
+	if tx, ok := txFrom(ctx, d); ok {
 		return tx.queryRowContext(ctx, query, args...)
 	}
 	query = d.dialect.Rebind(query)

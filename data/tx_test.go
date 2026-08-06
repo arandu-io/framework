@@ -15,7 +15,7 @@ func TestTransactionCommits(t *testing.T) {
 	db := data.Wrap(sqldb, data.DialectSQLite)
 
 	err := data.Transaction(context.Background(), db, func(ctx context.Context) error {
-		if !data.InTransaction(ctx) {
+		if !data.InTransaction(ctx, db) {
 			t.Error("the context does not report a transaction")
 		}
 		_, err := db.ExecContext(ctx, "INSERT INTO customer (id) VALUES (?)", "1")
@@ -113,11 +113,11 @@ func TestNestedTransactionJoinsTheOuterOne(t *testing.T) {
 // TestOutsideATransactionNothingChanges: the handle must keep working exactly as
 // before for the code that does not use transactions, which is most of it.
 func TestOutsideATransactionNothingChanges(t *testing.T) {
-	if data.InTransaction(context.Background()) {
+	sqldb, state := newFakeDB()
+	if data.InTransaction(context.Background(), data.Wrap(sqldb, data.DialectSQLite)) {
 		t.Fatal("a bare context reports a transaction")
 	}
 
-	sqldb, state := newFakeDB()
 	db := data.Wrap(sqldb, data.DialectSQLite)
 	if _, err := db.ExecContext(context.Background(), "DELETE FROM customer"); err != nil {
 		t.Fatal(err)
@@ -143,5 +143,52 @@ func TestTheTransactionRebindsPlaceholders(t *testing.T) {
 	}
 	if !state.sawStatement("VALUES ($1, $2)") {
 		t.Errorf("placeholders were not rebound inside the transaction: %v", state.statements())
+	}
+}
+
+// TestATransactionDoesNotCaptureAnotherDatabase is a bug an audit found.
+//
+// The transaction travelled on the context under a key that named no handle, so
+// one context held one transaction for the whole process. An application with a
+// primary and an analytics database -- or a primary and a read replica -- would
+// open a transaction on the first, and every statement issued through the second
+// while it ran executed against the first instead. No error, no warning, the
+// write simply landed in the wrong database.
+func TestATransactionDoesNotCaptureAnotherDatabase(t *testing.T) {
+	primarySQL, primary := newFakeDB()
+	analyticsSQL, analytics := newFakeDB()
+
+	primaryDB := data.Wrap(primarySQL, data.DialectSQLite)
+	analyticsDB := data.Wrap(analyticsSQL, data.DialectSQLite)
+
+	err := data.Transaction(context.Background(), primaryDB, func(ctx context.Context) error {
+		// This handle has no transaction open. It must not join the other one.
+		if data.InTransaction(ctx, analyticsDB) {
+			t.Error("a transaction on the primary reports as open on the analytics handle")
+		}
+		if _, err := analyticsDB.ExecContext(ctx, "INSERT INTO page_view (id) VALUES (?)", "1"); err != nil {
+			return err
+		}
+		_, err := primaryDB.ExecContext(ctx, "INSERT INTO customer (id) VALUES (?)", "1")
+		return err
+	})
+	if err != nil {
+		t.Fatalf("Transaction: %v", err)
+	}
+
+	// Each statement has to reach the database it was issued through. With the
+	// bug the analytics fake sees nothing and the primary sees both, because
+	// both ran on the primary's transaction.
+	if !analytics.sawStatement("page_view") {
+		t.Error("the analytics write never reached the analytics database")
+	}
+	if analytics.sawStatement("customer") {
+		t.Error("a primary write reached the analytics database")
+	}
+	if !primary.sawStatement("customer") {
+		t.Error("the primary write never reached the primary")
+	}
+	if primary.sawStatement("page_view") {
+		t.Error("the analytics write ran against the primary, inside its transaction")
 	}
 }
