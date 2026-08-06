@@ -27,8 +27,18 @@ jobs:
 
       # A formatting difference is a failure, not a comment on a pull request.
       - name: gofmt
+        # `gofmt -l .` nao pula nada, e duas coisas neste repositorio nao sao
+        # Go valido de proposito:
+        #
+        #   testdata/    fixtures que o doctor tem que recusar, incluindo um
+        #                arquivo que nao parseia — e o teste
+        #   *.kyse.go    template do kyse; o compilador o exclui pela tag de
+        #                build, mas o gofmt ignora build tag
+        #
+        # `go build`, `go vet` e `go test` pulam os dois sozinhos.
         run: |
-          unformatted=$(gofmt -l .)
+          unformatted=$(find . -name '*.go' -not -path '*/testdata/*' \
+                          -not -name '*.kyse.go' -exec gofmt -l {} +)
           if [ -n "$unformatted" ]; then
             echo "not gofmt'd:"
             echo "$unformatted"
