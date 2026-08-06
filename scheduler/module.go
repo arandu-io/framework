@@ -35,6 +35,7 @@ func NewModule(tasks []kernel.Task, opts Options) *Module {
 var (
 	_ kernel.Module     = (*Module)(nil)
 	_ kernel.Bootable   = (*Module)(nil)
+	_ kernel.Background = (*Module)(nil)
 	_ kernel.Closable   = (*Module)(nil)
 	_ kernel.Diagnostic = (*Module)(nil)
 )
@@ -46,12 +47,13 @@ func (*Module) Name() string { return "scheduler" }
 // making it reachable would be a way to trigger billing by URL.
 func (*Module) Routes(*httpx.Router) {}
 
-// Boot parses the tasks and starts the loop.
+// Boot parses the tasks. It does not start the loop.
 //
 // An unparseable spec fails the boot. The application does not start with a
 // task that would silently never run, which is what "config validated at boot,
-// fail fast" means applied to schedules.
-func (m *Module) Boot(ctx context.Context) error {
+// fail fast" means applied to schedules -- and it fails for every command, not
+// just the one that serves, so `aru routes` catches a bad spec too.
+func (m *Module) Boot(_ context.Context) error {
 	if len(m.tasks) == 0 {
 		return nil
 	}
@@ -61,7 +63,20 @@ func (m *Module) Boot(ctx context.Context) error {
 		return err
 	}
 	m.scheduler = s
-	s.Start(ctx)
+	return nil
+}
+
+// Start begins the loop, and only the process that serves calls it.
+//
+// It used to happen in Boot, so every `aru work` replica ran a scheduler and
+// `aru schedule:run` -- the command for running one task by hand -- started the
+// loop that runs all of them. The lock made it harmless; it did not make it
+// right. See kernel.Background.
+func (m *Module) Start(ctx context.Context) error {
+	if m.scheduler == nil {
+		return nil
+	}
+	m.scheduler.Start(ctx)
 	return nil
 }
 

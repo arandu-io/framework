@@ -139,8 +139,8 @@ func TestAModuleWithNoRelayIsHealthy(t *testing.T) {
 	if err := events.NewModule().Health(context.Background()); err != nil {
 		t.Fatalf("Health: %v", err)
 	}
-	if err := events.NewModule().Boot(context.Background()); err != nil {
-		t.Fatalf("Boot: %v", err)
+	if err := events.NewModule().Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
 	if err := events.NewModule().Close(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)

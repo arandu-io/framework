@@ -29,8 +29,29 @@ type Module interface {
 
 // Bootable is optional: implement it when the module needs to prepare state at
 // boot -- open a pool, warm a cache, register codecs.
+//
+// Boot wires; it does not run. A module that needs a loop of its own implements
+// Background instead, and validates in Boot whatever would make that loop fail.
 type Bootable interface {
 	Boot(ctx context.Context) error
+}
+
+// Background is optional: the module runs a loop of its own -- the scheduler
+// and the outbox relay do.
+//
+// Start is called by Run, never by Boot, and that distinction is the difference
+// between a process that serves and a process that does something else. Every
+// command boots: `aru work`, `aru routes`, `aru schedule:list`, `aru migrate`.
+// Starting the loops at boot meant every worker replica also ran a scheduler
+// and a relay, and `aru schedule:run`, which exists to run one task by hand,
+// started the loop that runs all of them. Found by audit.
+//
+// One process, one job. The lock in the scheduler makes the duplicate harmless
+// rather than correct, and "harmless because something else catches it" is not
+// a design.
+type Background interface {
+	Module
+	Start(ctx context.Context) error
 }
 
 // Closable is optional: implement it to release resources on shutdown.

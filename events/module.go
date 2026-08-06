@@ -40,7 +40,7 @@ func WithRelay(r *Relay) *Module { return &Module{relay: r} }
 var (
 	_ kernel.Module     = (*Module)(nil)
 	_ kernel.Migratable = (*Module)(nil)
-	_ kernel.Bootable   = (*Module)(nil)
+	_ kernel.Background = (*Module)(nil)
 	_ kernel.Closable   = (*Module)(nil)
 	_ kernel.Health     = (*Module)(nil)
 	_ kernel.Diagnostic = (*Module)(nil)
@@ -63,8 +63,8 @@ func (*Module) Migrations() []kernel.Migration {
 			// way.
 			Up: `
 CREATE TABLE outbox (
-    id            TEXT PRIMARY KEY,
-    tenant_id     TEXT NOT NULL,
+    id            VARCHAR(255) PRIMARY KEY,
+    tenant_id     VARCHAR(255) NOT NULL,
     event         TEXT NOT NULL,
     aggregate     TEXT NOT NULL,
     aggregate_id  TEXT NOT NULL,
@@ -110,8 +110,12 @@ ALTER TABLE outbox DROP COLUMN failed_at;
 	}
 }
 
-// Boot starts the relay loop.
-func (m *Module) Boot(ctx context.Context) error {
+// Start begins the relay loop, and only the process that serves calls it.
+//
+// It used to be Boot, which every command calls: each `aru work` replica ran a
+// relay of its own, and so did `aru routes`. The lock made the duplicate
+// harmless rather than correct. See kernel.Background.
+func (m *Module) Start(ctx context.Context) error {
 	if m.relay == nil {
 		return nil
 	}
