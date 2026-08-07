@@ -138,3 +138,46 @@ func TestEveryAssetIsServed(t *testing.T) {
 		}
 	}
 }
+
+// TestTheStylesheetDoesNotReadItsOwnOutput pins the one line that keeps this
+// build a function of its inputs.
+//
+// Tailwind v4 detects sources on its own, on top of whatever @source declares,
+// and the walk reaches the compiled app.css sitting next to this file. It reads
+// the class names back out of its own previous output and feeds them in again,
+// so the result depends on what the last build wrote: two runs in a row produce
+// two different stylesheets, and a class dropped from the last file that used
+// it survives one more build.
+//
+// source(none) turns the automatic half off. The @source lines below it are
+// then the whole list, which is the only way to say what this stylesheet is
+// built from.
+func TestTheStylesheetDoesNotReadItsOwnOutput(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("assets", "app.src.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), `@import "tailwindcss" source(none)`) {
+		t.Error("app.src.css lets Tailwind detect sources by itself: it will read assets/app.css, its own output")
+	}
+	// And every source it does declare has to exist. The @source lines used to
+	// name `.templ` files under layout/ and components/ -- an engine replaced by
+	// kyse (ADR 0020) and two directories moved to the skeleton (ADR 0021). A
+	// glob that matches nothing does not fail, it just contributes nothing, so
+	// the whole stylesheet came from the automatic scan those lines looked like
+	// they were controlling.
+	for _, line := range strings.Split(string(source), "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "@source ") {
+			continue
+		}
+		glob := strings.Trim(strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "@source ")), ";"), `"`)
+		matches, err := filepath.Glob(filepath.Join("assets", glob))
+		if err != nil {
+			t.Errorf("@source %q is not a glob this can check: %v", glob, err)
+			continue
+		}
+		if len(matches) == 0 {
+			t.Errorf("@source %q matches no file: it contributes nothing and hides that fact", glob)
+		}
+	}
+}
