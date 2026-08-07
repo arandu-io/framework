@@ -13,7 +13,7 @@ import (
 //
 // It registers no routes: it exists so the table travels with the framework
 // rather than being copied into every project's migrations. Register it in
-// cmd/app/main.go next to the modules that store events.
+// bootstrap/app.go next to the modules that store events.
 type Module struct {
 	relay *Relay
 	// stop cancels the relay loop at shutdown.

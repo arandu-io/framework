@@ -64,7 +64,8 @@ func NewRouter() *Router {
 // WithRenderer returns a router whose handlers can render views.
 //
 // The kernel calls it at boot with the view module. Without it, Context.View
-// returns an error naming the missing line in main.go rather than panicking.
+// returns an error naming the missing line in bootstrap/app.go rather than
+// panicking.
 func (r *Router) WithRenderer(rd Renderer) *Router {
 	g := *r
 	g.render = rd

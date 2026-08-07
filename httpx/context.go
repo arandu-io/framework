@@ -109,7 +109,8 @@ func (c *Context) Status(code int) error {
 // errNoRenderer is what a View call gets when no view layer was wired.
 //
 // It names the fix, because the alternative is a nil dereference in a stack
-// trace that points at the framework rather than at the missing line in main.go.
+// trace that points at the framework rather than at the missing line in
+// bootstrap/app.go.
 var errNoRenderer = &noRendererError{}
 
 type noRendererError struct{}

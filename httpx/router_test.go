@@ -152,3 +152,90 @@ func TestRootAndTrailingSlashJoin(t *testing.T) {
 		}
 	}
 }
+
+// TestPutAndPatchRegisterTheirOwnMethod covers the two verbs nothing reached.
+//
+// Resource() registers update through handleCtx and never calls Put or Patch,
+// so both were unexercised: a copy-paste that left Put registering POST would
+// have compiled, served, and shown the wrong verb in `aru routes` -- and the
+// symptom is a form that silently hits the wrong handler.
+func TestPutAndPatchRegisterTheirOwnMethod(t *testing.T) {
+	for _, method := range []string{http.MethodPut, http.MethodPatch} {
+		t.Run(method, func(t *testing.T) {
+			r := httpx.NewRouter()
+			seen := ""
+			record := func(w http.ResponseWriter, req *http.Request) {
+				seen = req.Method
+				w.WriteHeader(http.StatusOK)
+			}
+
+			switch method {
+			case http.MethodPut:
+				r.Put("/invoices/{id}", record)
+			case http.MethodPatch:
+				r.Patch("/invoices/{id}", record)
+			}
+
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest(method, "/invoices/inv-1", nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s /invoices/inv-1 = %d, want 200", method, rec.Code)
+			}
+			if seen != method {
+				t.Fatalf("the handler ran for %s, want %s", seen, method)
+			}
+
+			// Registering one verb must not open the others. A route that also
+			// answers POST is a route where CSRF and the policy were written for
+			// a request shape that is not the one arriving.
+			for _, other := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
+				rec := httptest.NewRecorder()
+				r.ServeHTTP(rec, httptest.NewRequest(other, "/invoices/inv-1", nil))
+				if rec.Code != http.StatusMethodNotAllowed {
+					t.Errorf("%s /invoices/inv-1 = %d, want 405: %s must register %s only", other, rec.Code, method, method)
+				}
+			}
+
+			// The table is what `aru routes` prints and what Route.Name resolves
+			// against. A wrong verb there is a wrong verb in the form.
+			routes := r.Routes()
+			if len(routes) != 1 {
+				t.Fatalf("registered %d routes, want 1", len(routes))
+			}
+			if routes[0].Method != method {
+				t.Errorf("the route table says %s, want %s", routes[0].Method, method)
+			}
+			if routes[0].Pattern != "/invoices/{id}" {
+				t.Errorf("the route table says %q, want /invoices/{id}", routes[0].Pattern)
+			}
+		})
+	}
+}
+
+// TestPutAndPatchRunTheirMiddleware: both take middleware in their signature,
+// and middleware that is accepted and not applied is authorization that looks
+// wired and is not.
+func TestPutAndPatchRunTheirMiddleware(t *testing.T) {
+	r := httpx.NewRouter()
+
+	var ran []string
+	stamp := func(name string) httpx.Middleware {
+		return func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				ran = append(ran, name)
+				next.ServeHTTP(w, req)
+			})
+		}
+	}
+
+	r.Put("/invoices/{id}", ok, stamp("put"))
+	r.Patch("/invoices/{id}", ok, stamp("patch"))
+
+	for _, method := range []string{http.MethodPut, http.MethodPatch} {
+		r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(method, "/invoices/inv-1", nil))
+	}
+
+	if strings.Join(ran, ",") != "put,patch" {
+		t.Fatalf("middleware ran as %v, want [put patch]", ran)
+	}
+}

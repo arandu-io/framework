@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 // The scripts are embedded, not fetched.
@@ -40,6 +41,15 @@ var files embed.FS
 // response can be cached forever and a new build simply has a new URL.
 const AssetPath = "/_arandu/assets/"
 
+// Stylesheet is the name of the one stylesheet, and there is only one.
+//
+// The framework embeds a default under this name and RegisterStylesheet
+// replaces it. Not a second file, not a second URL, not a cascade order: one
+// name, one URL, one set of bytes (RULE 9).
+const Stylesheet = "app.css"
+
+const stylesheetType = "text/css; charset=utf-8"
+
 // asset is one embedded file with its content hash.
 type asset struct {
 	name        string
@@ -48,28 +58,88 @@ type asset struct {
 	hash        string
 }
 
-var assets = map[string]*asset{}
+// assetsMu guards the table, which RegisterStylesheet writes to.
+//
+// The write happens in init(), before anything serves, so the lock buys nothing
+// at runtime and costs nothing either. It is here so that a test replacing the
+// stylesheet is not a data race against a server it started.
+var (
+	assetsMu sync.RWMutex
+	assets   = map[string]*asset{}
+
+	// appStylesheet records that the application already replaced the default,
+	// so a second replacement is an error rather than a coin toss.
+	appStylesheet bool
+)
 
 func init() {
 	for name, contentType := range map[string]string{
 		"htmx.min.js":   "application/javascript; charset=utf-8",
 		"alpine.min.js": "application/javascript; charset=utf-8",
-		"app.css":       "text/css; charset=utf-8",
+		Stylesheet:      stylesheetType,
 	} {
 		body, err := files.ReadFile("assets/" + name)
 		if err != nil {
 			// The file is embedded at build time: if it is missing, the binary is
 			// broken and there is nothing to recover from at runtime.
-			panic("porang: missing embedded asset " + name + ": " + err.Error())
+			panic("view: missing embedded asset " + name + ": " + err.Error())
 		}
-		sum := sha256.Sum256(body)
-		assets[name] = &asset{
-			name:        name,
-			contentType: contentType,
-			body:        body,
-			hash:        hex.EncodeToString(sum[:])[:12],
-		}
+		assets[name] = newAsset(name, contentType, body)
 	}
+}
+
+// newAsset hashes the body and returns the servable asset.
+//
+// The hash is computed here and nowhere else, which is what keeps the URL and
+// the bytes from ever disagreeing: replacing the body without rehashing would
+// leave every browser holding the previous stylesheet at the same URL, forever,
+// because that URL is served with max-age=31536000, immutable.
+func newAsset(name, contentType string, body []byte) *asset {
+	sum := sha256.Sum256(body)
+	return &asset{
+		name:        name,
+		contentType: contentType,
+		body:        body,
+		hash:        hex.EncodeToString(sum[:])[:12],
+	}
+}
+
+// RegisterStylesheet replaces the embedded stylesheet with the application's.
+//
+// `aru view:build` compiles resources/css/app.css into assets/app.css, and the
+// skeleton hands those bytes over from init(), the same shape as Register:
+//
+//	//go:embed assets/app.css
+//	var appCSS []byte
+//
+//	func init() { view.RegisterStylesheet(appCSS) }
+//
+// It replaces rather than adds. The framework's copy is a default so that a
+// project renders before its first view:build, not a base layer to cascade on
+// top of -- two stylesheets would mean two URLs, an order that matters, and a
+// specificity fight nobody can win from the application side.
+//
+// Without it the browser received the framework's stylesheet, md5 identical,
+// and every class written in a project's own views did nothing. Nothing failed:
+// the page was served, with 200, unstyled.
+//
+// Registering twice panics rather than replacing, for the same reason Register
+// does: two stylesheets for one name is a build artifact that outlived its
+// source, and finding out at boot beats finding out from a page that renders
+// with somebody else's design.
+func RegisterStylesheet(css []byte) {
+	if len(css) == 0 {
+		panic("view: RegisterStylesheet was given an empty stylesheet -- run `aru view:build`")
+	}
+
+	assetsMu.Lock()
+	defer assetsMu.Unlock()
+
+	if appStylesheet {
+		panic("view: the application stylesheet is already registered -- a stale generated file is probably still on disk")
+	}
+	appStylesheet = true
+	assets[Stylesheet] = newAsset(Stylesheet, stylesheetType, css)
 }
 
 // URL returns the versioned path of an asset: /_arandu/assets/<hash>/htmx.min.js
@@ -77,6 +147,9 @@ func init() {
 // The hash comes from the content, so upgrading HTMX changes the URL and no
 // browser serves a stale script -- without anyone remembering to bump a version.
 func URL(name string) string {
+	assetsMu.RLock()
+	defer assetsMu.RUnlock()
+
 	a, ok := assets[name]
 	if !ok {
 		return AssetPath + "missing/" + name
@@ -97,7 +170,9 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	assetsMu.RLock()
 	a, exists := assets[name]
+	assetsMu.RUnlock()
 	if !exists {
 		http.NotFound(w, r)
 		return
@@ -113,11 +188,18 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(a.body)
 }
 
-// Version reports the embedded version of each asset, for `aru doctor` and for
+// Version reports the served version of each asset, for `aru doctor` and for
 // the debug page.
+//
+// It reports what is served rather than what is embedded, so a stylesheet that
+// never reached the browser shows up here as the framework's hash next to a
+// project that thought it had built its own.
 func Version() string {
+	assetsMu.RLock()
+	defer assetsMu.RUnlock()
+
 	var b strings.Builder
-	for _, name := range []string{"app.css", "alpine.min.js", "htmx.min.js"} {
+	for _, name := range []string{Stylesheet, "alpine.min.js", "htmx.min.js"} {
 		fmt.Fprintf(&b, "%s %s (%d bytes)\n", name, assets[name].hash, len(assets[name].body))
 	}
 	return b.String()

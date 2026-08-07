@@ -27,15 +27,15 @@ jobs:
 
       # A formatting difference is a failure, not a comment on a pull request.
       - name: gofmt
-        # `gofmt -l .` nao pula nada, e duas coisas neste repositorio nao sao
-        # Go valido de proposito:
+        # `gofmt -l .` skips nothing, and two things here are not valid Go on
+        # purpose:
         #
-        #   testdata/    fixtures que o doctor tem que recusar, incluindo um
-        #                arquivo que nao parseia — e o teste
-        #   *.kyse.go    template do kyse; o compilador o exclui pela tag de
-        #                build, mas o gofmt ignora build tag
+        #   testdata/    fixtures the doctor has to reject, including a file
+        #                that does not parse -- which is the test
+        #   *.kyse.go    kyse sources; the compiler excludes them by build tag,
+        #                and gofmt does not read build tags
         #
-        # `go build`, `go vet` e `go test` pulam os dois sozinhos.
+        # `go build`, `go vet` and `go test` skip both on their own.
         run: |
           unformatted=$(find . -name '*.go' -not -path '*/testdata/*' \
                           -not -name '*.kyse.go' -exec gofmt -l {} +)

@@ -2,6 +2,11 @@
 //
 // There is no config("app.name") lookup: a wrong key is a compile error, not a
 // runtime panic on the first request that happens to need it.
+//
+// Load is the one entry point. It reads a .env from the working directory when
+// there is one -- filling only what the environment has not already defined --
+// and then validates the result. There is no second loader and no flag that
+// moves the file.
 package config
 
 import (
@@ -59,7 +64,17 @@ type Config struct {
 
 // Load reads the environment and validates it. It fails at boot, not on the
 // first request.
+//
+// A .env in the working directory is read first, and it only fills variables
+// the environment does not already define -- see loadEnvFile. It is read here
+// rather than by the application, because a step the application has to
+// remember is a step that gets forgotten: this one was, and `aru migrate`
+// failed on every new project for it.
 func Load() (Config, error) {
+	if err := loadEnvFile(); err != nil {
+		return Config{}, err
+	}
+
 	key, err := parseAppKey(env("APP_KEY", ""))
 	if err != nil {
 		return Config{}, err
