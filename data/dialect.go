@@ -20,9 +20,13 @@ const (
 	DialectSQLite Dialect = "sqlite"
 	// DialectPostgres is the production target.
 	DialectPostgres Dialect = "pgsql"
-	// DialectMySQL is accepted by the connection layer. Repositories are not
-	// portable to it yet: MySQL has no RETURNING, so every insert needs a second
-	// statement. See docs/adr/0009.
+	// DialectMySQL is supported and is not the recommendation. Every query here
+	// is written with "?", which MySQL takes directly, so nothing about the SQL
+	// changes; what changes is that Postgres is where the migration story, the
+	// transactional DDL and the outbox relay are least surprising.
+	//
+	// The conformance suite runs the generated queries against a real server on
+	// all three (ADR 0018), MySQL included.
 	DialectMySQL Dialect = "mysql"
 )
 

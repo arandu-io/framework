@@ -31,9 +31,7 @@ const (
 // UserRepo is the only door to the users table.
 //
 // Every method starts with g.Check: the Grant is required by the signature, and
-// the check proves the grant was issued for this exact action. Phase 2 generates
-// these bodies from queries.sql with sqlc; the signature and the check do not
-// change when it does.
+// the check proves the grant was issued for this exact action.
 //
 // The SQL is written with "?" placeholders and with types every supported
 // database shares, so the same statements run on SQLite and on PostgreSQL. The

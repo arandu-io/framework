@@ -204,9 +204,9 @@ func (c *Collector) RecordExternal(method, url string, status int, d time.Durati
 
 // RecordRender stores one template render.
 //
-// porang calls it around a component; anything rendering HTML can call it too.
-// The name is what shows on the timeline, so it should be the template, not the
-// function.
+// The view runtime calls it around every render; anything producing HTML can
+// call it too. The name is what shows on the timeline, so it should be the
+// template, not the function.
 func (c *Collector) RecordRender(name string, d time.Duration) {
 	if c == nil {
 		return
