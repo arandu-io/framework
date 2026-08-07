@@ -7,6 +7,11 @@ import (
 	"testing"
 
 	"github.com/arandu-io/framework/security"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"path/filepath"
 )
 
 type resource struct {
@@ -178,4 +183,90 @@ func TestTheZeroGrantStillSaysAuthorize(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "security.Authorize") {
 		t.Fatalf("the zero Grant no longer points at Authorize: %v", err)
 	}
+}
+
+// TestTheGrantDocNamesEveryDoor keeps the central comment honest.
+//
+// The doc on Grant is where a reader checks the thesis, and it said for months
+// that there is "no public constructor other than Authorize". That was never
+// true -- SystemGrant is right below it in this file -- and it read as a
+// compile-time guarantee for something `aru doctor` enforces as a lint. The
+// gap only surfaced when jobs.GrantFor turned out to wrap SystemGrant and to be
+// invisible to every rule.
+//
+// So: every exported function in this module that hands back a Grant has to be
+// named in that comment. Adding a door costs writing it down where the promise
+// is made.
+func TestTheGrantDocNamesEveryDoor(t *testing.T) {
+	fset := token.NewFileSet()
+
+	var grantDoc string
+	doors := map[string]string{} // symbol -> file
+
+	err := filepath.WalkDir("..", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" || d.Name() == "testdata" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		file, perr := parser.ParseFile(fset, path, nil, parser.ParseComments|parser.SkipObjectResolution)
+		if perr != nil {
+			return nil
+		}
+		for _, decl := range file.Decls {
+			switch d := decl.(type) {
+			case *ast.GenDecl:
+				for _, spec := range d.Specs {
+					ts, ok := spec.(*ast.TypeSpec)
+					if ok && ts.Name.Name == "Grant" && d.Doc != nil {
+						grantDoc = d.Doc.Text()
+					}
+				}
+			case *ast.FuncDecl:
+				if d.Recv != nil || !d.Name.IsExported() || d.Type.Results == nil {
+					continue
+				}
+				for _, r := range d.Type.Results.List {
+					if returnsGrant(r.Type) {
+						doors[d.Name.Name] = path
+					}
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if grantDoc == "" {
+		t.Fatal("Grant has no doc comment: the central promise of the framework is undocumented")
+	}
+	if len(doors) < 2 {
+		t.Fatalf("found %d exported Grant constructors: this test stopped testing anything", len(doors))
+	}
+	for name, path := range doors {
+		if !strings.Contains(grantDoc, name) {
+			t.Errorf("%s (%s) hands back a Grant and the doc on Grant does not name it", name, path)
+		}
+	}
+}
+
+// returnsGrant reports whether a result type is a Grant, here or through the
+// security qualifier another package would write.
+func returnsGrant(e ast.Expr) bool {
+	switch t := e.(type) {
+	case *ast.Ident:
+		return t.Name == "Grant"
+	case *ast.SelectorExpr:
+		return t.Sel.Name == "Grant"
+	}
+	return false
 }

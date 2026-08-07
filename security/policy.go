@@ -47,10 +47,22 @@ type Policy[T any] interface {
 
 // Grant is the proof that an authorization decision happened.
 //
-// THIS IS THE CENTRAL PIECE OF THE FRAMEWORK. Grant has only unexported fields
-// and no public constructor other than Authorize. Because every repository
-// signature requires a Grant, reaching the database without going through a
-// Policy is IMPOSSIBLE -- not "discouraged", impossible at compile time.
+// THIS IS THE CENTRAL PIECE OF THE FRAMEWORK. Grant has only unexported fields,
+// so it cannot be built by writing a struct literal: every repository signature
+// requires one, and reaching the database without a Grant does not compile.
+//
+// What the compiler does NOT decide is which Grant. Authorize is the mandatory
+// path and the only one where a Policy answered; SystemGrant is the named
+// escape hatch and jobs.GrantFor wraps it, and both are exported, so a handler
+// can construct a Grant nobody authorized. What stops that is `aru doctor` --
+// a lint, not the type system -- with system-grant-outside-scope,
+// system-grant-without-tenant and tenant-from-request.
+//
+// This comment used to say "no public constructor other than Authorize", which
+// was never true and read as a compile-time guarantee for something a lint
+// enforces. It is the difference between the promise and the mechanism, and
+// stating it wrong here is worse than anywhere else: this is the doc a reader
+// checks the thesis against.
 //
 // This is what Laravel does not have: there, the Gate is a call you can simply
 // forget to make, and nothing warns you.
@@ -114,7 +126,9 @@ func (g Grant) Action() Action { return g.action }
 // bug there is -- so it is not expressible: an empty tenant yields the zero
 // Grant, and the zero Grant fails Check.
 //
-// Every call site is auditable, and `aru doctor --strict` lists them all.
+// Every call site is auditable, and `aru doctor` reports the ones outside a
+// seeder, a job or a command. `--strict` does not list them -- it turns that
+// warning into a failure, which is what CI runs.
 // tenantName is what a tenant identifier may contain.
 //
 // Closed on purpose. A tenant is concatenated into a storage path, a cache key,
