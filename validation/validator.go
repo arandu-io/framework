@@ -123,3 +123,21 @@ func NotZero[T comparable](e Errors, field string, value T) {
 		e.Add(field, "is required")
 	}
 }
+
+// First returns one message, for a view that shows a single line.
+//
+// A form that lists every error next to its field uses the map directly. One
+// that shows a banner needs one sentence, and picking it at the call site means
+// every template does it slightly differently.
+//
+// The field order is not stable -- a map has none -- so this is for the case
+// where any of them answers the question "what is wrong". When which field
+// failed matters, read the map.
+func (e Errors) First() string {
+	for _, msgs := range e {
+		if len(msgs) > 0 {
+			return msgs[0]
+		}
+	}
+	return ""
+}

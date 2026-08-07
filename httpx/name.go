@@ -50,9 +50,18 @@ func (t *Routes) URL(name string, params ...string) (string, error) {
 		return "", fmt.Errorf("httpx: no route named %q. Name it with .Name(%q), or run `aru routes` to see what exists", name, name)
 	}
 
-	out := route.Pattern
+	// "{$}" is not a parameter. It is the anchor that stops a pattern ending in
+	// a slash from matching everything below it, which is what "GET /{$}" means
+	// and what Laravel's Route::get('/') does by default. Reading it as a
+	// parameter made URL("home") return an error for the one route every
+	// application has.
+	out := strings.TrimSuffix(route.Pattern, "{$}")
+	if out == "" {
+		out = "/"
+	}
+
 	var missing []string
-	for _, segment := range strings.Split(route.Pattern, "/") {
+	for _, segment := range strings.Split(out, "/") {
 		if !strings.HasPrefix(segment, "{") || !strings.HasSuffix(segment, "}") {
 			continue
 		}
