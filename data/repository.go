@@ -36,11 +36,25 @@ type Repository[T any, ID comparable] interface {
 // Query is pagination and ordering with an allowlist. The sort field is NEVER
 // interpolated directly: the repository validates it against a permitted set,
 // or ordering becomes injection through another door.
+//
+// There is no Filter here, and that is a decision rather than an omission.
+//
+// The field existed, exported, with no producer and no consumer in any of the
+// ten repositories: List(ctx, g, Query{Filter: ...}) returned the whole list,
+// with no error and no warning. A field that silently does nothing is worse than
+// one that does not exist -- the reader assumes it filtered, and in an
+// application where rows belong to tenants that assumption is how a leak starts.
+//
+// Filling it in would mean a generic predicate language over columns, which is a
+// query builder, which is the second way to reach data that RULE 9 rules out
+// (docs/09 lists "ORM, query builder fluente, segunda camada" as what does not
+// enter). A module that needs to read by something other than the id declares
+// the method it needs on its own repository, with the SQL written out and the
+// values in placeholders.
 type Query struct {
 	Limit  int
 	Cursor string
 	Sort   string
-	Filter map[string]any
 }
 
 // DB wraps *sql.DB to instrument the Collector and to rebind placeholders for
