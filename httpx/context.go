@@ -116,5 +116,5 @@ type noRendererError struct{}
 
 func (*noRendererError) Error() string {
 	return "arandu: this handler rendered a view and no view layer is wired. " +
-		"Register it in cmd/app/main.go: k.Register(view.NewModule(views.FS))"
+		"Register it in bootstrap/app.go: k.Register(view.NewModule())"
 }

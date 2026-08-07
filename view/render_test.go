@@ -2,6 +2,7 @@ package view_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -64,8 +65,8 @@ func TestTheControllerRendersByName(t *testing.T) {
 
 // TestAViewWithNoRendererSaysWhatToWire: without the view module registered,
 // ctx.View has nothing to render with. The message has to name the line that is
-// missing from main.go, because the alternative is a nil dereference pointing at
-// the framework.
+// missing from bootstrap/app.go, because the alternative is a nil dereference
+// pointing at the framework.
 func TestAViewWithNoRendererSaysWhatToWire(t *testing.T) {
 	r := httpx.NewRouter() // no WithRenderer
 	r.Action(http.MethodGet, "/", func(ctx *httpx.Context) error {
@@ -82,8 +83,13 @@ func TestAViewWithNoRendererSaysWhatToWire(t *testing.T) {
 	if err == nil {
 		t.Fatal("rendering without a renderer succeeded")
 	}
-	if !strings.Contains(err.Error(), "main.go") {
-		t.Errorf("the error does not name where to wire it: %v", err)
+	// The file, and the call that goes in it. The wiring moved from
+	// cmd/app/main.go to bootstrap/app.go with the Laravel tree, and a message
+	// naming a file the project does not have is worse than no message.
+	for _, want := range []string{"bootstrap/app.go", "view.NewModule()"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error does not mention %q: %v", want, err)
+		}
 	}
 }
 
@@ -156,4 +162,53 @@ func TestAFragmentCarriesItsStatus(t *testing.T) {
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Errorf("status %d, want 422", resp.StatusCode)
 	}
+}
+
+// TestAFailedRenderDoesNotAnswer200 is the bug an end-to-end run found: the
+// renderer wrote the status before calling the template, so a view that failed
+// halfway answered 200 with half a page. The error page cannot change a status
+// already on the wire, and monitoring counts it as a success.
+//
+// It reached the browser as a type mismatch between a view and its layout,
+// rendered as a 200 whose body was the error page.
+func TestAFailedRenderDoesNotAnswer200(t *testing.T) {
+	name := "half-written-page"
+	view.Register(name, func(w io.Writer, data any) error {
+		// Exactly the shape of a real failure: a layout writes its opening
+		// markup, then the section inside it rejects the data.
+		fmt.Fprint(w, "<html><body><h1>")
+		return view.WrongData(name, "HomeData", data)
+	})
+
+	// httptest.NewRecorder starts at 200, so the question is not what the code
+	// is -- it is whether anything reached the wire at all. Nothing may: the
+	// error page owns the response from here.
+	rec := &spyWriter{ResponseRecorder: httptest.NewRecorder()}
+	err := view.NewRenderer().Render(context.Background(), rec, http.StatusOK, name, 42)
+
+	if err == nil {
+		t.Fatal("the render reported no error")
+	}
+	if rec.wroteHeader {
+		t.Error("a failed render committed a status: the error page cannot correct one already written")
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("a failed render put %d bytes on the wire: %q", rec.Body.Len(), rec.Body.String())
+	}
+}
+
+// spyWriter records whether the status was ever committed.
+type spyWriter struct {
+	*httptest.ResponseRecorder
+	wroteHeader bool
+}
+
+func (s *spyWriter) WriteHeader(code int) {
+	s.wroteHeader = true
+	s.ResponseRecorder.WriteHeader(code)
+}
+
+func (s *spyWriter) Write(b []byte) (int, error) {
+	s.wroteHeader = true
+	return s.ResponseRecorder.Write(b)
 }

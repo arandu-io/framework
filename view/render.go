@@ -1,11 +1,13 @@
 package view
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -78,14 +80,38 @@ func (*Renderer) Render(ctx context.Context, w http.ResponseWriter, status int, 
 		return unknownView(name)
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
+	// The page is drawn into a buffer, and only then written.
+	//
+	// Rendering straight into the ResponseWriter commits the status with the
+	// first byte, so a view that fails halfway answers 200 with half a page --
+	// the error page cannot change a status already on the wire, and monitoring
+	// sees a success. It showed up as a type mismatch between a view and its
+	// layout that reached the browser as a 200.
+	//
+	// The cost is holding one page in memory. That is what html/template's own
+	// documentation recommends, and what Blade does by rendering to a string:
+	// streaming and reporting errors are not both available.
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufferPool.Put(buf)
 
 	start := time.Now()
-	err := f(w, data)
+	err := f(buf, data)
 	observability.FromContext(ctx).RecordRender(name, time.Since(start))
+	if err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+	w.WriteHeader(status)
+	_, err = w.Write(buf.Bytes())
 	return err
 }
+
+// bufferPool keeps the per-page buffer off the allocator's back. A page is a few
+// kilobytes and every request needs one.
+var bufferPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 
 // unknownView names the fix instead of the failure.
 //
@@ -107,7 +133,7 @@ func unknownView(name string) error {
 		return fmt.Errorf("view: no view named %q. Did you mean %s?", name, strings.Join(near, ", "))
 	case len(known) == 0:
 		return fmt.Errorf("view: no view named %q, and none are registered at all. "+
-			"Run `aru view:build`, and import the views package in cmd/app/main.go", name)
+			"Run `aru view:build`, and import the views package in bootstrap/app.go", name)
 	default:
 		return fmt.Errorf("view: no view named %q. Registered: %s", name, strings.Join(known, ", "))
 	}
