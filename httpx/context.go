@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+
+	"github.com/arandu-io/framework/observability"
 )
 
 // Context is what a controller action receives.
@@ -24,6 +26,32 @@ type Context struct {
 	Request  *http.Request
 
 	render Renderer
+	routes *Routes
+}
+
+// URL is the path of a named route, with its parameters filled in order.
+//
+//	ctx.URL("posts.show", post.ID)   -> "/posts/01J.../"
+//
+// It is what a controller hands a view instead of building a path by hand.
+// "/posts/"+id compiles and keeps compiling after the route moves; this stops
+// working the moment the name is wrong, and says so.
+//
+// An unknown name or a wrong number of parameters returns empty and is logged
+// at ERROR with the name. Empty is what the views already treat as "there is no
+// link here" -- a page with a missing button is recoverable, and a template
+// renderer that panics takes the whole page down to report something a missing
+// link would have said better.
+func (c *Context) URL(name string, params ...string) string {
+	if c.routes == nil {
+		return ""
+	}
+	out, err := c.routes.URL(name, params...)
+	if err != nil {
+		observability.Log(c.Ctx()).Error("building a URL", "route", name, "error", err)
+		return ""
+	}
+	return out
 }
 
 // Renderer draws a named view with typed data.

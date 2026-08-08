@@ -135,9 +135,9 @@ func (r *Router) handle(method, pattern string, h http.HandlerFunc, mws ...Middl
 // panic path: the error page in development, 500 in production. Swallowing it
 // would answer 200 with an empty body, which is the failure nobody debugs.
 func (r *Router) handleCtx(method, pattern string, h func(*Context) error, mws ...Middleware) *Route {
-	renderer := r.render
+	renderer, table := r.render, r.table
 	return r.handle(method, pattern, func(w http.ResponseWriter, req *http.Request) {
-		if err := h(&Context{Response: w, Request: req, render: renderer}); err != nil {
+		if err := h(&Context{Response: w, Request: req, render: renderer, routes: table}); err != nil {
 			panic(err)
 		}
 	}, mws...)
