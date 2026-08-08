@@ -9,22 +9,23 @@
 <a href="LICENSE.md"><img src="https://img.shields.io/github/license/arandu-io/framework" alt="License"></a>
 </p>
 
+
 ## About Arandu
 
 > **Note:** this repository holds the core of the framework. To build an
-> application with it, start from [arandu-io/arandu](https://github.com/arandu-io/arandu)
-> — or run `aru new <name>`, which does it for you.
+> application with it, run `aru new <name>`, or start from
+> [arandu-io/arandu](https://github.com/arandu-io/arandu).
 
-Arandu is a Go framework for SaaS. Its one claim is in the line above: the
-architecture is not a convention the team agrees to follow, it is a shape the
-compiler refuses to break.
+Arandu is a Go framework for SaaS, and it has one claim: **the architecture is
+not a convention the team agrees to follow, it is a shape the compiler refuses
+to break.**
 
-- [Authorization that cannot be skipped](https://pkg.go.dev/github.com/arandu-io/framework/security) — every repository signature takes a `Grant`, and a `Grant` comes from a Policy. Reaching the database without one does not compile
-- [Data access scoped by tenant](https://pkg.go.dev/github.com/arandu-io/framework/data) — the tenant comes from the `Grant`, never from what the caller sent
-- [Typed views, compiled](https://pkg.go.dev/github.com/arandu-io/framework/view) — kyse has Blade's directives, and a typo in a field name is a build error at the line you wrote
+- [Authorization that cannot be skipped](https://pkg.go.dev/github.com/arandu-io/framework/security) — every repository signature takes a `Grant`, and a `Grant` comes from a policy. Reaching the database without one does not compile
+- [Data access scoped by tenant](https://pkg.go.dev/github.com/arandu-io/framework/data) — the tenant is read from the `Grant`, never from what the caller sent, so one customer cannot name another's rows
+- [Typed views, compiled](https://pkg.go.dev/github.com/arandu-io/framework/view) — templates become Go, and a typo in a field name is a build error at the line you wrote, not a blank space in production
 - [Routing](https://pkg.go.dev/github.com/arandu-io/framework/httpx) — resources, named routes and URL generation over `net/http`
-- [Observability as a product](https://pkg.go.dev/github.com/arandu-io/framework/observability) — a console, a timeline and an N+1 detector in the core, with zero allocations when it is off
-- [Background work](https://pkg.go.dev/github.com/arandu-io/framework/jobs) — jobs, a [scheduler](https://pkg.go.dev/github.com/arandu-io/framework/scheduler) with a lock per replica, and [events](https://pkg.go.dev/github.com/arandu-io/framework/events) written to an outbox in the same transaction as the row that caused them
+- [Diagnosis as a feature](https://pkg.go.dev/github.com/arandu-io/framework/observability) — a console, a request timeline and an N+1 detector in the core, allocating nothing when it is off
+- [Background work](https://pkg.go.dev/github.com/arandu-io/framework/jobs) — jobs, a [scheduler](https://pkg.go.dev/github.com/arandu-io/framework/scheduler) that holds a lock per replica, and [events](https://pkg.go.dev/github.com/arandu-io/framework/events) written to an outbox in the same transaction as the row that caused them
 
 One direct dependency: `golang.org/x/crypto`. CI refuses the second.
 
@@ -35,7 +36,7 @@ The API reference is generated from the doc comments and lives on
 symbol carries one, and that is deliberate: it is the documentation that cannot
 drift from the code, because it sits in the same file.
 
-The CLI documents itself — `aru help` lists every command, and each one explains
+The CLI documents itself. `aru help` lists every command, and each one explains
 what it writes and what to do with it. `aru doctor` explains what it found and
 what breaks, not which rule was violated.
 
