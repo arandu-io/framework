@@ -8,7 +8,7 @@ import (
 
 // Context is what a controller action receives.
 //
-// It is the shape a Laravel developer expects from a controller: the request,
+// It is everything a controller action gets, and no more: the request,
 // the response, and helpers that answer. Nothing more -- and the "nothing more"
 // is the point. There is no database handle here, no repository, no Grant. A
 // controller that could reach the data layer would be a controller that skipped
@@ -47,8 +47,8 @@ func (c *Context) Query(name string) string { return c.Request.URL.Query().Get(n
 
 // Input reads a form field, from the body or the query string.
 //
-// Named Input rather than Form because that is what Laravel calls it, and the
-// vocabulary is the point (RULE 10).
+// Named Input rather than Form because Input is the word the vocabulary already
+// uses for it, and the vocabulary is the point (RULE 10).
 func (c *Context) Input(name string) string { return c.Request.FormValue(name) }
 
 // View renders a page. The data is a typed struct, never a map.

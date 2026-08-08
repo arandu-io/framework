@@ -43,8 +43,8 @@ type Config struct {
 	// AppKey signs session cookies and CSRF tokens. Exactly AppKeyLen bytes.
 	AppKey []byte
 
-	// Database is the connection, described the way Laravel's .env describes it,
-	// because that is the file an Arandu project will be read next to.
+	// Database is the connection, named the way a .env conventionally names it,
+	// so nobody needs a translation table to read one.
 	Database DatabaseConfig
 
 	RedisURL string

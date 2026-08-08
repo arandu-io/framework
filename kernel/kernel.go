@@ -1,8 +1,8 @@
 // Package kernel boots the application.
 //
-// It is the equivalent of Laravel's bootstrap/app.php: the single place where an
-// application is composed. One difference matters: the Kernel boots ONCE, at
-// process start, not per request, so nothing here may assume request scope.
+// It is the single place where an application is composed. One difference
+// matters: the Kernel boots ONCE, at process start, not per request, so
+// nothing here may assume request scope.
 package kernel
 
 import (
@@ -419,7 +419,7 @@ func FormatRoutes(routes []*httpx.Route) string {
 			module = r.Module
 			fmt.Fprintf(&b, "\n%s\n", module)
 		}
-		// The name column is what `php artisan route:list` shows, and what a
+		// The name column is what `aru route:list` shows, and what a
 		// developer copies into route("...") instead of typing the path.
 		if name := r.RouteName(); name != "" {
 			fmt.Fprintf(&b, "  %-7s %-34s %s\n", r.Method, r.Pattern, name)

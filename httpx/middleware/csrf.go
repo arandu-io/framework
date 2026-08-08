@@ -7,7 +7,7 @@ import (
 )
 
 // StatusCSRFExpired is the status returned when the token is missing, invalid or
-// expired. 419 is Laravel's convention, kept on purpose: HTMX can be told to
+// expired. 419 is the conventional status for it, kept on purpose: HTMX can be told to
 // reload the page on 419, which is the only useful reaction to an expired token.
 const StatusCSRFExpired = 419
 

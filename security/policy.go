@@ -64,8 +64,8 @@ type Policy[T any] interface {
 // stating it wrong here is worse than anywhere else: this is the doc a reader
 // checks the thesis against.
 //
-// This is what Laravel does not have: there, the Gate is a call you can simply
-// forget to make, and nothing warns you.
+// The alternative shape -- authorization as a call the handler remembers to make
+// -- is authorization that gets forgotten, and nothing warns you.
 type Grant struct {
 	subject Subject
 	action  Action

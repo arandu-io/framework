@@ -1,8 +1,8 @@
 // Package scheduler runs the tasks modules declare.
 //
-// Laravel's scheduler exists because PHP has no resident process: a system cron
-// calls schedule:run every minute and PHP decides what to do. That is two
-// artifacts and a dependency on the operating system.
+// A scheduler built on a system cron exists because the runtime has no resident
+// process: cron calls a command every minute and the command decides what to
+// run. That is two artifacts and a dependency on the operating system.
 //
 // Go has a resident process. The scheduler is a goroutine in the same binary,
 // which is also what keeps the deploy story of doc 17 true: one image, no

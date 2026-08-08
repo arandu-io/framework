@@ -41,8 +41,8 @@ func Text(v any) string {
 
 // Yield renders the section a child view declared, or nothing.
 //
-// A layout yields sections that a given child may not have. Blade answers with
-// the default -- an empty string -- and so does this. A missing section is a
+// A layout yields sections that a given child may not have, and the answer is
+// the empty string. A missing section is a
 // page without a sidebar, not an error.
 func Yield(w io.Writer, sections map[string]func(io.Writer) error, name string) error {
 	section, declared := sections[name]
@@ -55,8 +55,8 @@ func Yield(w io.Writer, sections map[string]func(io.Writer) error, name string) 
 // RenderInto renders a layout, handing it the sections of the child view.
 //
 // This is what `@extends` compiles to: the child does not write markup, it
-// renders the layout and passes what goes in the holes. Same shape as Blade,
-// where the child template is evaluated to fill sections before the layout runs.
+// renders the layout and passes what goes in the holes: the child is evaluated
+// to fill the sections before the layout runs.
 func RenderInto(w io.Writer, layout string, data any, sections map[string]func(io.Writer) error) error {
 	mu.RLock()
 	f, known := layouts[layout]
@@ -87,8 +87,8 @@ func RegisterLayout(name string, f LayoutFunc) {
 
 // Include renders a partial with the same data as the page.
 //
-// Blade's @include shares the parent's variables. Here the data is one typed
-// struct, so the partial receives exactly it -- and a partial that wants
+// A partial shares the page's data. That data is one typed struct, so the
+// partial receives exactly it -- and a partial that wants
 // something else is a partial that takes different data, which is what a
 // component is for.
 func Include(w io.Writer, name string, data any) error {

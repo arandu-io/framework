@@ -9,8 +9,8 @@ import (
 
 // Dialect is the SQL flavour of a connection.
 //
-// The names match Laravel's DB_CONNECTION values, because the .env of an Arandu
-// project is meant to be readable by someone arriving from there.
+// The names are the conventional DB_CONNECTION values, so an .env reads the way
+// somebody expects it to.
 type Dialect string
 
 // Supported dialects.

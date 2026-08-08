@@ -11,10 +11,9 @@ import (
 
 // DatabaseConfig describes one connection.
 //
-// The field names follow Laravel's DB_* variables on purpose: a developer coming
-// from there should be able to read the .env of an Arandu project without a
-// translation table. The default connection is SQLite, so a fresh checkout runs
-// with nothing installed.
+// The field names are the conventional DB_* ones on purpose: an .env should be
+// readable at a glance, by anyone who has read one before. The default
+// connection is SQLite, so a fresh checkout runs with nothing installed.
 type DatabaseConfig struct {
 	Connection data.Dialect
 	Database   string // file path for SQLite, database name otherwise
@@ -29,8 +28,7 @@ type DatabaseConfig struct {
 	URL string
 }
 
-// DefaultSQLitePath is where a fresh project keeps its database file. It mirrors
-// Laravel's database/database.sqlite.
+// DefaultSQLitePath is where a fresh project keeps its database file.
 const DefaultSQLitePath = "database/database.sqlite"
 
 func loadDatabase() (DatabaseConfig, error) {

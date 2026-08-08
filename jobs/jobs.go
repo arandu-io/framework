@@ -180,18 +180,18 @@ func GrantFor(j Job) security.Grant {
 //
 // Every driver calls it at the top of Push, and it closes an escalation the
 // contract otherwise allows. New builds a job from the Grant, so what it
-// produces always matches -- but Push takes a Job, and a Job is a struct anybody
-// can fill in:
+// produces always matches -- but Push takes a Job, and a Job is a struct
+// anybody can fill in:
 //
 //	j := jobs.Job{ID: id, Name: "invoice.send", Action: "invoice.delete", TenantID: other}
 //	queue.Push(ctx, viewGrant, j)
 //
 // The worker rebuilds the Grant from the row -- GrantFor gives
 // SystemGrant(j.Action, j.TenantID) -- so the handler would run with an action
-// nobody authorized, in a tenant nobody authorized, and every Policy downstream
-// would say yes because the Grant looks legitimate. The queue would be the one
-// way past the authorization the whole framework exists to enforce. Found by
-// audit.
+// nobody authorized, in a tenant nobody authorized, and every Policy
+// downstream would say yes because the Grant looks legitimate. The queue would
+// be the one way past the authorization the whole framework exists to enforce.
+// Found by audit.
 //
 // Checked here rather than in each driver, because a driver that forgets is a
 // driver that reopens it.

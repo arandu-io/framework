@@ -89,7 +89,7 @@ func (*Renderer) Render(ctx context.Context, w http.ResponseWriter, status int, 
 	// layout that reached the browser as a 200.
 	//
 	// The cost is holding one page in memory. That is what html/template's own
-	// documentation recommends, and what Blade does by rendering to a string:
+	// documentation recommends, and what any engine that renders to a string does:
 	// streaming and reporting errors are not both available.
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()

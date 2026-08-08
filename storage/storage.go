@@ -6,9 +6,9 @@
 // the path is prefixed by the tenant that Grant carries. A file is customer
 // data, and a path without a tenant is a leak with a directory name.
 //
-// There is no storage:link. Laravel symlinks a directory into the public root,
-// which makes every stored file world-readable by URL and turns authorization
-// into "hope nobody guesses the name". Here a file is served by a route, and the
+// There is no symlink into a document root. Publishing a storage directory that
+// way makes every stored file world-readable by URL and turns authorization into
+// "hope nobody guesses the name". Here a file is served by a route, and the
 // route runs a Policy like any other.
 package storage
 

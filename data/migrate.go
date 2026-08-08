@@ -32,8 +32,8 @@ const KeyText = "VARCHAR(255)"
 // Migration is a versioned, immutable-once-published schema change.
 //
 // The id carries its own order -- "2026_07_29_000001_create_users_table" -- for
-// the same reason Laravel names its files that way: a migration that sorts
-// differently on two machines applies in a different order on two machines.
+// the reason that convention exists: a migration that sorts differently on two
+// machines applies in a different order on two machines.
 type Migration struct {
 	ID   string
 	Up   string
@@ -51,8 +51,8 @@ type AppliedMigration struct {
 // ids it applied.
 //
 // Everything applied by one call shares a batch number, which is what makes
-// Rollback undo a deploy rather than a single migration -- the same model
-// Laravel uses, and the reason its rollback is useful in practice.
+// Rollback undo a deploy rather than a single migration, which is what makes a
+// rollback useful in practice instead of a per-file undo.
 //
 // Each migration runs inside its own transaction together with the insert into
 // the tracking table, so a failure halfway cannot leave the schema ahead of the

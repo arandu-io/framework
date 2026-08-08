@@ -7,7 +7,7 @@ import (
 
 // The seven actions of a resource controller, one interface each.
 //
-// Laravel's Route::resource takes a class and registers seven routes whether or
+// The usual shape of this takes one object and registers seven routes whether or
 // not the methods exist -- a request to a missing one is a runtime error. Here
 // each action is its own tiny interface, and Resource registers exactly the ones
 // the controller implements. A route that exists is a route that answers.
@@ -51,7 +51,7 @@ type (
 //
 //	Route.Resource("invoices", InvoiceController{})
 //
-// The seven, in Laravel's order and with Laravel's names:
+// The seven, in the conventional order and with the conventional names:
 //
 //	GET    /invoices             index    invoices.index
 //	GET    /invoices/create      create   invoices.create
@@ -96,7 +96,7 @@ func (r *Router) Resource(name string, controller any) []*Route {
 	}
 	if c, ok := controller.(Updater); ok {
 		add(http.MethodPut, one, "update", c.Update)
-		// PATCH answers the same handler and shares the name, like Laravel.
+		// PATCH answers the same handler and shares the name.
 		// Only the PUT row carries the name in the table, so URL generation has
 		// one answer rather than two.
 		r.handleCtx(http.MethodPatch, one, c.Update)

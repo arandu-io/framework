@@ -12,8 +12,8 @@ import (
 //	Route.Get("/", home).Name("home")
 //	Route.Resource("invoices", InvoiceController{})   // names them all
 //
-// It returns the route so the call chains, which is how Laravel reads:
-// Route::get('/', ...)->name('home').
+// It returns the route so the call chains, and the declaration reads as one
+// line: Route.Get("/", home).Name("home").
 //
 // The name was a field on Route from the first version and was never filled in.
 // A field that nothing writes is a promise the code does not keep -- `aru
@@ -52,7 +52,7 @@ func (t *Routes) URL(name string, params ...string) (string, error) {
 
 	// "{$}" is not a parameter. It is the anchor that stops a pattern ending in
 	// a slash from matching everything below it, which is what "GET /{$}" means
-	// and what Laravel's Route::get('/') does by default. Reading it as a
+	// and what registering the root route does by default. Reading it as a
 	// parameter made URL("home") return an error for the one route every
 	// application has.
 	out := strings.TrimSuffix(route.Pattern, "{$}")

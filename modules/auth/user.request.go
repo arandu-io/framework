@@ -6,8 +6,8 @@ import (
 )
 
 // CreateUserRequest is the input contract. Fields are explicit: there is no mass
-// assignment, so the whole bug class Laravel's $fillable exists to contain does
-// not exist here.
+// assignment, so a request body cannot write a column nobody meant to expose --
+// the bug class does not exist here rather than being contained.
 type CreateUserRequest struct {
 	Email    string
 	Password string

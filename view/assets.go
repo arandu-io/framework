@@ -7,10 +7,10 @@
 // beyond Go and the standalone binaries the CLI fetches. Having a build step is
 // allowed; being Node is not (RULE 13).
 //
-// It lives in the framework and the views do not. That is the split the Laravel
-// mirror asks for: resources/views/ belongs to laravel/laravel, the rendering
-// machinery to laravel/framework. It used to be a repository of its own,
-// `porang`, and dissolving it is ADR 0021.
+// It lives in the framework and the views do not, and that split is deliberate:
+// resources/views/ belongs to the project, because it is edited; the rendering
+// machinery belongs here, because it is not. It used to be a repository of its
+// own, and dissolving it is ADR 0021.
 //
 // The error page deliberately does not use this package. It has to render when
 // the rest is broken, including when the view build failed, so it stays as

@@ -5,8 +5,9 @@ import (
 	"time"
 )
 
-// Dump is the equivalent of Laravel's dump(), with one difference that matters:
-// it does not write to stdout and does not corrupt the HTML of the response. The
+// Dump records a value for the debug page. It is the print statement you reach
+// for while chasing something, with the difference that matters: it does not
+// write to stdout and does not corrupt the HTML of the response. The
 // value is recorded in the Collector and shown on the debug page.
 //
 // In production, where the Collector is nil, it is a no-op.
