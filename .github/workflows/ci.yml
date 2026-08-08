@@ -65,6 +65,61 @@ jobs:
             exit 1
           fi
 
+      # The API surface, compared against the last release.
+      #
+      # doc 23 wrote this policy months before anything ran it: apidiff between
+      # tags, the diff visible in review, an UPGRADE.md entry per break. None of
+      # the three existed, and by the time somebody measured, more than a dozen
+      # incompatible changes had shipped without a note.
+      #
+      # This does not forbid breaking. While the version starts with v0. it is
+      # allowed to, and freezing a shape nobody has built on is worse. What it
+      # forbids is breaking QUIETLY: an incompatible change with no entry in
+      # UPGRADE.md fails here, in a diff a reviewer is looking at, rather than in
+      # somebody's build three weeks later.
+      - name: api diff against the last release
+        run: |
+          set -euo pipefail
+          latest=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          if [ -z "$latest" ]; then
+            echo "no release to compare against yet"
+            exit 0
+          fi
+          echo "comparing the working tree against $latest"
+
+          old=$(mktemp -d)
+          git worktree add -q --detach "$old" "$latest"
+
+          broke=""
+          for pkg in $(go list ./... | sed 's|github.com/arandu-io/framework|.|'); do
+            # A package that did not exist in the release is an addition, and an
+            # addition breaks nobody.
+            [ -d "$old/${pkg#./}" ] || continue
+            (cd "$old" && go run golang.org/x/exp/cmd/apidiff@latest -w "$old/api.out" "$pkg") >/dev/null 2>&1 || continue
+            diff=$(go run golang.org/x/exp/cmd/apidiff@latest "$old/api.out" "$pkg" 2>/dev/null \
+                     | sed -n '/Incompatible changes/,$p' | grep '^- ' || true)
+            if [ -n "$diff" ]; then
+              echo "$pkg:"
+              echo "$diff" | sed 's/^/    /'
+              broke="yes"
+            fi
+          done
+          git worktree remove --force "$old"
+
+          if [ -z "$broke" ]; then
+            echo "no incompatible change since $latest"
+            exit 0
+          fi
+          # Broken is allowed. Broken and unwritten is not.
+          if git diff --quiet "$latest" -- UPGRADE.md; then
+            echo
+            echo "there are incompatible changes and UPGRADE.md was not touched since $latest."
+            echo "Write what somebody has to change, and why. That file is the whole mechanism."
+            exit 1
+          fi
+          echo
+          echo "incompatible changes, and UPGRADE.md was updated. Read the entry in review."
+
       # Required by doc 24: a known vulnerability blocks the merge rather than
       # showing up in a report nobody reads.
       - name: govulncheck
