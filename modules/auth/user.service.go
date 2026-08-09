@@ -224,6 +224,44 @@ func (s *Service) Names(ctx context.Context, tenant string, ids []string) (map[s
 	return s.repo.NamesByID(ctx, security.SystemGrant(ActionUserView, tenant), ids)
 }
 
+// SetPassword replaces the password of an existing account.
+//
+// It exists for one caller: the operator command that resets a password from
+// the terminal, when whoever owns the address cannot reach the reset link --
+// the mail is not configured yet, the domain is not verified yet, the account is
+// the first administrator and there is nobody else to ask.
+//
+// It is NOT what a password-reset screen calls. That flow proves control of the
+// address first, and its rules -- a minimum length, a history, a notification --
+// are the application's. This one is the door with no lock on it, and it is
+// deliberately only reachable from a command a person types.
+//
+// The hash is computed here, so no caller can be handed the chance to store a
+// plain password by writing the field directly.
+func (s *Service) SetPassword(ctx context.Context, tenant, email, plain string) (User, error) {
+	g := security.SystemGrant(ActionUserView, tenant)
+	u, err := s.repo.FindByEmail(ctx, g, email)
+	if err != nil {
+		return User{}, err
+	}
+
+	hash, err := security.HashPassword(plain)
+	if err != nil {
+		return User{}, fmt.Errorf("auth: hashing password: %w", err)
+	}
+	u.Password = hash
+
+	updated, err := s.repo.Update(ctx, security.SystemGrant(ActionUserUpdate, tenant), u)
+	if err != nil {
+		return User{}, err
+	}
+	// Logged because it is an out-of-band credential change: the one event where
+	// "who did this and when" is asked afterwards and there is no request to
+	// answer with.
+	observability.Log(ctx).Warn("password replaced from the command line", "user", updated)
+	return updated, nil
+}
+
 // EnsureAdmin creates the first administrator of a tenant when it has none.
 //
 // It is deliberately NOT called at boot: seeding that happens by itself is how a
