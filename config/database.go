@@ -86,6 +86,29 @@ func (d DatabaseConfig) Validate() error {
 		if d.Username == "" {
 			return fmt.Errorf("DB_USERNAME is required for %s", d.Connection)
 		}
+		return nil
+	}
+
+	// For SQLite, DB_DATABASE is a PATH. A value with neither a separator nor an
+	// extension is a server database NAME that somebody pasted into a SQLite
+	// setting -- and it is accepted by everything: SQLite creates the file, the
+	// application runs, the migrations apply, and a database appears in the
+	// project root under a name no .gitignore pattern expects.
+	//
+	// That is not hypothetical. This repository committed three of them --
+	// arandu_blog, its -shm and its -wal -- twice, because the file has no
+	// extension and every rule written for one missed it.
+	if !strings.ContainsAny(d.Database, `/\`) && !strings.Contains(d.Database, ".") {
+		return fmt.Errorf(`DB_DATABASE is %q, which reads as a server database name rather than a file.
+
+For sqlite it is a PATH, and a bare name puts the file in whichever directory
+the process started in -- usually the project root, where it is easy to commit
+by accident.
+
+    DB_DATABASE=database/%s.sqlite
+
+If you meant a server, DB_CONNECTION is what says so: pgsql or mysql.`,
+			d.Database, d.Database)
 	}
 	return nil
 }

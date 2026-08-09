@@ -138,3 +138,44 @@ func TestSQLitePathIsEmptyForMemoryAndServers(t *testing.T) {
 		t.Errorf("server path = %q, want empty", got)
 	}
 }
+
+// TestSQLiteRefusesAServerDatabaseName.
+//
+// For SQLite, DB_DATABASE is a PATH. A value with neither a separator nor an
+// extension is a server database name pasted into a SQLite setting, and every
+// layer accepts it: SQLite creates the file, the application runs, the
+// migrations apply, and a database appears in the project root under a name no
+// ignore rule expects.
+//
+// This repository committed three of them -- a database, its -shm and its -wal
+// -- twice, because the file has no extension and every rule written for one
+// missed it.
+func TestSQLiteRefusesAServerDatabaseName(t *testing.T) {
+	for _, name := range []string{"arandu_blog", "blog", "myapp"} {
+		cfg := config.DatabaseConfig{Connection: data.DialectSQLite, Database: name}
+
+		err := cfg.Validate()
+		if err == nil {
+			t.Errorf("%q was accepted as a SQLite path", name)
+			continue
+		}
+		// The message has to carry the fix, not only the refusal.
+		if !strings.Contains(err.Error(), "database/"+name+".sqlite") {
+			t.Errorf("the error does not say what to write instead: %v", err)
+		}
+	}
+}
+
+// TestSQLiteAcceptsAPath: a separator or an extension is enough, and both of
+// these are things people legitimately write.
+func TestSQLiteAcceptsAPath(t *testing.T) {
+	for _, path := range []string{
+		"database/database.sqlite", "./blog.db", "/tmp/x/test.sqlite",
+		"blog.sqlite", "database/blog",
+	} {
+		cfg := config.DatabaseConfig{Connection: data.DialectSQLite, Database: path}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("%q was refused: %v", path, err)
+		}
+	}
+}
