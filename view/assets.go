@@ -164,13 +164,32 @@ func RegisterStylesheet(css []byte) {
 	assets[Stylesheet] = newAsset(Stylesheet, stylesheetType, css)
 }
 
-// fontType is what a woff2 is served as.
+// The font formats a vendored face may be in.
 //
-// WOFF2 and nothing else. Every browser released since 2016 reads it, and it is
-// Brotli-compressed inside the container -- so a second format in WOFF or TTF
-// would double the bytes in every binary to reach browsers nobody is running,
-// and would be served pre-compressed anyway.
-const fontType = "font/woff2"
+// WOFF2 is what ships, and it is what `aru font:add` produces from the
+// catalogue: every browser released since 2016 reads it, and it is
+// Brotli-compressed inside the container, so it is already smaller than
+// anything a server could do to it.
+//
+// TrueType and OpenType are accepted for one case, and the CLI says so every
+// time it vendors one: a font being DRAWN is a .ttf long before it is a .woff2,
+// and refusing it would make the command unusable during exactly the work
+// somebody asked it for. They cost two to four times the bytes.
+var fontTypes = map[string]string{
+	".woff2": "font/woff2",
+	".ttf":   "font/ttf",
+	".otf":   "font/otf",
+}
+
+// isFont reports whether a name is a face, and what to serve it as.
+func isFont(name string) (string, bool) {
+	for ext, contentType := range fontTypes {
+		if strings.HasSuffix(name, ext) {
+			return contentType, true
+		}
+	}
+	return "", false
+}
 
 // RegisterFont adds one vendored font file to the served assets.
 //
@@ -192,8 +211,9 @@ const fontType = "font/woff2"
 // file reaches a content-addressed asset without the CLI having to predict the
 // hash the framework will compute.
 func RegisterFont(name string, body []byte) {
-	if !strings.HasSuffix(name, ".woff2") {
-		panic("view: " + name + " is not a .woff2 -- see the note on fontType")
+	contentType, ok := isFont(name)
+	if !ok {
+		panic("view: " + name + " is not a font this serves -- want .woff2, .ttf or .otf")
 	}
 	if len(body) == 0 {
 		panic("view: RegisterFont was given an empty file for " + name +
@@ -206,7 +226,7 @@ func RegisterFont(name string, body []byte) {
 	if _, exists := assets[name]; exists {
 		panic("view: the font " + name + " is already registered -- a stale generated file is probably still on disk")
 	}
-	assets[name] = newAsset(name, fontType, body)
+	assets[name] = newAsset(name, contentType, body)
 }
 
 // URL returns the versioned path of an asset: /_arandu/assets/<hash>/htmx.min.js
@@ -244,8 +264,8 @@ func FontPreloads() template.HTML {
 	defer assetsMu.RUnlock()
 
 	names := make([]string, 0, len(assets))
-	for name, a := range assets {
-		if a.contentType == fontType {
+	for name := range assets {
+		if _, ok := isFont(name); ok {
 			names = append(names, name)
 		}
 	}
@@ -257,7 +277,7 @@ func FontPreloads() template.HTML {
 	var b strings.Builder
 	for _, name := range names {
 		fmt.Fprintf(&b, `<link rel="preload" href="%s" as="font" type="%s" crossorigin>`,
-			AssetPath+assets[name].hash+"/"+name, fontType)
+			AssetPath+assets[name].hash+"/"+name, assets[name].contentType)
 	}
 	return template.HTML(b.String())
 }
