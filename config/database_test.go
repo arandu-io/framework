@@ -28,7 +28,7 @@ func TestDefaultConnectionIsSQLite(t *testing.T) {
 
 func TestLoadRejectsUnknownConnection(t *testing.T) {
 	t.Setenv("APP_KEY", strings.Repeat("k", config.AppKeyLen))
-	t.Setenv("DB_CONNECTION", "mongodb")
+	t.Setenv("DATABASE_URL", "mongodb://127.0.0.1/db")
 
 	_, err := config.Load()
 
@@ -76,18 +76,41 @@ func TestPostgresDSN(t *testing.T) {
 	}
 }
 
-// TestURLWinsOverTheParts: platforms hand out a single DATABASE_URL, and
-// rebuilding it from parts is how a deployment ends up on the wrong database.
-func TestURLWinsOverTheParts(t *testing.T) {
-	cfg := config.DatabaseConfig{
-		Connection: data.DialectPostgres,
-		Host:       "ignored",
-		Database:   "ignored",
-		URL:        "postgres://user:pass@managed.example:5432/production",
+// TestTheDSNIsBuiltForTheDriverAndNotPassedThrough.
+//
+// DATABASE_URL is the one source now, and the DSN used to be that string
+// verbatim whenever it was set. That is right for pgx and wrong for the other
+// two: go-sql-driver takes user:pass@tcp(host:port)/db, with no scheme, and
+// modernc/sqlite takes a path. Handing either of them the URL is a connection
+// that fails with a parse error naming neither the driver nor the variable.
+func TestTheDSNIsBuiltForTheDriverAndNotPassedThrough(t *testing.T) {
+	mysql, err := config.ParseDatabaseURL("mysql://user:pass@db.example:3306/billing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := mysql.DSN(); !strings.HasPrefix(got, "user:pass@tcp(db.example:3306)/billing") {
+		t.Errorf("the MySQL DSN is %q, which go-sql-driver does not read", got)
+	}
+	if strings.Contains(mysql.DSN(), "mysql://") {
+		t.Error("the scheme reached the driver")
 	}
 
-	if got := cfg.DSN(); got != cfg.URL {
-		t.Fatalf("DSN = %q, want the URL verbatim", got)
+	sqlite, err := config.ParseDatabaseURL("sqlite://database/blog.sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(sqlite.DSN(), "database/blog.sqlite?") {
+		t.Errorf("the SQLite DSN is %q, which is not a path", sqlite.DSN())
+	}
+
+	pg, err := config.ParseDatabaseURL("postgres://user:pass@managed.example:5432/production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"managed.example:5432", "/production", "user", "sslmode=disable"} {
+		if !strings.Contains(pg.DSN(), want) {
+			t.Errorf("the Postgres DSN is missing %s: %s", want, pg.DSN())
+		}
 	}
 }
 

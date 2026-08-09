@@ -103,7 +103,7 @@ func TestLoadDecodesBase64Key(t *testing.T) {
 		raw[i] = byte(i)
 	}
 	t.Setenv("APP_KEY", "base64:"+base64.StdEncoding.EncodeToString(raw))
-	t.Setenv("DB_CONNECTION", "sqlite")
+	t.Setenv("DATABASE_URL", "sqlite://database/database.sqlite")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -120,7 +120,7 @@ func TestLoadDecodesBase64Key(t *testing.T) {
 
 func TestLoadRejectsBrokenBase64Key(t *testing.T) {
 	t.Setenv("APP_KEY", "base64:not!valid!base64")
-	t.Setenv("DB_CONNECTION", "sqlite")
+	t.Setenv("DATABASE_URL", "sqlite://database/database.sqlite")
 
 	if _, err := config.Load(); err == nil {
 		t.Fatal("a malformed base64 APP_KEY was accepted")
@@ -129,7 +129,7 @@ func TestLoadRejectsBrokenBase64Key(t *testing.T) {
 
 func TestLoadAppliesDefaults(t *testing.T) {
 	t.Setenv("APP_KEY", strings.Repeat("k", config.AppKeyLen))
-	t.Setenv("DB_CONNECTION", "sqlite")
+	t.Setenv("DATABASE_URL", "sqlite://database/database.sqlite")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -155,7 +155,7 @@ func TestLoadAppliesDefaults(t *testing.T) {
 
 func TestLoadReadsTTLInSeconds(t *testing.T) {
 	t.Setenv("APP_KEY", strings.Repeat("k", config.AppKeyLen))
-	t.Setenv("DB_CONNECTION", "sqlite")
+	t.Setenv("DATABASE_URL", "sqlite://database/database.sqlite")
 	t.Setenv("SESSION_TTL", "60")
 
 	cfg, err := config.Load()

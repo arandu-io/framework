@@ -54,7 +54,7 @@ func emptyProject(t *testing.T) {
 func TestAMissingEnvFileIsNotAnError(t *testing.T) {
 	emptyProject(t)
 	t.Setenv("APP_KEY", strings.Repeat("k", config.AppKeyLen))
-	t.Setenv("DB_CONNECTION", "sqlite")
+	t.Setenv("DATABASE_URL", "sqlite://database/database.sqlite")
 
 	if _, err := config.Load(); err != nil {
 		t.Fatalf("Load without a .env: %v", err)
@@ -72,7 +72,7 @@ APP_NAME=billing
 APP_KEY=`+strings.Repeat("k", config.AppKeyLen)+`
 
 export HTTP_ADDR=:9000
-DB_CONNECTION=sqlite
+DATABASE_URL=sqlite://database/database.sqlite
 `)
 
 	cfg, err := config.Load()
@@ -96,7 +96,7 @@ DB_CONNECTION=sqlite
 // token that does not verify or a path that does not exist.
 func TestQuotesAreOptionalAndStripped(t *testing.T) {
 	inProject(t, `APP_KEY="`+strings.Repeat("k", config.AppKeyLen)+`"
-DB_CONNECTION=sqlite
+DATABASE_URL=sqlite://database/database.sqlite
 APP_NAME='the billing app'
 HTTP_ADDR=":8081"
 `)
@@ -123,7 +123,6 @@ HTTP_ADDR=":8081"
 func TestAValueMayContainEquals(t *testing.T) {
 	const dsn = "postgres://u:p@host:5432/db?sslmode=require&application_name=billing"
 	inProject(t, `APP_KEY=`+strings.Repeat("k", config.AppKeyLen)+`
-DB_CONNECTION=pgsql
 DATABASE_URL=`+dsn+`
 `)
 
@@ -145,11 +144,10 @@ DATABASE_URL=`+dsn+`
 func TestTheEnvironmentWinsOverTheFile(t *testing.T) {
 	inProject(t, `APP_KEY=`+strings.Repeat("f", config.AppKeyLen)+`
 APP_NAME=from-the-file
-DB_CONNECTION=sqlite
-DB_DATABASE=from-the-file.sqlite
+DATABASE_URL=sqlite://from-the-file.sqlite
 `)
 	t.Setenv("APP_NAME", "from-the-environment")
-	t.Setenv("DB_DATABASE", "from-the-environment.sqlite")
+	t.Setenv("DATABASE_URL", "sqlite://from-the-environment.sqlite")
 	t.Setenv("APP_KEY", strings.Repeat("e", config.AppKeyLen))
 
 	cfg, err := config.Load()
@@ -209,7 +207,7 @@ func TestAMalformedLineNamesTheFileAndTheLine(t *testing.T) {
 // forever (RULE 15). The value is what the file says it is.
 func TestThereIsNoInterpolation(t *testing.T) {
 	inProject(t, `APP_KEY=`+strings.Repeat("k", config.AppKeyLen)+`
-DB_CONNECTION=sqlite
+DATABASE_URL=sqlite://database/database.sqlite
 APP_NAME=${OTHER}-suffix
 `)
 	t.Setenv("OTHER", "expanded")
@@ -260,10 +258,7 @@ LOG_LEVEL=info
 LOG_FORMAT=
 
 # --- config/database.go ----------------------------------------------------
-DB_CONNECTION=sqlite
-DB_DATABASE=database/database.sqlite
-DB_USERNAME=
-DB_PASSWORD=
+DATABASE_URL=sqlite://database/database.sqlite
 
 DATABASE_URL=
 
