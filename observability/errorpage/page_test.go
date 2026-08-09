@@ -68,9 +68,13 @@ func TestRenderSuggestsTheCause(t *testing.T) {
 			want:     "issued for one action",
 		},
 		{
-			name:     "csrf",
-			panicVal: errors.New("arandu: invalid or expired CSRF token"),
-			want:     "hx-headers",
+			// Not a CSRF case. That one asserted a panic that cannot happen --
+			// CSRFProtect answers 419 through http.Error and never panics -- and
+			// the branch behind it matched "CSRFToken" too, so it answered a
+			// missing method with somebody else's fix. See hints_test.go.
+			name:     "the migrations never ran here",
+			panicVal: errors.New(`ERROR: relation "posts" does not exist (SQLSTATE 42P01)`),
+			want:     "aru migrate",
 		},
 		{
 			name:     "n plus one",
