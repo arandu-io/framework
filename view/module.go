@@ -43,6 +43,13 @@ func (*Module) Routes(r *httpx.Router) {
 	r.Get(AssetPath+"{hash}/{name}", Handler)
 }
 
+// ReloadTag supplies the development live-reload tag to the kernel.
+//
+// kernel.ReloadTagger, an optional interface, asked for only in development.
+// The kernel gives the address of the stream it serves; this package owns the
+// script and the asset it is served as.
+func (*Module) ReloadTag(stream string) string { return ReloadTag(stream) }
+
 // Renderer supplies the view renderer to the kernel.
 //
 // It is kernel.RendererProvider, an optional interface: the kernel asks every

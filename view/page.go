@@ -42,6 +42,19 @@ type Layout interface {
 	LoginLink() string
 	LogoutLink() string
 	RegisterLink() string
+
+	// PanelLink is the signed-in person's own area, and AdminLink is the one
+	// only some of them may open. Both follow the same rule as the four above:
+	// empty draws nothing.
+	//
+	// AdminLink is empty for anybody who would be refused, which is what keeps
+	// the header from ever offering an address that answers 403. The decision is
+	// the controller's -- it holds the subject and the policy -- and the markup
+	// only ever sees a string. A layout that asked about roles would be a second
+	// place where authorization is decided, and the second place is the one that
+	// gets it wrong.
+	PanelLink() string
+	AdminLink() string
 }
 
 // Page is the chrome every screen hands the layout, embedded rather than
@@ -88,6 +101,12 @@ type Page struct {
 	LoginURL    string
 	LogoutURL   string
 	RegisterURL string
+
+	// PanelURL and AdminURL are drawn only when signed in, and AdminURL only
+	// for somebody the policy would let in. Filled by the controller, from the
+	// subject it already holds -- see the Layout interface.
+	PanelURL string
+	AdminURL string
 
 	// Path is the address this page was served at, so the navigation can say
 	// where you are.
@@ -157,3 +176,10 @@ func (p Page) LogoutLink() string { return p.LogoutURL }
 
 // RegisterLink is the sign-up screen, or empty when registration is closed.
 func (p Page) RegisterLink() string { return p.RegisterURL }
+
+// PanelLink is the signed-in person's own area, or empty.
+func (p Page) PanelLink() string { return p.PanelURL }
+
+// AdminLink is the administration area, or empty for anybody who would be
+// refused it.
+func (p Page) AdminLink() string { return p.AdminURL }

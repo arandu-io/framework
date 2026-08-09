@@ -208,6 +208,19 @@ func (k *Kernel) mountInternalRoutes() {
 	internal := k.router.ForModule("arandu")
 	internal.Get("/_arandu/health", k.handleHealth)
 
+	// Development only, and mounted from the same condition that injects the
+	// script -- so there is no arrangement in which a production page listens
+	// for a stream nothing answers. See reload.go.
+	if k.cfg.IsDev() {
+		internal.Get(reloadPath, k.handleReload)
+		for _, m := range k.modules {
+			if t, ok := m.(ReloadTagger); ok {
+				reloadTag = []byte(t.ReloadTag(reloadPath))
+				break
+			}
+		}
+	}
+
 	if k.recorder == nil {
 		return
 	}
@@ -275,8 +288,10 @@ func (k *Kernel) handleHealth(w http.ResponseWriter, r *http.Request) {
 // would fall back to slog.Default() and ignore the configured handler and level,
 // which in production means request logs in the wrong format.
 func (k *Kernel) Handler() http.Handler {
-	return httpx.Chain(k.router,
-		append([]httpx.Middleware{observability.RootLogger(k.log)}, k.pipeline...)...)
+	// Live reload is outermost after the logger, so it sees the finished
+	// document rather than a handler's intention to write one.
+	outer := append([]httpx.Middleware{observability.RootLogger(k.log)}, devReload(k.cfg.IsDev())...)
+	return httpx.Chain(k.router, append(outer, k.pipeline...)...)
 }
 
 // Run starts the server and blocks until SIGINT or SIGTERM, then shuts down
