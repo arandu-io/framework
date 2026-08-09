@@ -22,7 +22,9 @@ import (
 	"embed"
 	"encoding/hex"
 	"fmt"
+	"html/template"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -97,13 +99,31 @@ func init() {
 // leave every browser holding the previous stylesheet at the same URL, forever,
 // because that URL is served with max-age=31536000, immutable.
 func newAsset(name, contentType string, body []byte) *asset {
-	sum := sha256.Sum256(body)
 	return &asset{
 		name:        name,
 		contentType: contentType,
 		body:        body,
-		hash:        hex.EncodeToString(sum[:])[:12],
+		hash:        AssetHash(body),
 	}
+}
+
+// AssetHash is the path segment an asset is served under: the first twelve hex
+// characters of the SHA-256 of its bytes.
+//
+// It is exported because one thing outside this repository has to produce the
+// same string. `aru font:add` writes an absolute src: into the stylesheet it
+// generates, and it has to name the font's own hash -- a URL carrying any other
+// hash is served without caching, by design, so a relative url() inheriting the
+// STYLESHEET's hash means the font is re-downloaded on every page view. Eighteen
+// kilobytes, every request, silently.
+//
+// The CLI is a separate module and cannot import this one, so it computes the
+// same three lines. That is a contract across a repository boundary, which is
+// why this function exists rather than the expression being inlined above: it
+// has a name, it has a test, and both sides point at it.
+func AssetHash(body []byte) string {
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])[:12]
 }
 
 // RegisterStylesheet replaces the embedded stylesheet with the application's.
@@ -144,6 +164,51 @@ func RegisterStylesheet(css []byte) {
 	assets[Stylesheet] = newAsset(Stylesheet, stylesheetType, css)
 }
 
+// fontType is what a woff2 is served as.
+//
+// WOFF2 and nothing else. Every browser released since 2016 reads it, and it is
+// Brotli-compressed inside the container -- so a second format in WOFF or TTF
+// would double the bytes in every binary to reach browsers nobody is running,
+// and would be served pre-compressed anyway.
+const fontType = "font/woff2"
+
+// RegisterFont adds one vendored font file to the served assets.
+//
+// `aru font:add` downloads the family once, writes the file under
+// resources/fonts/ and generates the Go that calls this from init(). The bytes
+// are committed to the repository, so nothing is fetched at build time and
+// nothing at all at run time: the CSP is default-src 'self', and a font from a
+// CDN would mean loosening it in order to look different.
+//
+// Unlike RegisterStylesheet this ADDS rather than replaces -- a project has one
+// stylesheet and may have two faces, a display and a body. Registering one name
+// twice panics, because two sets of bytes under one URL is a generated file that
+// outlived its source, and every browser that cached the first holds it forever:
+// the URL is served immutable.
+//
+// The name is what the generated @font-face references, and it references it
+// relatively. A stylesheet served from /_arandu/assets/<hash>/app.css resolves
+// url("young-serif.woff2") against its own directory, which is how a static CSS
+// file reaches a content-addressed asset without the CLI having to predict the
+// hash the framework will compute.
+func RegisterFont(name string, body []byte) {
+	if !strings.HasSuffix(name, ".woff2") {
+		panic("view: " + name + " is not a .woff2 -- see the note on fontType")
+	}
+	if len(body) == 0 {
+		panic("view: RegisterFont was given an empty file for " + name +
+			" -- the vendored font is missing, run `aru font:add`")
+	}
+
+	assetsMu.Lock()
+	defer assetsMu.Unlock()
+
+	if _, exists := assets[name]; exists {
+		panic("view: the font " + name + " is already registered -- a stale generated file is probably still on disk")
+	}
+	assets[name] = newAsset(name, fontType, body)
+}
+
 // URL returns the versioned path of an asset: /_arandu/assets/<hash>/htmx.min.js
 //
 // The hash comes from the content, so upgrading HTMX changes the URL and no
@@ -157,6 +222,44 @@ func URL(name string) string {
 		return AssetPath + "missing/" + name
 	}
 	return AssetPath + a.hash + "/" + a.name
+}
+
+// FontPreloads is the <link rel=preload> for every registered face.
+//
+// Without it a font is discovered two round trips deep: the browser fetches the
+// page, parses it, fetches the stylesheet, parses THAT, and only then learns
+// there is a font -- by which time the heading has already painted in the
+// fallback. The preload starts the fetch with the page.
+//
+// It returns every registered face rather than taking names, so a layout writes
+// one line and never touches it again: swapping the family is `aru font:add`
+// running, not a template being edited.
+//
+// crossorigin is required even same-origin. A font is fetched in CORS mode by
+// specification, and a preload without it is a SECOND request rather than a
+// warm cache -- the most common way a preload makes a page slower instead of
+// faster.
+func FontPreloads() template.HTML {
+	assetsMu.RLock()
+	defer assetsMu.RUnlock()
+
+	names := make([]string, 0, len(assets))
+	for name, a := range assets {
+		if a.contentType == fontType {
+			names = append(names, name)
+		}
+	}
+	// Sorted, so the markup does not change between two runs of a binary that
+	// serves the same bytes -- a map has no order, and a page that differs by
+	// line order is a page no diff and no cache can compare.
+	sort.Strings(names)
+
+	var b strings.Builder
+	for _, name := range names {
+		fmt.Fprintf(&b, `<link rel="preload" href="%s" as="font" type="%s" crossorigin>`,
+			AssetPath+assets[name].hash+"/"+name, fontType)
+	}
+	return template.HTML(b.String())
 }
 
 // Handler serves the embedded assets.

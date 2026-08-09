@@ -12,6 +12,12 @@ func SecurityHeaders(dev bool) func(http.Handler) http.Handler {
 	csp := "default-src 'self'; " +
 		"script-src 'self'; " +
 		"style-src 'self'; " +
+		// Explicit, though default-src already covers it. A font is vendored and
+		// served from this origin like everything else (view.RegisterFont), and
+		// spelling it out is what makes the line say so -- the next person
+		// wondering whether a Google Fonts URL would work reads the policy, not
+		// the fallback rules.
+		"font-src 'self'; " +
 		"img-src 'self' data:; " +
 		"connect-src 'self'; " +
 		"frame-ancestors 'none'; " +

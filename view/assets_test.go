@@ -181,3 +181,26 @@ func TestTheStylesheetDoesNotReadItsOwnOutput(t *testing.T) {
 		}
 	}
 }
+
+// TestAssetHashIsTheContractTheCLIReimplements.
+//
+// `aru font:add` writes an absolute URL into the stylesheet it generates and has
+// to name the font's own hash. It is a separate module and cannot import this
+// one, so it computes the same twelve characters itself.
+//
+// This pins the algorithm against a known input. If it changes, this fails here
+// -- and the CLI has the mirror of it, so the two cannot drift silently. What
+// silent drift looks like: every vendored font served with Cache-Control:
+// no-cache, re-downloaded on every page view, with nothing broken enough to
+// notice.
+func TestAssetHashIsTheContractTheCLIReimplements(t *testing.T) {
+	// The first twelve hex characters of sha256("arandu").
+	const want = "06c6c3fc524a"
+
+	if got := view.AssetHash([]byte("arandu")); got != want {
+		t.Fatalf("AssetHash = %q, want %q.\n\nIf this is a deliberate change, aru/internal/fonts has the mirror of it and every generated fonts.css has to be rewritten.", got, want)
+	}
+	if len(view.AssetHash([]byte("x"))) != 12 {
+		t.Error("the hash is not twelve characters: the URL format changed")
+	}
+}
