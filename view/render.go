@@ -152,3 +152,34 @@ func unknownView(name string) error {
 func WrongData(view, want string, got any) error {
 	return fmt.Errorf("view %q takes %s and got %T. The controller and the view disagree about the data", view, want, got)
 }
+
+// RenderToString draws a view and returns it, instead of writing it to a
+// response.
+//
+// It exists for mail, and for anything else that produces HTML nobody is
+// waiting on a socket for. The Renderer above cannot serve that: it takes an
+// http.ResponseWriter and sets a status, and a message being composed in a job
+// has neither.
+//
+// It is the same registry and the same compiled function, which is the point:
+// an e-mail is drawn by the view layer a page is drawn by, so a field that does
+// not exist is a compile error there too, and interpolation is escaped by
+// construction rather than by whoever wrote the template.
+func (*Renderer) RenderToString(name string, data any) (string, error) {
+	mu.RLock()
+	f, known := views[name]
+	mu.RUnlock()
+
+	if !known {
+		return "", unknownView(name)
+	}
+
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufferPool.Put(buf)
+
+	if err := f(buf, data); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
