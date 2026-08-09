@@ -270,3 +270,60 @@ func returnsGrant(e ast.Expr) bool {
 	}
 	return false
 }
+
+// A guest reaches the policy; a subject nobody filled in does not.
+//
+// The difference is the whole design. An empty Subject is almost always a
+// session that was not loaded, and asking a policy about nobody is how a hole
+// gets opened by an accident. A guest is the same emptiness declared on purpose,
+// and the policy decides about it like any other subject.
+func TestAGuestReachesThePolicyAndAnEmptySubjectDoesNot(t *testing.T) {
+	ctx := context.Background()
+
+	// The zero value: refused before the policy is consulted, which is what
+	// stops a forgotten session load from becoming an authorization question.
+	if _, err := security.Authorize(ctx, &askedPolicy{}, security.Subject{}, "post.view", 0); err == nil {
+		t.Fatal("an empty subject reached the policy")
+	}
+
+	// The guest: consulted, and refused by the policy rather than before it.
+	asked := &askedPolicy{}
+	if _, err := security.Authorize(ctx, asked, security.Guest("t1"), "post.view", 0); err == nil {
+		t.Fatal("the policy denied and Authorize returned a grant")
+	}
+	if !asked.called {
+		t.Error("the policy was never asked about the guest")
+	}
+}
+
+// A policy that opens an action to guests gets a Grant, and the Grant works.
+func TestAPolicyCanOpenAnActionToGuests(t *testing.T) {
+	g, err := security.Authorize(context.Background(), publicPolicy{}, security.Guest("t1"), "post.view", 0)
+	if err != nil {
+		t.Fatalf("a policy allowed a guest and Authorize refused: %v", err)
+	}
+	if err := g.Check("post.view"); err != nil {
+		t.Errorf("the grant a guest received does not work: %v", err)
+	}
+	// The tenant is the application's, not the visitor's: RULE 14 is not
+	// suspended because nobody signed in. data.Tenant reads it off the Grant,
+	// and that is checked where data can be imported without a cycle.
+}
+
+// askedPolicy denies everything and records that it was consulted.
+type askedPolicy struct{ called bool }
+
+func (p *askedPolicy) Can(context.Context, security.Subject, security.Action, int) error {
+	p.called = true
+	return errors.New("no")
+}
+
+// publicPolicy is what an application writes to serve a page to a reader.
+type publicPolicy struct{}
+
+func (publicPolicy) Can(_ context.Context, s security.Subject, a security.Action, _ int) error {
+	if s.IsGuest() && a == "post.view" {
+		return nil
+	}
+	return errors.New("not public")
+}

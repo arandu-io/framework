@@ -80,6 +80,21 @@ each release happens.
 
 ---
 
+## v0.16.0
+
+Nothing broke. Two additions worth knowing about, because they change what is
+possible rather than what compiles:
+
+- `security.Guest(tenant)` is an anonymous reader, declared on purpose, and
+  `Authorize` lets it reach the policy. A `Subject` nobody filled in is still
+  refused before the policy is consulted — the marker is unexported and only
+  `Guest` sets it, so a forgotten session load cannot borrow the public path. A
+  policy that says nothing about guests denies them, which is what every
+  generated policy does. See ADR 0029.
+- `(*httpx.Context).URL(name, params...)` builds the path of a named route. The
+  table was already there and reachable only from the router, so every
+  controller that wanted a link built one by hand.
+
 ## Deprecation
 
 Nothing is deprecated right now, and that is a statement rather than an

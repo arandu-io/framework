@@ -21,7 +21,54 @@ type Subject struct {
 	ID     string
 	Tenant string
 	Roles  []string
+
+	// guest marks a subject that is deliberately anonymous. It is unexported and
+	// only Guest sets it, which is the whole point: a Subject nobody filled in
+	// is not a guest, it is a session somebody forgot to load, and Authorize
+	// tells those two apart.
+	guest bool
 }
+
+// Guest is a reader with no session, declared on purpose.
+//
+// It exists because a public page is a real requirement and the alternative was
+// worse. Authorize refuses an empty subject before it consults a policy -- which
+// is right, because an empty subject is almost always a forgotten session load
+// -- and that left no way at all to say "anybody may read a published post".
+// The only path was security.SystemGrant, which skips the policy entirely: a
+// blog served with the same instrument a scheduled job uses.
+//
+// So the refusal stays and the exception is explicit. A zero Subject is still
+// refused. This one reaches the policy, and the POLICY decides:
+//
+//	func (PostPolicy) Can(ctx context.Context, s security.Subject, a security.Action, p models.Post) error {
+//		if s.IsGuest() {
+//			if a == PostView && !p.PublishedAt.IsZero() {
+//				return nil
+//			}
+//			return fmt.Errorf("%s is not public", a)
+//		}
+//		…
+//	}
+//
+// Nothing is loosened by this. Authorization still happens in one place, the
+// Grant is still the only way to a repository, and a policy that says nothing
+// about guests denies them -- which is what every generated policy does, so the
+// default is closed.
+//
+// The tenant is required and is the application's, from configuration. A
+// visitor cannot choose whose rows they read, and RULE 14 is not suspended
+// because nobody signed in.
+func Guest(tenant string) Subject {
+	return Subject{Tenant: tenant, guest: true}
+}
+
+// IsGuest reports whether this subject is a declared anonymous reader.
+//
+// A policy that never asks denies them, because it will fall through to its
+// final refusal -- HasRole answers false for a guest, and there is no id to
+// compare an owner against.
+func (s Subject) IsGuest() bool { return s.guest }
 
 // HasRole reports whether the subject carries the given role.
 func (s Subject) HasRole(r string) bool {
@@ -80,11 +127,23 @@ type Grant struct {
 
 // Authorize runs the policy and, when allowed, issues the Grant.
 func Authorize[T any](ctx context.Context, p Policy[T], s Subject, a Action, resource T) (Grant, error) {
-	if s.ID == "" {
+	// An empty subject is refused before the policy is asked, because it is
+	// almost always a session that was not loaded -- and a policy asked about
+	// nobody answers about nobody.
+	//
+	// A Guest is the exception, and it is an exception the caller declared: it
+	// carries a marker only security.Guest sets. The policy decides about it
+	// like any other subject, and a policy that says nothing about guests
+	// refuses them.
+	if s.ID == "" && !s.guest {
 		return Grant{}, fmt.Errorf("%w: anonymous subject on %s", ErrForbidden, a)
 	}
 	if err := p.Can(ctx, s, a, resource); err != nil {
-		return Grant{}, fmt.Errorf("%w: %s denied for subject %s: %v", ErrForbidden, a, s.ID, err)
+		who := s.ID
+		if s.guest {
+			who = "a guest"
+		}
+		return Grant{}, fmt.Errorf("%w: %s denied for subject %s: %v", ErrForbidden, a, who, err)
 	}
 	return Grant{subject: s, action: a, valid: true}, nil
 }
