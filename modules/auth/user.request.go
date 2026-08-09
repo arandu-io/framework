@@ -43,8 +43,44 @@ func (r LoginRequest) Validate() validation.Errors {
 	return e
 }
 
-// Compile-time proof that both requests honor the validation contract.
+// RegisterRequest is what a self-registration form sends.
+//
+// It has no Roles field, and that is the whole difference from
+// CreateUserRequest. A registration form that carried roles would be a
+// registration form that could ask for "admin" -- and the only thing between the
+// request and the column would be the handler remembering to drop it.
+//
+// The policy refuses it a second time, on the candidate rather than on the
+// request. Two answers to the same question, because this one is the one that
+// still holds after somebody adds a field here.
+type RegisterRequest struct {
+	Name  string
+	Email string
+
+	// Password and PasswordConfirmation are the two boxes of the form. Both are
+	// here rather than compared in the handler, so the rule is in the same place
+	// as the length rule and is tested with it.
+	Password             string
+	PasswordConfirmation string
+}
+
+// Validate reports the errors per field.
+func (r RegisterRequest) Validate() validation.Errors {
+	e := validation.Errors{}
+	validation.Required(e, "name", r.Name)
+	validation.MaxLen(e, "name", r.Name, 80)
+	validation.Required(e, "email", r.Email)
+	validation.Email(e, "email", r.Email)
+	validation.MaxLen(e, "email", r.Email, 254)
+	validation.MinLen(e, "password", r.Password, security.MinPasswordLen)
+	validation.MaxLen(e, "password", r.Password, 128)
+	validation.Confirmed(e, "password_confirmation", r.Password, r.PasswordConfirmation)
+	return e
+}
+
+// Compile-time proof that the requests honor the validation contract.
 var (
 	_ validation.Validatable = CreateUserRequest{}
 	_ validation.Validatable = LoginRequest{}
+	_ validation.Validatable = RegisterRequest{}
 )

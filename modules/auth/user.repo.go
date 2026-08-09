@@ -47,7 +47,7 @@ func NewUserRepo(db *data.DB) *UserRepo { return &UserRepo{db: db} }
 // this line breaks before any caller does.
 var _ data.Repository[User, string] = (*UserRepo)(nil)
 
-const userColumns = `id, tenant_id, email, password, roles, created_at`
+const userColumns = `id, tenant_id, name, email, password, roles, verified_at, created_at`
 
 // Find returns one user by id, scoped to the grant's tenant.
 func (r *UserRepo) Find(ctx context.Context, g security.Grant, id string) (User, error) {
@@ -103,8 +103,9 @@ func (r *UserRepo) Create(ctx context.Context, g security.Grant, u User) (User, 
 	u.CreatedAt = time.Now().UTC()
 
 	_, err = r.db.ExecContext(ctx,
-		`INSERT INTO users (`+userColumns+`) VALUES (?, ?, ?, ?, ?, ?)`,
-		u.ID, u.TenantID, u.Email, u.Password, roles, u.CreatedAt)
+		`INSERT INTO users (`+userColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		u.ID, u.TenantID, nullString(u.Name), u.Email, u.Password, roles,
+		nullTime(u.VerifiedAt), u.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return User{}, ErrEmailTaken
@@ -127,8 +128,10 @@ func (r *UserRepo) Update(ctx context.Context, g security.Grant, u User) (User, 
 	u.Email = NormalizeEmail(u.Email)
 
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE users SET email = ?, password = ?, roles = ? WHERE id = ? AND tenant_id = ?`,
-		u.Email, u.Password, roles, u.ID, data.Tenant(g))
+		`UPDATE users SET name = ?, email = ?, password = ?, roles = ?, verified_at = ?
+		 WHERE id = ? AND tenant_id = ?`,
+		nullString(u.Name), u.Email, u.Password, roles, nullTime(u.VerifiedAt),
+		u.ID, data.Tenant(g))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return User{}, ErrEmailTaken
@@ -215,6 +218,66 @@ func (r *UserRepo) List(ctx context.Context, g security.Grant, q data.Query) ([]
 	return out, rows.Err()
 }
 
+// NamesByID returns the display name of each id, in one query.
+//
+// It exists because of what the alternative looks like on a comment thread:
+// twenty comments, twenty lookups, and a page that is fine on a laptop and slow
+// on the first article somebody actually discusses.
+//
+// Ids that do not exist are absent from the map rather than mapped to "". A
+// caller can then tell "no such user" from "a user with no name", and the two
+// deserve different words on a screen.
+//
+// The placeholder list is built from the count and never from the values, so
+// this is a parameterised query however many ids arrive.
+func (r *UserRepo) NamesByID(ctx context.Context, g security.Grant, ids []string) (map[string]string, error) {
+	if err := g.Check(ActionUserView); err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+	if len(ids) > maxLimit {
+		ids = ids[:maxLimit]
+	}
+
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, data.Tenant(g))
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	for _, id := range ids {
+		args = append(args, id)
+	}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, name, email FROM users WHERE tenant_id = ? AND id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]string, len(ids))
+	for rows.Next() {
+		var (
+			id    string
+			name  sql.NullString
+			email string
+		)
+		if err := rows.Scan(&id, &name, &email); err != nil {
+			return nil, err
+		}
+		// The address is the fallback, and only its local part: an account
+		// created before names existed still signs its comments with something
+		// a person recognises, and publishing the whole address next to it
+		// would be publishing an address nobody agreed to publish.
+		display := name.String
+		if display == "" {
+			display, _, _ = strings.Cut(email, "@")
+		}
+		out[id] = display
+	}
+	return out, rows.Err()
+}
+
 // rowScanner is satisfied by both *sql.Row and *sql.Rows, so one scan function
 // serves single-row and multi-row queries.
 type rowScanner interface{ Scan(dest ...any) error }
@@ -223,10 +286,13 @@ type rowScanner interface{ Scan(dest ...any) error }
 // array needs a driver specific type, and jsonb does not exist in SQLite.
 func scanUser(row rowScanner) (User, error) {
 	var (
-		u     User
-		roles []byte
+		u        User
+		roles    []byte
+		name     sql.NullString
+		verified sql.NullTime
 	)
-	err := row.Scan(&u.ID, &u.TenantID, &u.Email, &u.Password, &roles, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.TenantID, &name, &u.Email, &u.Password, &roles,
+		&verified, &u.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrUserNotFound
 	}
@@ -238,7 +304,34 @@ func scanUser(row rowScanner) (User, error) {
 			return User{}, fmt.Errorf("auth: unreadable roles for user %s: %w", u.ID, err)
 		}
 	}
+	// Both columns arrived in a later migration, so every row written before it
+	// has NULL in them. Read through sql.Null* rather than into the field: a
+	// plain *string scan of a NULL is an error, and it would be an error on
+	// every user that existed before verification did.
+	u.Name = name.String
+	u.VerifiedAt = verified.Time.UTC()
 	return u, nil
+}
+
+// nullString and nullTime keep the empty value out of the column as NULL.
+//
+// An empty string and NULL both read back as "", so the distinction does not
+// matter on the way out -- but a zero time.Time does not survive the round trip:
+// it writes as 0001-01-01, which is a date, so `WHERE verified_at IS NOT NULL`
+// answers true for every unverified user. That exact mistake shipped once in
+// this repository's post listing.
+func nullString(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+func nullTime(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t.UTC()
 }
 
 // rolesOrEmpty keeps a nil slice out of the database: JSON 'null' and JSON '[]'

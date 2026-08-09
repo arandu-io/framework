@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
@@ -72,7 +74,14 @@ func (s *Service) Authenticate(ctx context.Context, tenant, email, plain string)
 // decides what goes into the session, which is what keeps roles out of reach of
 // the request body.
 func SubjectOf(u User) security.Subject {
-	return security.Subject{ID: u.ID, Tenant: u.TenantID, Roles: u.Roles}
+	return security.Subject{
+		ID: u.ID, Tenant: u.TenantID, Roles: u.Roles,
+		// Carried into the session, so a policy can ask without a query. It is
+		// as old as the session, and that fails in the safe direction: an
+		// account starts unverified, so a stale session is more restrictive
+		// than the truth and never less.
+		Verified: u.Verified(),
+	}
 }
 
 // CreateUser shows the full path: validate, Authorize, Grant, Repository.
@@ -107,6 +116,114 @@ func (s *Service) CreateUser(ctx context.Context, actor security.Subject, in Cre
 	return created, nil
 }
 
+// Register creates a user from a registration form.
+//
+// It is CreateUser with a guest in place of the actor, and nothing else. The
+// tenant comes from the resolver rather than from the form -- a tenant a
+// registration form could name is a registration form that joins any customer --
+// and the roles are not read from the input at all: RegisterRequest has none,
+// and the policy refuses a candidate that has any.
+//
+// The returned user is unverified. Sending the link is the caller's, because who
+// the mail is from and what the link points at are the application's business
+// and not this module's.
+func (s *Service) Register(ctx context.Context, tenant string, in RegisterRequest) (User, error) {
+	if errs := in.Validate(); errs.Any() {
+		return User{}, errs
+	}
+
+	candidate := User{TenantID: tenant, Name: strings.TrimSpace(in.Name), Email: in.Email}
+
+	// A declared guest, not an empty subject. Authorize refuses the empty one
+	// before it reaches the policy, and rightly -- it is almost always a session
+	// that failed to load. This one is anonymous on purpose and says so.
+	g, err := security.Authorize(ctx, s.policy, security.Guest(tenant), ActionUserCreate, candidate)
+	if err != nil {
+		return User{}, err
+	}
+
+	hash, err := security.HashPassword(in.Password)
+	if err != nil {
+		return User{}, fmt.Errorf("auth: hashing password: %w", err)
+	}
+	candidate.Password = hash
+
+	created, err := s.repo.Create(ctx, g, candidate)
+	if err != nil {
+		return User{}, err
+	}
+	if col := observability.FromContext(ctx); col != nil {
+		col.RecordEvent("auth.user.registered", created)
+	}
+	return created, nil
+}
+
+// MarkVerified records that the address was confirmed, and reports whether this
+// call is what confirmed it.
+//
+// The boolean is what lets a handler tell "welcome, you are in" from "you
+// already did this" -- the second one happens every time somebody clicks the
+// link in a second e-mail client, and answering it with an error reads as the
+// link being broken.
+//
+// A verification link proves control of the address it was sent to, and nothing
+// else. So this takes the id from the signed token and reads the row itself:
+// nothing here is trusted to arrive from the request.
+func (s *Service) MarkVerified(ctx context.Context, tenant, userID string) (User, bool, error) {
+	g := security.SystemGrant(ActionUserView, tenant)
+	u, err := s.repo.Find(ctx, g, userID)
+	if err != nil {
+		return User{}, false, err
+	}
+	if u.Verified() {
+		return u, false, nil
+	}
+
+	u.VerifiedAt = time.Now().UTC()
+	updated, err := s.repo.Update(ctx, security.SystemGrant(ActionUserUpdate, tenant), u)
+	if err != nil {
+		return User{}, false, err
+	}
+	observability.Log(ctx).Info("email verified", "user", updated)
+	return updated, true, nil
+}
+
+// FindForVerification reads a user by id, for the handler that has just checked
+// a signed link and needs to know who it is about.
+//
+// It exists so that the handler does not reach the repository, and so that the
+// SystemGrant is here, in the module that owns the table, where `aru doctor`
+// already expects to find them.
+func (s *Service) FindForVerification(ctx context.Context, tenant, userID string) (User, error) {
+	return s.repo.Find(ctx, security.SystemGrant(ActionUserView, tenant), userID)
+}
+
+// Lookup returns a user by address, for a caller with no subject to authorize.
+//
+// It is what a seeder uses to find an account it did not create in the same run.
+// The alternative is a SELECT on the users table from outside this module, and
+// then that table has two owners -- which is how a schema change breaks code
+// nobody thought was reading it.
+//
+// Never call it to decide whether an address is registered in a response. That
+// is an account enumeration oracle, and every screen in this framework that
+// could have been one answers the same thing either way.
+func (s *Service) Lookup(ctx context.Context, tenant, email string) (User, error) {
+	return s.repo.FindByEmail(ctx, security.SystemGrant(ActionUserView, tenant), email)
+}
+
+// Names resolves user ids to display names, for a screen that shows who wrote
+// something.
+//
+// One query for the whole list. A comment thread that looked each author up
+// separately would be an N+1 on the page most likely to have twenty rows on it.
+//
+// A failure is the caller's to decide about: a thread is worth rendering with
+// ids in it, and not worth failing over.
+func (s *Service) Names(ctx context.Context, tenant string, ids []string) (map[string]string, error) {
+	return s.repo.NamesByID(ctx, security.SystemGrant(ActionUserView, tenant), ids)
+}
+
 // EnsureAdmin creates the first administrator of a tenant when it has none.
 //
 // It is deliberately NOT called at boot: seeding that happens by itself is how a
@@ -127,6 +244,41 @@ func (s *Service) EnsureAdmin(ctx context.Context, tenant, email, plain string) 
 	return s.repo.Create(ctx,
 		security.SystemGrant(ActionUserCreate, tenant),
 		User{TenantID: tenant, Email: email, Password: hash, Roles: []string{"admin"}})
+}
+
+// EnsureUser is EnsureAdmin for any account, and it is what a seeder calls.
+//
+// Same circle, same break: a seeder has no request behind it and therefore no
+// subject, so there is no policy to ask. It is in the module that owns the table
+// rather than in each application's seeders, so `aru doctor` has one call site to
+// account for instead of one per project.
+//
+// verified writes the timestamp. A seeded reader who cannot comment because
+// nobody clicked a link in a mailbox that does not exist is a demo that does not
+// demonstrate anything -- and the flag is explicit here, so a seeder that wants
+// the unverified case gets it by asking.
+//
+// It is idempotent: an existing address is returned untouched, including its
+// password. A seeder that reset the password of an existing account would be a
+// seeder that locked somebody out on the second run.
+func (s *Service) EnsureUser(ctx context.Context, tenant, name, email, plain string, roles []string, verified bool) (User, error) {
+	g := security.SystemGrant(ActionUserView, tenant)
+	if existing, err := s.repo.FindByEmail(ctx, g, email); err == nil {
+		return existing, nil
+	} else if !errors.Is(err, ErrUserNotFound) {
+		return User{}, err
+	}
+
+	hash, err := security.HashPassword(plain)
+	if err != nil {
+		return User{}, fmt.Errorf("auth: hashing password: %w", err)
+	}
+
+	u := User{TenantID: tenant, Name: name, Email: email, Password: hash, Roles: roles}
+	if verified {
+		u.VerifiedAt = time.Now().UTC()
+	}
+	return s.repo.Create(ctx, security.SystemGrant(ActionUserCreate, tenant), u)
 }
 
 // timingHash returns a throwaway hash used to equalize the response time of the

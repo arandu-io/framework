@@ -113,5 +113,21 @@ func (m *Module) Migrations() []kernel.Migration {
 		);
 		CREATE INDEX users_tenant_created_idx ON users (tenant_id, created_at, id);`,
 		Down: `DROP TABLE users;`,
+	}, {
+		// A second migration and not an edit to the first. The first one has run
+		// in every database this module has ever touched, and a migration is
+		// identified by its id: changing what an applied id means leaves the
+		// column missing everywhere it already ran, and nothing says so.
+		//
+		// Both columns are nullable, which is RULE 16: during a rollout the
+		// previous binary is still inserting rows without them, and a NOT NULL
+		// column with no default fails every one of those inserts.
+		ID: "20260809_0002_add_name_and_verification_to_users",
+		Up: `ALTER TABLE users ADD COLUMN name VARCHAR(255);
+		ALTER TABLE users ADD COLUMN verified_at TIMESTAMP NULL;`,
+		// Two statements rather than one with two clauses: MySQL accepts
+		// `ADD COLUMN a, ADD COLUMN b`, SQLite does not.
+		Down: `ALTER TABLE users DROP COLUMN name;
+		ALTER TABLE users DROP COLUMN verified_at;`,
 	}}
 }

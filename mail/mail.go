@@ -95,10 +95,22 @@ type Envelope struct {
 type Content struct {
 	// View is the HTML part, by the name the view is registered under.
 	View string
-	// Text is the plain-text part. It is optional and it should not be: a
-	// message with no text part is filed as spam more often, and every client
+
+	// TextView is the plain-text part, also by view name.
+	//
+	// It exists because Text alone did not do the job it was written for. A
+	// project generated a mail/password-reset-text view, and nothing could ever
+	// send it: the only way in was a Go string literal, so the view sat in the
+	// tree looking wired while every message went out HTML-only. Found by audit.
+	//
+	// A message with no text part is filed as spam more often, and every client
 	// that cannot render HTML shows nothing at all.
+	TextView string
+
+	// Text is the plain-text part as a literal, for a message short enough that
+	// a view would be ceremony. TextView wins when both are set.
 	Text string
+
 	// Data is what both parts render from.
 	Data any
 }
@@ -239,6 +251,13 @@ func (p *Pending) Send(ctx context.Context, mailable Mailable) error {
 			return fmt.Errorf("mail: rendering %s: %w", content.View, err)
 		}
 		msg.HTML = html
+	}
+	if content.TextView != "" {
+		text, err := p.mailer.render.RenderToString(content.TextView, content.Data)
+		if err != nil {
+			return fmt.Errorf("mail: rendering %s: %w", content.TextView, err)
+		}
+		msg.Text = text
 	}
 	if msg.HTML == "" && msg.Text == "" {
 		return errors.New("mail: the message has no body")

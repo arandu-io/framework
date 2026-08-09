@@ -13,7 +13,7 @@ import (
 	"github.com/arandu-io/framework/observability"
 )
 
-// The transports that ship in the core, and why these three.
+// The transports that ship in the core, and why these five.
 //
 // SMTP is the one every provider speaks, and it needs no dependency: net/smtp
 // is in the standard library. Whatever somebody buys, it accepts SMTP, so an
@@ -25,10 +25,11 @@ import (
 // Array is what tests use. It keeps what was sent so a test can read it, which
 // is the difference between proving an e-mail was sent and proving nothing.
 //
-// Resend and SendGrid are adapters, and they go in submodules of their own --
-// `mail/resend` and `mail/sendgrid` -- because in Go there is no optional
-// dependency, and a provider's SDK in the core is that SDK in every binary
-// (RULE 11). Amazon SES is deliberately not among them.
+// Resend and SendGrid are in api.go, in this package, because neither needs a
+// dependency: both are one POST with a JSON body, which net/http already does.
+// RULE 11 sends an adapter to a submodule when it drags an SDK in behind it, and
+// these two drag nothing. Amazon SES is the one that would -- it needs request
+// signing -- and it is deliberately absent. See ADR 0031.
 
 // SMTP sends over SMTP, with STARTTLS.
 type SMTP struct {

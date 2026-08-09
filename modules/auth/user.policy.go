@@ -39,7 +39,27 @@ func (UserPolicy) Can(ctx context.Context, s security.Subject, a security.Action
 		if s.ID == u.ID || s.HasRole("admin") {
 			return nil
 		}
-	case ActionUserCreate, ActionUserDelete:
+	case ActionUserCreate:
+		if s.HasRole("admin") {
+			return nil
+		}
+		// Self-registration, and the only thing a guest is allowed anywhere in
+		// this module.
+		//
+		// The condition is on the candidate and not on the subject, which is the
+		// point: a guest may create a user with no roles, and the same guest
+		// asking for one with "admin" is refused by the same line. Privilege
+		// escalation through the registration form is not a bug that can be
+		// introduced here -- a field added to RegisterRequest still arrives at
+		// this check.
+		//
+		// An application that does not want open registration deletes these
+		// three lines. There is no second path that creates a user from a form,
+		// so deleting them closes it everywhere.
+		if s.IsGuest() && len(u.Roles) == 0 {
+			return nil
+		}
+	case ActionUserDelete:
 		if s.HasRole("admin") {
 			return nil
 		}

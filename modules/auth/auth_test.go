@@ -256,14 +256,38 @@ func TestModuleRegistersItsRoutes(t *testing.T) {
 	}
 
 	migrations := m.Migrations()
-	if len(migrations) != 1 {
-		t.Fatalf("declared %d migrations, want 1", len(migrations))
+	if len(migrations) == 0 {
+		t.Fatal("the module declares no schema")
 	}
 	if !strings.Contains(migrations[0].Up, "UNIQUE (tenant_id, email)") {
 		t.Error("the schema must keep emails unique per tenant, not globally")
 	}
 	if strings.Contains(migrations[0].Up, "text[]") {
 		t.Error("roles must be jsonb: a Postgres array needs a driver specific type to scan")
+	}
+
+	// Every later migration is nullable or has a default, which is RULE 16: a
+	// rollout runs the migration while the previous binary is still inserting
+	// rows that do not know about the column.
+	for _, m := range migrations[1:] {
+		if strings.Contains(m.Up, "ADD COLUMN") &&
+			strings.Contains(m.Up, "NOT NULL") && !strings.Contains(m.Up, "DEFAULT") {
+			t.Errorf("%s adds a NOT NULL column with no default: every insert from the previous binary fails during the rollout", m.ID)
+		}
+		if m.Down == "" {
+			t.Errorf("%s cannot be rolled back", m.ID)
+		}
+	}
+
+	// The ids are unique and ordered, because the runner applies them in slice
+	// order and records them by id. A duplicate is a migration recorded as
+	// applied by another one, and it never runs.
+	seen := map[string]bool{}
+	for _, m := range migrations {
+		if seen[m.ID] {
+			t.Errorf("two migrations share the id %s", m.ID)
+		}
+		seen[m.ID] = true
 	}
 }
 

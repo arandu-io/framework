@@ -22,6 +22,20 @@ type Subject struct {
 	Tenant string
 	Roles  []string
 
+	// Verified says whether the address behind this account was confirmed.
+	//
+	// It is on the subject and not read from the database per request, because
+	// the question is asked by policies -- on every write, sometimes twice --
+	// and a database round trip inside an authorization check is a round trip
+	// nobody can see from the call site.
+	//
+	// The cost is that it is as old as the session: somebody who verifies while
+	// signed in stays unverified until they sign in again. That is the right
+	// trade for the direction it fails in -- an account is created unverified,
+	// so a stale session can only be MORE restrictive than the truth, never
+	// less.
+	Verified bool
+
 	// guest marks a subject that is deliberately anonymous. It is unexported and
 	// only Guest sets it, which is the whole point: a Subject nobody filled in
 	// is not a guest, it is a session somebody forgot to load, and Authorize

@@ -124,6 +124,30 @@ func NotZero[T comparable](e Errors, field string, value T) {
 	}
 }
 
+// Confirmed rejects a value its confirmation field does not repeat.
+//
+// It is what a "confirm your password" box is for, and the message goes on the
+// confirmation rather than on the field itself: a form that reports "password
+// does not match" next to the first box tells the person to change the one they
+// meant, and they change it, and the form fails again.
+//
+// An empty confirmation is reported here rather than by Required, so the field
+// gets one message instead of two saying the same thing.
+func Confirmed(e Errors, field, value, confirmation string) {
+	if value == "" {
+		// Nothing to confirm yet. Whatever rule rejected the value itself has
+		// already said so, and a second message about the copy is noise.
+		return
+	}
+	if confirmation == "" {
+		e.Add(field, "is required")
+		return
+	}
+	if value != confirmation {
+		e.Add(field, "does not match")
+	}
+}
+
 // First returns one message, for a view that shows a single line.
 //
 // A form that lists every error next to its field uses the map directly. One
