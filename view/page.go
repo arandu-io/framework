@@ -1,5 +1,7 @@
 package view
 
+import "strings"
+
 // Layout is what a layout asks of the data every screen hands it.
 //
 // It lives here rather than in the application because every Arandu application
@@ -18,6 +20,9 @@ type Layout interface {
 	PageDescription() string
 	// CanonicalURL is the absolute address of this page, or empty for none.
 	CanonicalURL() string
+	// IsCurrent says whether a navigation target is this page, so the header
+	// can stop linking to where you already are.
+	IsCurrent(href string) bool
 
 	// BrandName is the application name in the navigation bar.
 	BrandName() string
@@ -83,12 +88,39 @@ type Page struct {
 	LoginURL    string
 	LogoutURL   string
 	RegisterURL string
+
+	// Path is the address this page was served at, so the navigation can say
+	// where you are.
+	//
+	// A header that offers "Sign in" on the sign-in page is a header with a link
+	// to the page you are reading -- and the one control that would help, the
+	// way out to registering, is the one it does not show. The layout reads this
+	// through IsCurrent; nothing else needs it.
+	Path string
 }
 
 // Compile-time proof that embedding Page is all a page has to do to fit the
 // layout. If the layout asks for something else, this line is where the build
 // stops -- in one file, naming the contract, rather than in every page at once.
 var _ Layout = Page{}
+
+// IsCurrent reports whether a navigation target is the page being read.
+//
+// It compares paths and ignores the query, because "?resent=1" is still the same
+// page -- a navigation that changes when a flash message is added is one nobody
+// can predict.
+//
+// An empty href is never current: an empty URL draws no control, and a control
+// that is not drawn cannot be the one you are on.
+func (p Page) IsCurrent(href string) bool {
+	if href == "" || p.Path == "" {
+		return false
+	}
+	if at := strings.IndexByte(href, '?'); at >= 0 {
+		href = href[:at]
+	}
+	return strings.TrimSuffix(p.Path, "/") == strings.TrimSuffix(href, "/")
+}
 
 // PageTitle is what the browser tab shows.
 func (p Page) PageTitle() string { return p.Title }
