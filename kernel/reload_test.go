@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func serve(t *testing.T, handler http.HandlerFunc, req *http.Request) *httptest.ResponseRecorder {
@@ -181,5 +182,74 @@ func TestProductionHasNoneOfThis(t *testing.T) {
 	}
 	if len(devReload(true)) != 1 {
 		t.Fatal("development did not get the middleware")
+	}
+}
+
+// TestShutdownDoesNotWaitForTheReloadStream.
+//
+// http.Server.Shutdown waits for every in-flight request, and the reload stream
+// is deliberately in flight forever. So every restart of `aru dev` blocked for
+// the whole shutdownTimeout with the port still held -- twenty seconds, during
+// which the browser's clicks queued against a process that was already leaving
+// and then all completed at once. It reads as the application hanging, and the
+// only sign in the log is one line saying "context deadline exceeded" exactly
+// shutdownTimeout after "shutdown started".
+func TestShutdownDoesNotWaitForTheReloadStream(t *testing.T) {
+	k := &Kernel{stopping: make(chan struct{})}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, reloadPath, nil)
+
+	returned := make(chan struct{})
+	go func() {
+		defer close(returned)
+		k.handleReload(rec, req)
+	}()
+
+	// It is holding the connection: nothing has returned, which is the whole
+	// point of the endpoint.
+	select {
+	case <-returned:
+		t.Fatal("the stream returned on its own, so it is not holding the connection at all")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	if err := k.Shutdown(); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the stream is still open after Shutdown, so Shutdown will wait the full shutdownTimeout for it")
+	}
+}
+
+// Shutdown is called by Run and can be called again by a caller that does not
+// know that. Closing the same channel twice panics.
+func TestShutdownTwiceIsSafe(t *testing.T) {
+	k := &Kernel{stopping: make(chan struct{})}
+	if err := k.Shutdown(); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.Shutdown(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A browser allows six connections per origin over HTTP/1.1 and a held stream
+// spends one, so a reconnect delay that is too eager turns every dropped stream
+// into a burst competing with the navigation the person is trying to do.
+func TestTheReconnectDelayIsNotEager(t *testing.T) {
+	if reconnectDelay < time.Second {
+		t.Fatalf("the browser is told to reconnect after %v", reconnectDelay)
+	}
+	k := &Kernel{stopping: make(chan struct{})}
+	close(k.stopping)
+
+	rec := httptest.NewRecorder()
+	k.handleReload(rec, httptest.NewRequest(http.MethodGet, reloadPath, nil))
+	if !strings.Contains(rec.Body.String(), "retry: 1000") {
+		t.Errorf("the stream does not tell the browser how long to wait:\n%s", rec.Body.String())
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -42,7 +43,12 @@ type Kernel struct {
 	modules  []Module
 	pipeline []httpx.Middleware
 	srv      *http.Server
-	booted   bool
+
+	// stopping is closed when Shutdown begins, so a handler that holds its
+	// connection open on purpose can let go. See Shutdown.
+	stopping     chan struct{}
+	stoppingOnce sync.Once
+	booted       bool
 	// recorder is the ring buffer behind the console. It exists in development
 	// and under a tracing secret, and is nil otherwise -- which is what makes
 	// the console cost nothing in production rather than cost little.
@@ -54,9 +60,10 @@ type Kernel struct {
 func New(cfg config.Config) *Kernel {
 	log := observability.NewLogger(string(cfg.Env), cfg.LogLevel)
 	k := &Kernel{
-		cfg:    cfg,
-		log:    log,
-		router: httpx.NewRouter(),
+		cfg:      cfg,
+		log:      log,
+		router:   httpx.NewRouter(),
+		stopping: make(chan struct{}),
 	}
 
 	// The kernel owns the recorder because it is what mounts the console route.
@@ -342,6 +349,20 @@ func (k *Kernel) Run(ctx context.Context) error {
 // Shutdown stops the server and closes the modules in reverse registration
 // order, which is the only order that respects dependencies between them.
 func (k *Kernel) Shutdown() error {
+	// Told first, before Shutdown starts waiting for requests to finish.
+	//
+	// A request that is deliberately open forever -- the development reload
+	// stream is the one this framework has -- is a request Shutdown waits the
+	// full shutdownTimeout for. It cost twenty seconds on every restart of `aru
+	// dev`, with the port still held, which read as the whole application
+	// hanging: click a link, nothing happens for half a minute, then every
+	// queued request completes at once.
+	//
+	// It is a signal of its own rather than cancelling every request context,
+	// because cancelling those would abort the ordinary requests that Shutdown
+	// exists to let finish.
+	k.stoppingOnce.Do(func() { close(k.stopping) })
+
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 

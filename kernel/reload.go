@@ -63,6 +63,14 @@ import (
 // console, so one prefix covers everything the framework mounts.
 const reloadPath = "/_arandu/reload"
 
+// reconnectDelay is how long the browser waits before listening again.
+//
+// A second, not the 250ms this shipped with. HTTP/1.1 allows a browser six
+// connections per origin and a held stream spends one of them, so a reconnect
+// that is too eager turns every dropped stream into a burst that competes with
+// the navigation the person is trying to do.
+const reconnectDelay = time.Second
+
 // bootID identifies this process to a page that was loaded by another one.
 //
 // Random rather than a timestamp or a pid: two processes started in the same
@@ -97,7 +105,7 @@ func (k *Kernel) handleReload(w http.ResponseWriter, r *http.Request) {
 	// the page is waiting for and the reload never arrives.
 	h.Set("X-Accel-Buffering", "no")
 
-	fmt.Fprintf(w, "retry: 250\ndata: %s\n\n", bootID)
+	fmt.Fprintf(w, "retry: %d\ndata: %s\n\n", reconnectDelay.Milliseconds(), bootID)
 	flusher.Flush()
 
 	// A comment every twenty seconds. It carries nothing; it exists so that an
@@ -109,6 +117,12 @@ func (k *Kernel) handleReload(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+
+		// The server is going down. Without this the connection is one Shutdown
+		// waits the whole shutdownTimeout for, holding the port -- twenty seconds
+		// per restart of `aru dev`, which reads as the application hanging.
+		case <-k.stopping:
 			return
 		case <-tick.C:
 			if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
