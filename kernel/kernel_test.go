@@ -444,3 +444,48 @@ func TestRunStartsBackgroundLoops(t *testing.T) {
 		t.Fatal("Run did not start the background loop")
 	}
 }
+
+// TestTheFrameworksOwnRoutesDoNotSpendTheApplicationsBudget.
+//
+// The development reload asks once a second which process is answering. That ran
+// through the rate limit an application mounts for its own visitors -- sixty of
+// a three-hundred-per-minute budget per open tab, shared between tabs because
+// the key falls back to the client address for a request carrying no session.
+//
+// Ordinary browsing with a couple of tabs open therefore answered
+// "too many requests: wait 32 seconds and try again", in plain text, on a page
+// nobody had hammered. Reported from a browser, on /auth/login, while navigating
+// normally.
+func TestTheFrameworksOwnRoutesDoNotSpendTheApplicationsBudget(t *testing.T) {
+	var counted int
+	counting := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			counted++
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	k := kernel.New(config.Config{Env: config.EnvDev, AppKey: make([]byte, config.AppKeyLen), HTTPAddr: ":0"})
+	k.Use(counting)
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	handler := k.Handler()
+
+	for _, path := range []string{
+		"/_arandu/health",
+		"/_arandu/reload",
+		observability.ConsolePath,
+	} {
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+	if counted != 0 {
+		t.Errorf("%d of the framework's own requests were charged to the application", counted)
+	}
+
+	// And the application's own traffic still is.
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	if counted != 1 {
+		t.Errorf("the application's middleware ran %d times for one request to /, want 1", counted)
+	}
+}

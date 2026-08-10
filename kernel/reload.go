@@ -77,7 +77,7 @@ import (
 
 // reloadPath is where the browser listens. Under _arandu with health and the
 // console, so one prefix covers everything the framework mounts.
-const reloadPath = "/_arandu/reload"
+const reloadPath = internalPrefix + "reload"
 
 // bootID identifies this process to a page that was loaded by another one.
 //

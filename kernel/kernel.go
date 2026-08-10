@@ -207,7 +207,7 @@ func (k *Kernel) startBackground(ctx context.Context) error {
 // with no session and no header. Found by audit, reproduced over a real socket.
 func (k *Kernel) mountInternalRoutes() {
 	internal := k.router.ForModule("arandu")
-	internal.Get("/_arandu/health", k.handleHealth)
+	internal.Get(internalPrefix+"health", k.handleHealth)
 
 	// Development only, and mounted from the same condition that injects the
 	// script -- so there is no arrangement in which a production page listens
@@ -292,7 +292,51 @@ func (k *Kernel) Handler() http.Handler {
 	// Live reload is outermost after the logger, so it sees the finished
 	// document rather than a handler's intention to write one.
 	outer := append([]httpx.Middleware{observability.RootLogger(k.log)}, devReload(k.cfg.IsDev())...)
-	return httpx.Chain(k.router, append(outer, k.pipeline...)...)
+
+	// The application's middleware runs on the application's routes. What this
+	// framework mounts under internalPrefix is not the application's traffic and
+	// must not be measured as if it were.
+	//
+	// It was. The development reload asks once a second which process is
+	// answering, and that ran through the rate limit an application mounts for
+	// its own visitors -- 60 of a 300-per-minute budget per open tab, shared,
+	// because the key falls back to the address for a request with no session.
+	// Ordinary browsing with two tabs open answered "too many requests: wait 32
+	// seconds", on a page nobody had hammered.
+	app := make([]httpx.Middleware, 0, len(k.pipeline))
+	for _, mw := range k.pipeline {
+		app = append(app, exceptInternal(mw))
+	}
+
+	return httpx.Chain(k.router, append(outer, app...)...)
+}
+
+// internalPrefix is what this framework mounts for itself: the health probe,
+// the debug console, the development reload.
+const internalPrefix = "/_arandu/"
+
+// exceptInternal runs an application's middleware everywhere except on the
+// framework's own routes.
+//
+// The framework's endpoints answer to the framework: the health probe must not
+// be rate limited by the application it reports on, the debug console is gated
+// by its own secret, and the reload is a question the page asks about the
+// process rather than a request the visitor made. None of them touch the
+// database, hold a session, or write anything.
+//
+// The prefix is the boundary because it already is one everywhere else -- one
+// name for what belongs to the framework, checked in one place.
+func exceptInternal(mw httpx.Middleware) httpx.Middleware {
+	return func(next http.Handler) http.Handler {
+		wrapped := mw(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, internalPrefix) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			wrapped.ServeHTTP(w, r)
+		})
+	}
 }
 
 // Run starts the server and blocks until SIGINT or SIGTERM, then shuts down
