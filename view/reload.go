@@ -44,25 +44,59 @@ func ReloadTag(stream string) string {
 
 // reloadBody is the script.
 //
-// The whole signal is which process answers the stream: EventSource reconnects
-// on its own after a restart, and an identity different from the one this page
-// loaded with means the code changed. A reconnect to the same process -- a
-// dropped network, a sleeping laptop -- reports the same identity and reloads
-// nothing.
+// The whole signal is which process answers: every process picks a random
+// identity at boot, and one different from the identity this page loaded with
+// means the code changed.
+//
+// It ASKS rather than listening, and that is the fix for the defect that sent
+// this back to be rewritten -- see the header of framework/kernel/reload.go. A
+// held connection spends one of the browser's six per origin and is not
+// released when you navigate away, so a handful of clicks froze the site.
+//
+// Three things make asking cheap enough to be the right answer:
+//
+//   - It does not ask while you are not looking. document.hidden is true for a
+//     background tab, a minimised window and another desktop, and a project
+//     left open in a tab for a day would otherwise be eighty thousand requests
+//     nobody wanted.
+//   - It asks the moment you come back, before the next tick, so returning to
+//     the tab is not a wait. That is the case the interval alone gets wrong.
+//   - A failed request is the server restarting, which is the most likely
+//     moment for one. It is ignored rather than retried faster: the next tick
+//     is a second away and the answer will keep until then.
 func reloadBody(stream string) []byte {
 	return []byte(`(function () {
 	var loadedFrom = null;
-	var source = new EventSource(` + quote(stream) + `);
-	source.onmessage = function (event) {
-		if (loadedFrom === null) {
-			loadedFrom = event.data;
+	var checking = false;
+
+	function check() {
+		if (document.hidden || checking) {
 			return;
 		}
-		if (event.data !== loadedFrom) {
-			source.close();
-			location.reload();
-		}
-	};
+		checking = true;
+		fetch(` + quote(stream) + `, {cache: "no-store"})
+			.then(function (r) { return r.ok ? r.text() : null; })
+			.then(function (id) {
+				if (id === null) {
+					return;
+				}
+				id = id.trim();
+				if (loadedFrom === null) {
+					loadedFrom = id;
+				} else if (id !== loadedFrom) {
+					location.reload();
+				}
+			})
+			.catch(function () {
+				// The server is restarting. Nothing to do: the next tick asks
+				// again, and the reload happens when it answers.
+			})
+			.finally(function () { checking = false; });
+	}
+
+	check();
+	setInterval(check, 1000);
+	document.addEventListener("visibilitychange", check);
 })();
 `)
 }

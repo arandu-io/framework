@@ -1,8 +1,6 @@
 package kernel
 
 import (
-	"bytes"
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -138,26 +136,6 @@ func TestAStreamIsNotHeld(t *testing.T) {
 	}
 }
 
-// The stream itself says which process is answering, and says it immediately --
-// a page that has to wait for a keepalive to learn the id would reload twenty
-// seconds after the restart.
-func TestTheStreamAnnouncesTheProcessAtOnce(t *testing.T) {
-	k := &Kernel{}
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, reloadPath, nil)
-
-	ctx, cancel := context.WithCancel(req.Context())
-	cancel() // no keepalive loop; only what is written before the first select
-	k.handleReload(rec, req.WithContext(ctx))
-
-	if got := rec.Header().Get("Content-Type"); got != "text/event-stream" {
-		t.Fatalf("content type %q: the browser would not treat it as a stream", got)
-	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte("data: "+bootID)) {
-		t.Fatalf("the stream does not identify the process:\n%s", rec.Body.String())
-	}
-}
-
 // Two processes must not claim the same identity, or a page loaded by one never
 // reloads when the other answers -- the single failure this feature cannot
 // tolerate, because it is silent.
@@ -185,71 +163,46 @@ func TestProductionHasNoneOfThis(t *testing.T) {
 	}
 }
 
-// TestShutdownDoesNotWaitForTheReloadStream.
+// TestAskingWhichProcessAnsweredDoesNotHoldTheConnection.
 //
-// http.Server.Shutdown waits for every in-flight request, and the reload stream
-// is deliberately in flight forever. So every restart of `aru dev` blocked for
-// the whole shutdownTimeout with the port still held -- twenty seconds, during
-// which the browser's clicks queued against a process that was already leaving
-// and then all completed at once. It reads as the application hanging, and the
-// only sign in the log is one line saying "context deadline exceeded" exactly
-// shutdownTimeout after "shutdown started".
-func TestShutdownDoesNotWaitForTheReloadStream(t *testing.T) {
-	k := &Kernel{stopping: make(chan struct{})}
+// This is the whole reason the endpoint stopped being an EventSource. A browser
+// allows six connections per origin over HTTP/1.1 and a held stream spends one
+// -- and on navigation the browser abandons the stream of the page it is leaving
+// without closing it, so the server keeps the slot until its next write fails.
+//
+// Six quick navigations therefore left six dead streams holding every slot, and
+// the seventh click did nothing at all. Reported as "I navigate, I go back, I
+// navigate, and it freezes", and that is exactly what it was. Shutdown waiting
+// its full timeout for the same request was the second symptom of the one
+// defect.
+func TestAskingWhichProcessAnsweredDoesNotHoldTheConnection(t *testing.T) {
+	k := &Kernel{}
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, reloadPath, nil)
-
-	returned := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
-		defer close(returned)
-		k.handleReload(rec, req)
+		defer close(done)
+		k.handleReload(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, reloadPath, nil))
 	}()
 
-	// It is holding the connection: nothing has returned, which is the whole
-	// point of the endpoint.
 	select {
-	case <-returned:
-		t.Fatal("the stream returned on its own, so it is not holding the connection at all")
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	if err := k.Shutdown(); err != nil {
-		t.Fatalf("shutdown: %v", err)
-	}
-
-	select {
-	case <-returned:
-	case <-time.After(2 * time.Second):
-		t.Fatal("the stream is still open after Shutdown, so Shutdown will wait the full shutdownTimeout for it")
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("the handler is holding the connection, which is what froze the browser after a handful of clicks")
 	}
 }
 
-// Shutdown is called by Run and can be called again by a caller that does not
-// know that. Closing the same channel twice panics.
-func TestShutdownTwiceIsSafe(t *testing.T) {
-	k := &Kernel{stopping: make(chan struct{})}
-	if err := k.Shutdown(); err != nil {
-		t.Fatal(err)
-	}
-	if err := k.Shutdown(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// A browser allows six connections per origin over HTTP/1.1 and a held stream
-// spends one, so a reconnect delay that is too eager turns every dropped stream
-// into a burst competing with the navigation the person is trying to do.
-func TestTheReconnectDelayIsNotEager(t *testing.T) {
-	if reconnectDelay < time.Second {
-		t.Fatalf("the browser is told to reconnect after %v", reconnectDelay)
-	}
-	k := &Kernel{stopping: make(chan struct{})}
-	close(k.stopping)
-
+// The answer names this process and nothing else, and no cache may keep it: a
+// cached answer is the previous process answering forever, so the page would
+// never learn that the code changed.
+func TestTheAnswerIsThisProcessAndIsNeverCached(t *testing.T) {
+	k := &Kernel{}
 	rec := httptest.NewRecorder()
 	k.handleReload(rec, httptest.NewRequest(http.MethodGet, reloadPath, nil))
-	if !strings.Contains(rec.Body.String(), "retry: 1000") {
-		t.Errorf("the stream does not tell the browser how long to wait:\n%s", rec.Body.String())
+
+	if got := strings.TrimSpace(rec.Body.String()); got != bootID {
+		t.Fatalf("the answer is %q, want the boot id %q", got, bootID)
+	}
+	if store := rec.Header().Get("Cache-Control"); !strings.Contains(store, "no-store") {
+		t.Errorf("Cache-Control is %q: a cached answer is the old process answering forever", store)
 	}
 }

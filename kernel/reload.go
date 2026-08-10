@@ -8,12 +8,28 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/arandu-io/framework/httpx"
 )
 
 // Live reload: the browser follows the restart, in development only.
+//
+// # Why it asks rather than listens
+//
+// This was an EventSource, and holding the connection open was the defect.
+//
+// HTTP/1.1 allows a browser six connections per origin, and a held stream
+// spends one. On navigation the browser abandons the stream of the page it is
+// leaving without closing it, and the server only notices when its next write
+// fails -- up to the keepalive interval later. Six quick navigations left six
+// dead streams holding every slot, and the seventh click did nothing at all
+// until one of them timed out. Reported as "I navigate, I go back, I navigate,
+// and it freezes", which is exactly what it was.
+//
+// Asking every second costs one connection for a millisecond and cannot
+// accumulate. It also removed the keepalive ticker, the flush, the streaming
+// content type, and the twenty seconds Shutdown used to spend waiting for a
+// request that never ended.
 //
 // # Why the signal is the connection and not a message
 //
@@ -63,14 +79,6 @@ import (
 // console, so one prefix covers everything the framework mounts.
 const reloadPath = "/_arandu/reload"
 
-// reconnectDelay is how long the browser waits before listening again.
-//
-// A second, not the 250ms this shipped with. HTTP/1.1 allows a browser six
-// connections per origin and a held stream spends one of them, so a reconnect
-// that is too eager turns every dropped stream into a burst that competes with
-// the navigation the person is trying to do.
-const reconnectDelay = time.Second
-
 // bootID identifies this process to a page that was loaded by another one.
 //
 // Random rather than a timestamp or a pid: two processes started in the same
@@ -90,47 +98,19 @@ func newBootID() string {
 	return hex.EncodeToString(b[:])
 }
 
-// handleReload holds the connection open and says which process is answering.
+// handleReload says which process is answering, and returns.
+//
+// It does NOT hold the connection. See the header of this file for why that
+// mattered enough to be rewritten.
 func (k *Kernel) handleReload(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
-		return
-	}
-
 	h := w.Header()
-	h.Set("Content-Type", "text/event-stream")
-	h.Set("Cache-Control", "no-store")
-	// Told explicitly, because a proxy that buffers this buffers the one byte
-	// the page is waiting for and the reload never arrives.
-	h.Set("X-Accel-Buffering", "no")
+	h.Set("Content-Type", "text/plain; charset=utf-8")
+	// Never cached, by anything. The whole answer is which process this is, and
+	// a cached one is the previous process answering forever.
+	h.Set("Cache-Control", "no-store, max-age=0")
+	h.Set("Pragma", "no-cache")
 
-	fmt.Fprintf(w, "retry: %d\ndata: %s\n\n", reconnectDelay.Milliseconds(), bootID)
-	flusher.Flush()
-
-	// A comment every twenty seconds. It carries nothing; it exists so that an
-	// idle connection is not closed by a proxy or by the browser, which would
-	// make the page reload on a reconnect that nothing caused.
-	tick := time.NewTicker(20 * time.Second)
-	defer tick.Stop()
-
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-
-		// The server is going down. Without this the connection is one Shutdown
-		// waits the whole shutdownTimeout for, holding the port -- twenty seconds
-		// per restart of `aru dev`, which reads as the application hanging.
-		case <-k.stopping:
-			return
-		case <-tick.C:
-			if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
-				return
-			}
-			flusher.Flush()
-		}
-	}
+	fmt.Fprintln(w, bootID)
 }
 
 // ReloadTagger is what a module implements to supply the development live-reload
