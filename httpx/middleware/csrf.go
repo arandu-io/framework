@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 
+	"github.com/arandu-io/framework/httpx"
 	"github.com/arandu-io/framework/security"
 )
 
@@ -46,12 +47,19 @@ func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) fun
 			// never carried the field -- which is the first thing that happens
 			// to anybody wiring a form or an HTMX request by hand. Found by
 			// audit.
+			//
+			// Both answers go through httpx.Refuse rather than http.Error, and
+			// the role guard's 403 does too: htmx swaps neither status, so this
+			// message used to reach a person as nothing at all -- they pressed
+			// the button, and the screen did not change. Changing only one of
+			// the two would have left the framework refusing an HTMX request in
+			// two different ways.
 			if token == "" {
-				http.Error(w, "this request carried no CSRF token: add the hidden _csrf field to the form, or send it as the X-CSRF-Token header", StatusCSRFExpired)
+				httpx.Refuse(w, r, StatusCSRFExpired, "this request carried no CSRF token: add the hidden _csrf field to the form, or send it as the X-CSRF-Token header")
 				return
 			}
 			if err := c.Validate(sessionIDFrom(r), token); err != nil {
-				http.Error(w, "this CSRF token is no longer valid: the session it belongs to expired or was replaced. Reload the page and submit again", StatusCSRFExpired)
+				httpx.Refuse(w, r, StatusCSRFExpired, "this CSRF token is no longer valid: the session it belongs to expired or was replaced. Reload the page and submit again")
 				return
 			}
 			next.ServeHTTP(w, r)

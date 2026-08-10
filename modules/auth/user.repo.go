@@ -144,6 +144,92 @@ func (r *UserRepo) Update(ctx context.Context, g security.Grant, u User) (User, 
 	return u, nil
 }
 
+// Confirm stamps the address as verified, and reports whether this call is what
+// stamped it.
+//
+// It is a single conditional statement rather than a read followed by Update,
+// and the difference is a duplicate welcome mail. A link sitting in an inbox is
+// opened by the person and prefetched by whatever scans their mail, within the
+// same second: two requests read an unverified row, two full-row updates
+// succeed, and the service publishes auth.email.verified twice for one
+// confirmation. `verified_at IS NULL` in the statement makes the database the
+// referee, so exactly one caller is told it confirmed the address.
+//
+// It writes one column, which is the other half of the same problem. Update
+// writes name, email, password and roles back from a snapshot taken before the
+// transaction opened, so a confirmation that overlapped a password change put
+// the old hash back -- and, once an address can be changed, put the old address
+// back and marked it verified, undoing the binding the link exists to enforce.
+//
+// It does not read the row: the caller already has it, and asking twice would
+// widen the window this closes.
+func (r *UserRepo) Confirm(ctx context.Context, g security.Grant, id string, at time.Time) (bool, error) {
+	if err := g.Check(ActionUserUpdate); err != nil {
+		return false, err
+	}
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE users SET verified_at = ? WHERE id = ? AND tenant_id = ? AND verified_at IS NULL`,
+		at.UTC(), id, data.Tenant(g))
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		// Answering "yes, this call did it" without knowing would publish the
+		// event twice; answering "no" would lose it. Every driver this framework
+		// targets counts, so a driver that cannot is a wiring mistake and says so.
+		return false, fmt.Errorf("auth: the driver cannot report how many rows the confirmation changed: %w", err)
+	}
+	return n > 0, nil
+}
+
+// SetPassword writes the password column of one user, and nothing else.
+//
+// It is Confirm's shape applied to the other column that is written on its own,
+// and it exists for the same reason: Update writes name, email, roles and
+// verified_at from whatever snapshot the caller happened to read, so any of them
+// changing between that read and the write is silently put back. That is a lost
+// update with three ways to hurt, and none of them fails or logs anything:
+//
+//   - an administrator grants a role while somebody is resetting their password,
+//     and the reset takes it away again;
+//   - the person clicks the verification link in the same minute, and the reset
+//     un-verifies the address;
+//   - once an address can be changed, the reset restores the old one -- together
+//     with the verified stamp that belonged to it, which undoes the binding the
+//     verification link exists to enforce.
+//
+// The read the caller did for the id is still outside the transaction, and does
+// not need to be inside it: this statement names the row rather than describing
+// its contents, so nothing it writes depends on what was read.
+//
+// A missing row is ErrUserNotFound rather than silence. A password reset that
+// changed nothing and said it worked is somebody typing a new password and
+// signing in with the old one.
+func (r *UserRepo) SetPassword(ctx context.Context, g security.Grant, id, hash string) error {
+	if err := g.Check(ActionUserUpdate); err != nil {
+		return err
+	}
+	if hash == "" {
+		// The same refusal Create makes, for the same reason: an empty column
+		// here is an account whose password verification fails forever, and the
+		// only way to reach it is a caller that stored a plain password by
+		// mistake and lost it.
+		return fmt.Errorf("auth: refusing to store a user without a password hash")
+	}
+
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE users SET password = ? WHERE id = ? AND tenant_id = ?`,
+		hash, id, data.Tenant(g))
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
 // Delete removes one user within the grant's tenant.
 func (r *UserRepo) Delete(ctx context.Context, g security.Grant, id string) error {
 	if err := g.Check(ActionUserDelete); err != nil {

@@ -2,9 +2,13 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
+	"strconv"
 
+	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/httpx/middleware"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/framework/view"
@@ -14,8 +18,48 @@ import (
 // render. No business rule and no repository access lives here -- `aru doctor`
 // complains when a handler imports the data package.
 
+// loginPage is what the sign-in screen renders from.
+//
+// A struct rather than the map this used to be, for the reason `aru doctor`
+// refuses a map behind ctx.View: a misspelled key in a template renders as
+// nothing, so the screen comes up with the error box missing and nobody finds
+// out. Here that would be the refusal disappearing, which is the failure this
+// whole file was just audited for.
+type loginPage struct {
+	CSRFToken string
+	// Email is what the person typed, put back in the field. A sign-in screen
+	// that clears the address on every wrong password makes somebody type it
+	// again to find out they had the password wrong, not the address.
+	Email string
+	// Errors is what went wrong, empty on the first visit.
+	Errors validation.Errors
+	// Stylesheet and HTMX are content-addressed, so they are read here rather
+	// than written as constants: the URL changes with the bytes, and a
+	// hard-coded one would serve last build's stylesheet forever.
+	Stylesheet string
+	HTMX       string
+}
+
 // showLogin renders the login form with a fresh CSRF token.
 func (m *Module) showLogin(w http.ResponseWriter, r *http.Request) {
+	m.renderLogin(w, r, http.StatusOK, "", nil)
+}
+
+// renderLogin draws the sign-in screen, with whatever went wrong on it.
+//
+// One function for the first visit and for every refusal, because the refusal
+// used to be a different thing entirely: a bare <div class="alert"> with no
+// document around it. To a browser that is what the whole page becomes -- an
+// error message on a blank background, with no form to type into and no way
+// back except the back button -- and to htmx it is nothing at all, because htmx
+// swaps no 4xx and the sentence went into a body it discarded. A wrong password
+// is the most common refusal this framework answers, and it was the one that
+// reached nobody.
+//
+// The status is the caller's and is unchanged: 401 for wrong credentials, 422
+// for a form that did not validate, 429 for the lockout, all of them with the
+// screen the person can act on attached.
+func (m *Module) renderLogin(w http.ResponseWriter, r *http.Request, status int, email string, errs validation.Errors) {
 	token, err := m.svc.csrf.Issue(m.svc.session.IDFromRequest(r))
 	if err != nil {
 		observability.Log(r.Context()).Error("issuing csrf token", "error", err)
@@ -23,13 +67,13 @@ func (m *Module) showLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = loginForm.Execute(w, map[string]any{
-		"CSRFToken": token,
-		// Both are content-addressed, so they are read here rather than written
-		// as constants: the URL changes with the bytes, and a hard-coded one
-		// would serve last build's stylesheet forever.
-		"Stylesheet": view.URL(view.Stylesheet),
-		"HTMX":       view.URL("htmx.min.js"),
+	w.WriteHeader(status)
+	_ = loginForm.Execute(w, loginPage{
+		CSRFToken:  token,
+		Email:      email,
+		Errors:     errs,
+		Stylesheet: view.URL(view.Stylesheet),
+		HTMX:       view.URL("htmx.min.js"),
 	})
 }
 
@@ -40,8 +84,7 @@ func (m *Module) doLogin(w http.ResponseWriter, r *http.Request) {
 		Password: r.PostFormValue("password"),
 	}
 	if errs := in.Validate(); errs.Any() {
-		// HTMX: answer with the form partial and its inline errors.
-		renderLoginError(w, http.StatusUnprocessableEntity, errs)
+		m.renderLogin(w, r, http.StatusUnprocessableEntity, in.Email, errs)
 		return
 	}
 
@@ -50,11 +93,28 @@ func (m *Module) doLogin(w http.ResponseWriter, r *http.Request) {
 	// against. Phase 2 adds a resolver that reads the host name.
 	tenant := m.tenant(r)
 
-	u, err := m.svc.Authenticate(r.Context(), tenant, in.Email, in.Password)
+	// The address the attempt came from, read from the socket and never from a
+	// header: X-Forwarded-For is written by whoever is calling, so keying the
+	// throttle on it would let an attacker reset their own counter every request.
+	u, err := m.svc.Authenticate(r.Context(), tenant, in.Email, in.Password, middleware.KeyByIP(r))
 	if err != nil {
 		if errors.Is(err, ErrInvalidCredentials) {
-			renderLoginError(w, http.StatusUnauthorized, validation.Errors{
+			// One sentence for a missing account and a wrong password, on the
+			// field the person can see. Naming which half was wrong is the
+			// account enumeration oracle ErrInvalidCredentials exists to close.
+			m.renderLogin(w, r, http.StatusUnauthorized, in.Email, validation.Errors{
 				"email": {"invalid email or password"},
+			})
+			return
+		}
+		// The lockout is a refusal, not a failure of this application: answering
+		// it with 500 would send somebody who typed their password wrong five
+		// times to the error page.
+		var locked TooManyAttemptsError
+		if errors.As(err, &locked) {
+			w.Header().Set("Retry-After", strconv.Itoa(locked.Seconds()))
+			m.renderLogin(w, r, http.StatusTooManyRequests, in.Email, validation.Errors{
+				"email": {fmt.Sprintf("too many attempts, try again in %d seconds", locked.Seconds())},
 			})
 			return
 		}
@@ -72,7 +132,11 @@ func (m *Module) doLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redirect(w, r, "/")
+	// Where they were going before the guard turned them away, and the front
+	// page when there was nowhere in particular. The destination is validated as
+	// local by the store, which is why this line can be one line: an unchecked
+	// one would be an open redirect on the one screen every application has.
+	redirect(w, r, m.svc.session.TakeIntended(w, r, "/"))
 }
 
 // doLogout destroys the session on the server, not only in the browser.
@@ -85,28 +149,18 @@ func (m *Module) doLogout(w http.ResponseWriter, r *http.Request) {
 
 // redirect answers the way the client can act on.
 //
-// It used to set HX-Redirect and 200 unconditionally, and that is fine for HTMX
-// and broken for everything else: a form posted without JavaScript -- a browser
-// with scripts off, a crawler, curl -- got 200 with an empty body and stayed on
-// a blank page, signed in, with no way to know where to go.
+// This used to be its own copy of the branch, and that copy set HX-Redirect and
+// 200 unconditionally: fine for HTMX and broken for everything else, because a
+// form posted without JavaScript -- a browser with scripts off, a crawler, curl
+// -- got 200 with an empty body and stayed on a blank page, signed in, with no
+// way to know where to go. Having the rule in two shapes is what let one of them
+// be wrong, so there is now one shape and this calls it (RULE 9).
 //
-// The rule is the one httpx.Context.Redirect already applies, and having it in
-// two shapes is what let one of them be wrong. It lives here rather than being
-// borrowed because these handlers take a raw http.ResponseWriter, and wrapping
-// one in a Context to reach a two-line branch would be the more surprising code.
+// It stays a function rather than the call being inlined at nine call sites,
+// because the name is what says these handlers redirect the same way the rest of
+// the framework does.
 func redirect(w http.ResponseWriter, r *http.Request, to string) {
-	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", to)
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	http.Redirect(w, r, to, http.StatusSeeOther)
-}
-
-func renderLoginError(w http.ResponseWriter, status int, errs validation.Errors) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	_ = loginErrors.Execute(w, errs)
+	httpx.Redirect(w, r, to)
 }
 
 // The sign-in screen the framework ships, for a project that has not published
@@ -127,6 +181,24 @@ func renderLoginError(w http.ResponseWriter, status int, errs validation.Errors)
 //     application stops feeling like one;
 //   - hx-headers, or every HTMX request that changes state fails the CSRF check,
 //     which is the single most common mistake in this stack.
+//
+// # Why the form opts out of hx-boost
+//
+// Because a wrong password is a 401, and htmx swaps no 4xx: its response
+// handling is `{code:"[45]..", swap:false, error:true}` in the copy this
+// framework embeds. A boosted form posting to this handler therefore answered
+// every refusal -- wrong password, empty field, lockout -- by leaving the screen
+// exactly as it was. The person typed, pressed the button, and nothing happened
+// at all, which reads as the application being broken rather than as the
+// password being wrong.
+//
+// The guards' fix does not apply here: HX-Refresh reloads, and a reload of the
+// sign-in screen throws away both the message and the address that was typed.
+// So the form posts natively -- a full navigation, exactly what a browser with
+// scripts off already does -- and the answer is this same page with the error on
+// it, in every client, at the status the handler chose. The hidden _csrf field
+// is what carries the token on that post, which is why it is in the markup
+// beside the hx-headers attribute rather than instead of it.
 //
 // # Why it carries its own layout CSS
 //
@@ -193,16 +265,22 @@ var loginForm = template.Must(template.New("login").Parse(`<!doctype html>
   .signin p { margin: 0.5rem 0 0; font-size: 0.875rem; color: var(--muted-foreground, #666); }
   .signin form { margin-top: 2rem; display: flex; flex-direction: column; gap: 1rem; }
   .signin button { margin-top: 0.5rem; }
+  .signin .alert { margin-top: 1.5rem; }
 </style>
 <main class="signin">
   <h1>Sign in</h1>
   <p>Use the address this application knows you by.</p>
-
-  <form method="post" action="/auth/login">
+{{if .Errors}}
+  <div class="alert" role="alert" data-variant="destructive">
+    <h2>That did not work</h2>
+    <section><ul>{{range $field, $msgs := .Errors}}{{range $msgs}}<li>{{$field}}: {{.}}</li>{{end}}{{end}}</ul></section>
+  </div>
+{{end}}
+  <form method="post" action="/auth/login" hx-boost="false">
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
     <div class="field">
       <label class="label" for="email">Email</label>
-      <input class="input" type="email" id="email" name="email" autocomplete="username" required autofocus>
+      <input class="input" type="email" id="email" name="email" value="{{.Email}}" autocomplete="username" required autofocus>
     </div>
     <div class="field">
       <label class="label" for="password">Password</label>
@@ -212,9 +290,3 @@ var loginForm = template.Must(template.New("login").Parse(`<!doctype html>
   </form>
 </main>
 </body></html>`))
-
-var loginErrors = template.Must(template.New("loginErrors").Parse(
-	`<div class="alert" role="alert" data-variant="destructive">
-<h2>That did not work</h2>
-<section><ul>{{range $field, $msgs := .}}{{range $msgs}}<li>{{$field}}: {{.}}</li>{{end}}{{end}}</ul></section>
-</div>`))

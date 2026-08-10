@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 )
 
 // ErrForbidden is the only authorization error. Handlers translate it to 403.
@@ -35,6 +36,42 @@ type Subject struct {
 	// so a stale session can only be MORE restrictive than the truth, never
 	// less.
 	Verified bool
+
+	// Remembered says whether this session was started with the remember-me box
+	// ticked, and therefore lives for RememberLifetime instead of the store's
+	// configured ttl.
+	//
+	// It is on the record and not recomputed, because the session store rewrites
+	// the record when the password is confirmed and has to write back the same
+	// lifetime it started with. Without it, confirming a password on a remembered
+	// session silently cut it down to the plain ttl -- somebody who ticked the box
+	// and then confirmed a payment was signed out that evening.
+	//
+	// Only SessionStore.Start and SessionStore.Rotate set it, from the Remember
+	// option, and they overwrite whatever the caller put here: a field set by hand
+	// on the way in would be a second way to ask for a longer session, and there
+	// is one (RULE 9).
+	//
+	// A policy may also read it. Laravel exposes the same fact as viaRemember, and
+	// for the same use: a session nobody has authenticated for a month is the
+	// right moment to ask for the password again before a destructive action.
+	Remembered bool
+
+	// PasswordConfirmedAt is when the subject last typed their password again on
+	// an already open session -- Laravel's auth.password_confirmed_at.
+	//
+	// It exists so a sensitive action can demand the password once and then leave
+	// the person alone for a while, instead of on every click. Ask through
+	// PasswordConfirmedWithin, never by comparing this field: the zero value has
+	// to mean unconfirmed, and a comparison written at the call site is where that
+	// gets forgotten.
+	//
+	// It is carried on the subject for the same reason Verified is, and it fails
+	// in the same direction: a session written by an older binary has no stamp, so
+	// it reads as never confirmed and the person is asked for their password. The
+	// opposite default -- treating an absent stamp as recent -- would let every
+	// session that survived a deploy walk past the confirmation screen.
+	PasswordConfirmedAt time.Time
 
 	// guest marks a subject that is deliberately anonymous. It is unexported and
 	// only Guest sets it, which is the whole point: a Subject nobody filled in

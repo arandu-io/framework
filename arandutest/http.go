@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/arandu-io/framework/security"
 )
@@ -96,10 +97,42 @@ func (c *Client) do(method, path string, body io.Reader, contentType string) *Re
 	// Cookies the response set are kept, so a session survives the next call.
 	// Without this every request after a login is anonymous, and the test that
 	// notices is the one that fails three cases later.
-	c.cookies = append(c.cookies, rec.Result().Cookies()...)
+	for _, ck := range rec.Result().Cookies() {
+		c.keep(ck)
+	}
 	c.lastBody = rec.Body.String()
 
 	return &Response{t: c.t, rec: rec, path: method + " " + path}
+}
+
+// keep stores one Set-Cookie the way a browser stores it: by name and path, so
+// a second value REPLACES the first, and a cookie the server told the browser to
+// drop is dropped.
+//
+// It used to append, and a jar that only appends cannot express a sign-out.
+// http.Request.Cookie returns the first cookie of a name, so the cleared value
+// that logout sends sat behind the live one and was never read, and a second
+// sign-in in the same test put a second session behind the first -- which by
+// then the server had deleted, so the client silently went back to being
+// anonymous while the test read on. Both of those are tests that pass while
+// proving the opposite of what they say, which is the one failure this whole
+// package exists to prevent.
+func (c *Client) keep(ck *http.Cookie) {
+	kept := c.cookies[:0]
+	for _, have := range c.cookies {
+		if have.Name != ck.Name || have.Path != ck.Path {
+			kept = append(kept, have)
+		}
+	}
+	c.cookies = kept
+
+	// MaxAge below zero is "delete this now", and an Expires in the past is the
+	// older spelling of the same instruction. Either way there is nothing to
+	// store: the cookie is gone from the jar and the next request carries none.
+	if ck.MaxAge < 0 || (!ck.Expires.IsZero() && !ck.Expires.After(time.Now())) {
+		return
+	}
+	c.cookies = append(c.cookies, ck)
 }
 
 // Response is what came back, with the assertions worth having.

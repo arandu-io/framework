@@ -164,3 +164,105 @@ func TestCreateUserCannotReachAnotherTenant(t *testing.T) {
 		t.Fatalf("the statement carried tenants %v, want exactly [tenant-a]", tenants)
 	}
 }
+
+// A password reset used to read the row, set one field, and write the whole row
+// back -- with the read outside the transaction. Everything that changed in
+// between was reverted from a stale snapshot, and nothing failed or logged:
+//
+//   - an administrator grants a role during the reset, and the reset takes it
+//     away again;
+//   - the person clicks the verification link in the same minute, and the reset
+//     un-verifies the address;
+//   - once an address can be changed, the reset puts the old one back together
+//     with its verified stamp, undoing the binding the verification link exists
+//     to enforce.
+//
+// The statement is the proof, because it is what a concurrent writer collides
+// with: a write that names one column cannot revert a column it does not name.
+// It is the fix MarkVerified was given in UserRepo.Confirm, applied to the other
+// column that is written on its own.
+func TestReplacingAPasswordDoesNotWriteBackTheRestOfTheRow(t *testing.T) {
+	service, db := serviceOverFakeDB(t)
+	db.seedUser(auth.User{
+		ID: "u-1", TenantID: tenant, Name: "Ada Lovelace", Email: "ada@example.com",
+		Password: "the-old-hash", Roles: []string{"admin"},
+	})
+
+	if _, err := service.SetPassword(context.Background(), tenant, "ada@example.com", "a-long-enough-password"); err != nil {
+		t.Fatalf("SetPassword: %v", err)
+	}
+
+	var wrote bool
+	for _, stmt := range db.statements() {
+		if !strings.HasPrefix(stmt, "UPDATE users") {
+			continue
+		}
+		wrote = true
+		for _, column := range []string{"name =", "email =", "roles =", "verified_at ="} {
+			if strings.Contains(stmt, column) {
+				t.Errorf("the reset also writes %s, from a snapshot read before the transaction opened: %s", column, stmt)
+			}
+		}
+		if !strings.Contains(stmt, "tenant_id = ?") {
+			t.Errorf("the reset is not scoped by tenant, so it names a row of whichever customer holds that id (RULE 14): %s", stmt)
+		}
+	}
+	if !wrote {
+		t.Fatalf("no password was written at all:\n%v", db.statements())
+	}
+}
+
+// The account the notice is about, as it is at commit rather than as it was
+// before the hash was computed.
+//
+// EventPasswordReset is what a "your password was changed" mail is sent from, so
+// a payload built from the snapshot taken a hundred milliseconds earlier -- an
+// argon2 hash is that long -- sends that mail to the address the account had
+// before the change. This is the one case where being slightly stale is the
+// whole problem.
+//
+// The order of the statements is the proof: the row that becomes the payload is
+// read after the write, inside the same transaction.
+func TestAPasswordResetPublishesTheAccountAsItIsAfterTheWrite(t *testing.T) {
+	service, db := serviceOverFakeDB(t)
+	db.seedUser(auth.User{
+		ID: "u-1", TenantID: tenant, Name: "Ada Lovelace", Email: "ada@example.com",
+		Password: "the-old-hash", Roles: []string{"admin"},
+	})
+
+	updated, err := service.SetPassword(context.Background(), tenant, "ada@example.com", "a-long-enough-password")
+	if err != nil {
+		t.Fatalf("SetPassword: %v", err)
+	}
+	if updated.ID != "u-1" || updated.Email != "ada@example.com" || updated.Name != "Ada Lovelace" {
+		t.Errorf("the caller was handed %+v, and a seeder prints these back to an operator", updated)
+	}
+
+	wrote, read, published := -1, -1, -1
+	for i, stmt := range db.statements() {
+		switch {
+		case strings.HasPrefix(stmt, "UPDATE users"):
+			wrote = i
+		case strings.Contains(stmt, "FROM users") && wrote >= 0 && read < 0:
+			read = i
+		case strings.Contains(stmt, "INSERT INTO outbox"):
+			published = i
+		}
+	}
+	if wrote < 0 || published < 0 {
+		t.Fatalf("the reset did not write and publish:\n%v", db.statements())
+	}
+	if read < 0 || read > published {
+		t.Fatalf("the event was built from the row as it was read before the write, so a notice goes to the address the account no longer has:\n%v", db.statements())
+	}
+}
+
+// A reset that changed nothing and reported success is somebody typing a new
+// password and then signing in with the old one.
+func TestReplacingThePasswordOfAnAccountThatIsNotThereIsAnError(t *testing.T) {
+	service, _ := serviceOverFakeDB(t)
+
+	if _, err := service.SetPassword(context.Background(), tenant, "nobody@example.com", "a-long-enough-password"); !errors.Is(err, auth.ErrUserNotFound) {
+		t.Fatalf("err = %v, want ErrUserNotFound", err)
+	}
+}

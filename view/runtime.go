@@ -3,6 +3,7 @@ package view
 import (
 	"fmt"
 	"io"
+	"reflect"
 	"strconv"
 )
 
@@ -34,9 +35,46 @@ func Text(v any) string {
 		return ""
 	case fmt.Stringer:
 		return x.String()
+
+	// A method value, which means the view wrote {{ .Greeting }} where it meant
+	// {{ .Greeting() }}. Both compile: without the parentheses the expression is
+	// the method itself, and %v prints a function as its address.
+	//
+	// It shipped. The showcase's plain-text verification message read
+	// "Hello 0x10273d6d0, and welcome." for every person who registered, and it
+	// was invisible because the HTML part beside it was written correctly -- only
+	// a reader whose client prefers text ever saw it, which is the audience the
+	// text part exists for.
+	//
+	// Answered by panicking rather than by printing something tidier: this is a
+	// mistake with no correct output, and a view that renders "" or the method
+	// name would hide it exactly as %v did. In development it reaches the error
+	// page, which names the file and the line of the .kyse.go.
+	case func() string:
+		panic("view: a method was interpolated instead of its result. Write {{ .Name() }} rather than {{ .Name }}")
+
 	default:
+		if s := funcName(v); s != "" {
+			panic("view: " + s + " was interpolated instead of its result. Write {{ .Name() }} rather than {{ .Name }}")
+		}
 		return fmt.Sprint(v)
 	}
+}
+
+// funcName reports that a value is a function, and nothing otherwise.
+//
+// Separate from the type switch above because a method can have any signature --
+// func() int, func() time.Time, func() (string, error) -- and every one of them
+// is the same mistake. reflect is reached for here and nowhere else in this
+// runtime, on a path that only runs when something is already wrong.
+func funcName(v any) string {
+	if v == nil {
+		return ""
+	}
+	if reflect.TypeOf(v).Kind() != reflect.Func {
+		return ""
+	}
+	return "a method"
 }
 
 // Yield renders the section a child view declared, or nothing.

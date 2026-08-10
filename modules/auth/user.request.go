@@ -30,6 +30,13 @@ func (r CreateUserRequest) Validate() validation.Errors {
 // LoginRequest is the login input. It does not check the password length: the
 // rule that applies here is whether the credentials match, and a length message
 // on login would leak the policy of existing accounts.
+//
+// The identifier is the e-mail address and there is no field for anything else.
+// That is a decision rather than an omission: this type, the form field named
+// "email", Service.Authenticate's parameter and UserRepo.FindByEmail all name
+// the same thing, and adding a general Identifier here would leave three of them
+// still meaning an address. Service.Authenticate carries the full argument for
+// why there is no username() hook and what an application does instead.
 type LoginRequest struct {
 	Email    string
 	Password string

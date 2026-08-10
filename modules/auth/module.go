@@ -16,6 +16,7 @@ import (
 	"net/http"
 
 	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/httpx/middleware"
 	"github.com/arandu-io/framework/kernel"
 )
 
@@ -72,9 +73,15 @@ var (
 func (m *Module) Name() string { return "auth" }
 
 // Routes registers the module's routes.
+//
+// The sign-in screen is guarded, and it is the one route here that needs to be:
+// without the guest guard it renders for somebody who already has a session,
+// which reads to them as having been signed out. There is nothing to guard on
+// the two POSTs -- signing in again is harmless, and signing out without a
+// session is a no-op that ends where it should.
 func (m *Module) Routes(r *httpx.Router) {
 	g := r.Group("/auth")
-	g.Get("/login", m.showLogin)
+	g.Get("/login", m.showLogin, middleware.RedirectIfAuthenticated(m.svc.session, "/"))
 	g.Post("/login", m.doLogin)
 	g.Post("/logout", m.doLogout)
 }

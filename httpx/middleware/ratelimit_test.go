@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,5 +136,104 @@ func TestMemoryLimiterSweepsExpiredBuckets(t *testing.T) {
 
 	if n := limiter.Len(); n > 2 {
 		t.Fatalf("buckets retained = %d, want the expired ones gone", n)
+	}
+}
+
+// TestOneMachineWithARoutedBlockIsOneClient: over IPv6 the address is not a
+// scarce resource. A single connection is handed a /64 -- eighteen quintillion
+// addresses, all of which reach this server -- so a limit keyed on the whole
+// address is a limit an attacker steps out of by picking a new source address
+// for every request, which costs nothing.
+func TestOneMachineWithARoutedBlockIsOneClient(t *testing.T) {
+	key := func(remote string) string {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.RemoteAddr = remote
+		return middleware.KeyByIP(r)
+	}
+
+	first := key("[2001:db8:abcd:1234::1]:443")
+	second := key("[2001:db8:abcd:1234:dead:beef:cafe:f00d]:9000")
+	if first != second {
+		t.Fatalf("two addresses out of one /64 are keyed %q and %q: every limit in the framework is off for "+
+			"anyone with an IPv6 connection", first, second)
+	}
+
+	neighbour := key("[2001:db8:abcd:1235::1]:443")
+	if neighbour == first {
+		t.Fatalf("a different /64 shares the key %q: one subscriber's traffic would lock another's out", first)
+	}
+}
+
+// TestAnAddressWithAScopeIsStillOneAddress: the zone on a link-local address
+// names the interface it arrived on, which belongs to this server and not to the
+// sender. Left in the key it would file the same machine under two buckets.
+func TestAnAddressWithAScopeIsStillOneAddress(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "[fe80::1%eth0]:443"
+	scoped := middleware.KeyByIP(r)
+
+	r.RemoteAddr = "[fe80::1%eth1]:443"
+	if other := middleware.KeyByIP(r); other != scoped {
+		t.Fatalf("the same address arriving on two interfaces is keyed %q and %q", scoped, other)
+	}
+}
+
+// The rate limit is the third refusal in this package, and it refused in a shape
+// htmx throws away: its response handling is `{code:"[45]..", swap:false,
+// error:true}`, so the person pressed the button once too often and the screen
+// did not change at all -- which reads as the application being broken, and the
+// next thing anybody does about a button that did nothing is press it again.
+//
+// HX-Refresh reloads the page as an ordinary navigation, and that request is not
+// an htmx one, so this same middleware answers the same refusal and the browser
+// renders it.
+func TestSomebodyOverTheRateLimitIsToldSoInAShapeTheirScreenCanShow(t *testing.T) {
+	h := httpx.Chain(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+		middleware.RateLimit(middleware.NewMemoryLimiter(), 1, time.Minute, middleware.KeyByIP),
+	)
+
+	htmx := func() *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/inbox/rows", nil)
+		r.Header.Set("HX-Request", "true")
+		return r
+	}
+	h.ServeHTTP(httptest.NewRecorder(), htmx())
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, htmx())
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429 -- the status is what a log and a probe read, and it does not change", rec.Code)
+	}
+	if rec.Header().Get("HX-Refresh") != "true" {
+		t.Error("htmx was given nothing to do with this refusal, so the person clicked and nothing happened at all")
+	}
+}
+
+// The other half: a browser that is not running htmx already renders the body,
+// and telling it to reload would replace the sentence with the page the person
+// was on and explain nothing.
+func TestAPlainBrowserOverTheRateLimitIsNotToldToReload(t *testing.T) {
+	h := httpx.Chain(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+		middleware.RateLimit(middleware.NewMemoryLimiter(), 1, time.Minute, middleware.KeyByIP),
+	)
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/inbox", nil))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/inbox", nil))
+
+	if got := rec.Header().Get("HX-Refresh"); got != "" {
+		t.Errorf("HX-Refresh = %q on a request no htmx sent", got)
+	}
+	// The sentence and the header have to agree: two different numbers of
+	// seconds is worse than one of them being absent.
+	after := rec.Header().Get("Retry-After")
+	if after == "" {
+		t.Fatal("nothing told the client how long to wait")
+	}
+	if !strings.Contains(rec.Body.String(), "wait "+after+" seconds") {
+		t.Errorf("the body says %q and Retry-After says %q", rec.Body.String(), after)
 	}
 }
