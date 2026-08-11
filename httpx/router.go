@@ -6,8 +6,12 @@
 package httpx
 
 import (
+	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/framework/validation"
 )
 
 // Middleware is the standard net/http signature. We do not invent our own type:
@@ -33,6 +37,7 @@ type Router struct {
 	mws    []Middleware
 	table  *Routes
 	render Renderer
+	flash  *security.Flash
 }
 
 // Route is metadata, used by `aru routes` and by the error page.
@@ -72,6 +77,19 @@ func (r *Router) WithRenderer(rd Renderer) *Router {
 	return &g
 }
 
+// WithFlash returns a router whose handlers can answer a rejected request.
+//
+// The kernel calls it at boot, the way it calls WithRenderer, so no application
+// wires it and none can forget to. Without it a handler that returns
+// validation.Errors reaches the panic path, which is the honest answer: a
+// rejection that cannot be flashed is a rejection nobody will see, and a page
+// that fails loudly beats a form that silently comes back blank.
+func (r *Router) WithFlash(f *security.Flash) *Router {
+	g := *r
+	g.flash = f
+	return &g
+}
+
 // Group returns a sub-router with the prefix appended and the middleware
 // inherited. The route table is shared with the parent.
 func (r *Router) Group(prefix string, mws ...Middleware) *Router {
@@ -82,6 +100,7 @@ func (r *Router) Group(prefix string, mws ...Middleware) *Router {
 		mws:    append(append([]Middleware{}, r.mws...), mws...),
 		table:  r.table,
 		render: r.render,
+		flash:  r.flash,
 	}
 }
 
@@ -134,12 +153,45 @@ func (r *Router) handle(method, pattern string, h http.HandlerFunc, mws ...Middl
 // An error reaching here is one the handler could not handle, so it goes to the
 // panic path: the error page in development, 500 in production. Swallowing it
 // would answer 200 with an empty body, which is the failure nobody debugs.
+//
+// One error is not that, and it is the branch below: validation.Errors is not a
+// failure the handler could not handle, it is the answer. A controller writes
+//
+//	in, err := ctx.Validate(requests.StorePost)
+//	if err != nil {
+//		return err
+//	}
+//
+// and this turns it into the flash and the redirect back. The branch is here,
+// once, for the reason Redirect and Refuse are one function each: the last time
+// a decision of this shape lived at every call site there were forty-one copies
+// of it, and the failure they were written to answer is invisible when one of
+// them is wrong.
 func (r *Router) handleCtx(method, pattern string, h func(*Context) error, mws ...Middleware) *Route {
-	renderer, table := r.render, r.table
+	renderer, table, flash := r.render, r.table, r.flash
 	return r.handle(method, pattern, func(w http.ResponseWriter, req *http.Request) {
-		if err := h(&Context{Response: w, Request: req, render: renderer, routes: table}); err != nil {
-			panic(err)
+		err := h(&Context{Response: w, Request: req, render: renderer, routes: table})
+		if err == nil {
+			return
 		}
+
+		var rejected validation.Errors
+		if errors.As(err, &rejected) && flash != nil {
+			if !rejected.Any() {
+				// An empty set of errors returned as an error is a handler that
+				// wrote `return errs` without asking whether anything failed.
+				// Redirecting on it sends the person back to the form they just
+				// filled in with nothing on it and no reason given -- the exact
+				// failure this path exists to remove, produced by the path
+				// itself. It is a defect in the handler, so it is answered like
+				// one.
+				panic("httpx: a handler returned an empty validation.Errors. " +
+					"Return nil when nothing failed: `if errs.Any() { return errs }`")
+			}
+			Reject(w, req, flash, rejected)
+			return
+		}
+		panic(err)
 	}, mws...)
 }
 

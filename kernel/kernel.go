@@ -21,7 +21,9 @@ import (
 
 	"github.com/arandu-io/framework/config"
 	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/httpx/middleware"
 	"github.com/arandu-io/framework/observability"
+	"github.com/arandu-io/framework/security"
 )
 
 // Timeouts of the HTTP server. They are set rather than left at zero because a
@@ -43,6 +45,14 @@ type Kernel struct {
 	pipeline []httpx.Middleware
 	srv      *http.Server
 
+	// flash carries the messages of a rejected form across the redirect that
+	// answers it. The kernel builds it rather than the application, for the
+	// reason the renderer is found rather than passed: it takes no decision --
+	// the key and the environment are already here -- and a wiring line an
+	// application can leave out is one an application leaves out, with a form
+	// that comes back blank as the only symptom.
+	flash *security.Flash
+
 	booted bool
 	// recorder is the ring buffer behind the console. It exists in development
 	// and under a tracing secret, and is nil otherwise -- which is what makes
@@ -54,10 +64,19 @@ type Kernel struct {
 // that is Boot and Run.
 func New(cfg config.Config) *Kernel {
 	log := observability.NewLogger(string(cfg.Env), cfg.LogLevel)
+
+	// The flash is built here, before any route exists, because the router is
+	// wired with it and a route is wired with the router it was registered on.
+	// Secure outside development, for the reason the session cookie is: it
+	// carries what somebody typed into a form, and without the attribute it
+	// travels over plain HTTP.
+	flash := security.NewFlash(cfg.AppKey, !cfg.IsDev())
+
 	k := &Kernel{
 		cfg:    cfg,
 		log:    log,
-		router: httpx.NewRouter(),
+		flash:  flash,
+		router: httpx.NewRouter().WithFlash(flash),
 	}
 
 	// The kernel owns the recorder because it is what mounts the console route.
@@ -292,6 +311,18 @@ func (k *Kernel) Handler() http.Handler {
 	// Live reload is outermost after the logger, so it sees the finished
 	// document rather than a handler's intention to write one.
 	outer := append([]httpx.Middleware{observability.RootLogger(k.log)}, devReload(k.cfg.IsDev())...)
+
+	// The flash is consumed above the application's own pipeline and below the
+	// logger, and it is the kernel that installs it rather than bootstrap/app.go
+	// for the reason the field on the Kernel says: there is nothing to decide.
+	//
+	// exceptInternal for the same reason everything else is: the debug console
+	// is a page a browser asks for with text/html, so without this it would
+	// spend the one-shot flash on a request that draws none of it, and the form
+	// the person was sent back to would come back blank -- a bug reachable only
+	// with the console open, which is exactly when somebody is debugging
+	// something else.
+	outer = append(outer, exceptInternal(middleware.Flash(k.flash)))
 
 	// The application's middleware runs on the application's routes. What this
 	// framework mounts under internalPrefix is not the application's traffic and

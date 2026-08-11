@@ -1,10 +1,38 @@
-// Package validation defines the validation contract.
+// Package validation checks a submitted form against a set of rules.
 //
-// There is no reflection and there are no struct tags: every request type
-// implements Validate and returns the errors per field. It is more verbose than
-// `binding:"required"`, and deliberately so -- the message is written by whoever
-// knows the domain, and the CLI generates the method skeleton along with the
-// struct.
+// The surface is Laravel's, string rules included, so that somebody arriving
+// from it recognises the whole thing without reading anything:
+//
+//	var Register = validation.MustCompile(validation.Rules{
+//		"name":     "required|max:255",
+//		"email":    "required|email",
+//		"password": "required|min:12|confirmed",
+//	})
+//
+//	in, err := ctx.Validate(requests.Register)
+//	if err != nil {
+//		return err
+//	}
+//
+// A rule set is compiled ONCE, in a package-level variable, and every rule
+// string is parsed and checked there: an unknown rule, a missing or unparseable
+// argument, a pattern that does not compile, a cross-field reference naming a
+// field that does not exist -- each of those fails at boot, naming the field,
+// the rule and the file, and all of them are reported together. A rule set that
+// boots is a rule set whose names are all real.
+//
+// Sixty-one of Laravel's rules ship. Every one of the others is named in
+// refused.go with the reason it is not here and where the answer lives instead,
+// so a rule copied from a Laravel application gets an argument rather than
+// "unknown rule". Two of those reasons are worth knowing before writing
+// anything: `unique` and `exists` reach a repository and a rule set carries no
+// security.Grant (RULE 17), and `date_format` takes a Go layout
+// (date_format:2006-01-02), never a PHP one.
+//
+// There is no reflection and there are no struct tags. The rule set is data,
+// the request struct is written by hand or generated, and the values that
+// passed are read out of Input one at a time -- so a field nobody declared a
+// rule for cannot reach a repository through here.
 package validation
 
 import (
@@ -86,13 +114,11 @@ func MaxLen(e Errors, field, value string, n int) {
 // Whitespace is rejected rather than trimmed: an address with a space in it is
 // almost always a paste accident, and silently trimming input hides the mistake
 // from the person who made it.
+// The shape itself is emailShape, which the `email` rule also calls: two
+// implementations of "is this an address" would drift, and the one that drifted
+// would be whichever a screen did not exercise.
 func Email(e Errors, field, value string) {
-	if strings.ContainsAny(value, " \t\r\n") {
-		e.Add(field, "is not a valid email address")
-		return
-	}
-	at := strings.IndexByte(value, '@')
-	if at <= 0 || at == len(value)-1 || !strings.Contains(value[at:], ".") {
+	if !emailShape(value) {
 		e.Add(field, "is not a valid email address")
 	}
 }

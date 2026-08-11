@@ -1,6 +1,13 @@
 package view
 
-import "strings"
+import (
+	"net/url"
+	"sort"
+	"strings"
+
+	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/validation"
+)
 
 // Layout is what a layout asks of the data every screen hands it.
 //
@@ -55,6 +62,18 @@ type Layout interface {
 	// gets it wrong.
 	PanelLink() string
 	AdminLink() string
+
+	// HasErrors says whether the attempt that landed here was rejected, and
+	// ErrorSummary is one line per failed field for the banner that says so.
+	//
+	// The banner is the layout's, which is why these two are here and the
+	// per-field message is not: a page body draws "must be at least 12
+	// characters" under the box it belongs to, and the layout draws the summary
+	// once, above everything. FieldError and OldValue are promoted methods on
+	// Page for the body to call, deliberately outside this interface -- Layout
+	// is what the LAYOUT asks for.
+	HasErrors() bool
+	ErrorSummary() []string
 }
 
 // Page is the chrome every screen hands the layout, embedded rather than
@@ -116,6 +135,26 @@ type Page struct {
 	// way out to registering, is the one it does not show. The layout reads this
 	// through IsCurrent; nothing else needs it.
 	Path string
+
+	// Errors is what validation rejected on the attempt that was sent back
+	// here, keyed by the name of the form input -- the same name
+	// components.FieldProps.Name carries.
+	//
+	// It is filled by New, from the flash, and by nothing else. No handler
+	// assigns it: a handler that had to would be a handler that can forget to,
+	// and forgetting is invisible -- the form comes back with no messages on it,
+	// which is the failure this field exists to end.
+	//
+	// Empty on every page nobody was rejected on, which is nearly all of them.
+	Errors validation.Errors
+
+	// Old is what was typed on that attempt, so the boxes come back filled in
+	// rather than blank.
+	//
+	// It never carries a password. See security.Flash for the list and for why
+	// the MESSAGE for a password survives when the value does not: an empty
+	// password box that does not say why it was rejected is the original bug.
+	Old url.Values
 }
 
 // Compile-time proof that embedding Page is all a page has to do to fit the
@@ -183,3 +222,133 @@ func (p Page) PanelLink() string { return p.PanelURL }
 // AdminLink is the administration area, or empty for anybody who would be
 // refused it.
 func (p Page) AdminLink() string { return p.AdminURL }
+
+// New returns the page chrome for this request, with the messages and the typed
+// input of a rejected attempt already on it.
+//
+//	Page: view.New(ctx, "New post").WithToken(token),
+//
+// It replaces the view.Page{Title: ..., Token: ...} literal a controller used to
+// write, and the difference is the whole point of this file: nothing in that
+// line mentions errors, and the errors are on the page. There is no argument to
+// pass and therefore none to forget, which matters because forgetting produces a
+// form that comes back blank -- correct-looking, and wrong.
+//
+// It fills only what the request itself knows: the title it was given, the
+// address being served, and what the flash left behind. The application name,
+// the navigation and the signed-in person are the controller's, because they are
+// decisions -- see the Layout interface on why the layout is never allowed to go
+// and fetch them.
+func New(ctx *httpx.Context, title string) Page {
+	state := ctx.State()
+	return Page{
+		Title:  title,
+		Path:   ctx.Request.URL.Path,
+		Errors: state.Errors,
+		Old:    state.Old,
+	}
+}
+
+// WithToken sets the CSRF token, which the controller issues.
+//
+// A method rather than a field in the literal, so that New reads as one
+// expression at the call site. It returns a copy: Page is a value everywhere
+// else, and a builder that mutated in place would be the one method on it that
+// does.
+func (p Page) WithToken(token string) Page {
+	p.Token = token
+	return p
+}
+
+// FieldError is the first message for a field, or empty.
+//
+// One message and not all of them, because that is what a form draws: the box
+// has room for one line, and the first is the one that names what to change.
+// It is what components.FieldProps.Error takes:
+//
+//	Error: .FieldError("email")
+//
+// Empty for a field that was accepted, and empty for every field on a page
+// nobody was rejected on -- so a screen asks unconditionally and draws nothing
+// when there is nothing. There is no @error directive and none is needed
+// (RULE 15).
+func (p Page) FieldError(name string) string {
+	msgs := p.Errors[name]
+	if len(msgs) == 0 {
+		return ""
+	}
+	return msgs[0]
+}
+
+// FieldErrors is every message for a field, for the rare screen that lists them.
+func (p Page) FieldErrors(name string) []string { return p.Errors[name] }
+
+// HasErrors reports whether the attempt that landed here was rejected.
+//
+// It is what a layout asks before drawing the banner. A page with no errors must
+// not draw an empty one: a box that is always there and usually blank is a box
+// people stop reading, which is how a real message goes unseen.
+func (p Page) HasErrors() bool { return len(p.Errors) > 0 }
+
+// OldValue is what was typed in a field on the attempt that was rejected.
+//
+//	Value: .OldValue("email")
+//
+// Always empty for a password, by construction rather than by the screen
+// remembering to leave it out. See security.Flash.
+func (p Page) OldValue(name string) string { return p.Old.Get(name) }
+
+// OldOr is OldValue, falling back to what the field already held.
+//
+// It is what an edit form needs and a create form does not: the box starts at
+// the stored value, and comes back carrying the rejected edit rather than
+// reverting to what is in the database -- which would quietly undo the change
+// somebody is in the middle of making.
+//
+// It answers the fallback when nothing was flashed, and the flashed value even
+// when that value is empty: a field somebody deliberately cleared must not fill
+// itself back in.
+func (p Page) OldOr(name, fallback string) string {
+	if _, typed := p.Old[name]; typed {
+		return p.Old.Get(name)
+	}
+	return fallback
+}
+
+// ErrorSummary is one line per failed field, for the banner, in sorted field
+// order.
+//
+//	Password must be at least 12 characters
+//
+// The field name is prepended HERE and not baked into the message, which is the
+// one deliberate divergence from Laravel: its messages are written ":attribute
+// must be at least :min characters" and carry the name everywhere, including
+// under the labelled box where the label has just said it. So a message reads
+// bare where it is drawn in context, and named where it is drawn out of context,
+// and there is one message either way.
+//
+// Sorted rather than in map order, so the banner does not reshuffle between two
+// renders of the same failure.
+func (p Page) ErrorSummary() []string {
+	if len(p.Errors) == 0 {
+		return nil
+	}
+
+	fields := make([]string, 0, len(p.Errors))
+	for field := range p.Errors {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		for _, msg := range p.Errors[field] {
+			// validation.Humanize and not a copy of it here: the same field name
+			// is turned into the same words by the package that writes the
+			// messages, so the banner and anything else that needs a field's
+			// name cannot disagree on the first line somebody reads.
+			out = append(out, validation.Humanize(field)+" "+msg)
+		}
+	}
+	return out
+}
