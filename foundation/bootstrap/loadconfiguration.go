@@ -6,11 +6,28 @@
 // laravel/framework publishes, none is Foundation. The boot composes the
 // components; it is not one of them.
 //
-// Laravel runs six bootstrappers. Five have an equivalent here --
-// LoadEnvironmentVariables, LoadConfiguration, HandleExceptions,
-// RegisterProviders and BootProviders. The sixth, RegisterFacades, has none:
-// ADR 0002 rejected facades, and there is no alias loader to register them
-// into.
+// Laravel runs six bootstrappers. Two have an equivalent here, and the other
+// four do not -- each for a reason already decided, none of them pending:
+//
+//	LoadConfiguration        -> LoadConfiguration
+//	HandleExceptions         -> HandleExceptions
+//	LoadEnvironmentVariables -> folded into LoadConfiguration
+//	RegisterFacades          -> nothing (ADR 0002)
+//	RegisterProviders        -> nothing; it is Application.Register
+//	BootProviders            -> nothing; it is Application.Boot
+//
+// LoadEnvironmentVariables is separate in Laravel because it has to be: the
+// config/*.php files call env() while they are being evaluated, so the .env has
+// to be in place before any of them runs. Nothing is evaluated here -- the
+// reading is direct, in LoadConfiguration -- so a second bootstrapper would be
+// a second way to load one file (RULE 9).
+//
+// RegisterProviders and BootProviders walk the container registering and then
+// booting service providers. There is no container (ADR 0001) and no provider:
+// what an application composes is modules, explicitly, and the two halves of
+// that are Application.Register and Application.Boot. They are methods rather
+// than bootstrappers because the list of modules is written by hand in
+// bootstrap/app.go, where it can be read.
 package bootstrap
 
 import (
