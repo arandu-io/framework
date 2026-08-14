@@ -40,7 +40,9 @@ import (
 	"github.com/arandu-io/hesape/database"
 	"github.com/arandu-io/hesape/filesystem"
 	"github.com/arandu-io/hesape/log"
+	"github.com/arandu-io/hesape/queue"
 	"github.com/arandu-io/hesape/session"
+	"github.com/arandu-io/hesape/view"
 )
 
 // Configuration is every component's settings, typed, built once at boot.
@@ -73,6 +75,8 @@ type Configuration struct {
 	Database   database.Config
 	Log        log.Config
 	Filesystem filesystem.Config
+	Queue      queue.Config
+	View       view.Config
 
 	// Repository answers the components that read configuration through an
 	// interface rather than a struct -- hashing.Config is one, and it is three
@@ -122,6 +126,8 @@ func LoadConfiguration() (Configuration, error) {
 		Database:   db,
 		Log:        loadLog(app),
 		Filesystem: loadFilesystem(),
+		Queue:      loadQueue(),
+		View:       loadView(app),
 	}
 	cfg.Repository = config.NewRepository(cfg.asMap())
 
@@ -287,4 +293,46 @@ func (c Configuration) asMap() map[string]any {
 		"cache": map[string]any{"default": c.Cache.Default, "prefix": c.Cache.Prefix},
 		"log":   map[string]any{"default": c.Log.Default},
 	}
+}
+
+// loadQueue answers config/queue.php.
+func loadQueue() queue.Config {
+	retry := config.Seconds("QUEUE_RETRY_AFTER", 90*time.Second)
+	return queue.Config{
+		Default: config.String("QUEUE_CONNECTION", "database"),
+		Connections: map[string]queue.ConnectionConfig{
+			"sync": {Driver: "sync", Name: "sync"},
+			"database": {
+				Driver:     "database",
+				Name:       "database",
+				Queue:      config.String("DB_QUEUE", "default"),
+				Table:      config.String("DB_QUEUE_TABLE", "jobs"),
+				RetryAfter: retry,
+			},
+			"redis": {
+				Driver:     "redis",
+				Name:       "redis",
+				Queue:      config.String("REDIS_QUEUE", "default"),
+				Connection: config.String("REDIS_QUEUE_CONNECTION", "default"),
+				RetryAfter: retry,
+			},
+		},
+		Failed: queue.FailedConfig{
+			Driver: config.String("QUEUE_FAILED_DRIVER", "database"),
+			Table:  config.String("QUEUE_FAILED_TABLE", "failed_jobs"),
+		},
+	}
+}
+
+// loadView answers config/view.php.
+//
+// Two fields, because kyse compiles views into the binary: there is no path to
+// search and no compiled cache to place. See view.Config.
+func loadView(app config.App) view.Config {
+	cfg := view.DefaultConfig()
+	// The reload follows debug rather than a variable of its own. Serving the
+	// script outside development costs a request per page for a feature nobody
+	// outside development can use.
+	cfg.Reload = app.Debug
+	return cfg
 }

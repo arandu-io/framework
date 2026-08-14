@@ -166,3 +166,40 @@ func chdir(t *testing.T, dir string) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(old) })
 }
+
+// AfterCommit stays false, and the reason is not compatibility with Laravel.
+//
+// The outbox writes the event in the same transaction as the change that
+// produced it, so the window AfterCommit narrows is one the events path does
+// not have at all. Turning it on here would be a second, weaker answer to a
+// problem already solved (RULE 9).
+func TestTheDatabaseQueueDoesNotDispatchAfterCommit(t *testing.T) {
+	env(t, "APP_KEY", testKey)
+
+	cfg, err := bootstrap.LoadConfiguration()
+	if err != nil {
+		t.Fatalf("LoadConfiguration: %v", err)
+	}
+
+	if cfg.Queue.Connections["database"].AfterCommit {
+		t.Error("AfterCommit is on; the outbox closes that window and this only narrows it")
+	}
+}
+
+// The reload script follows debug and has no variable of its own. Serving it
+// outside development costs a request per page for something nobody there can
+// use.
+func TestTheReloadScriptFollowsDebugAndNothingElse(t *testing.T) {
+	env(t, "APP_KEY", testKey, "APP_DEBUG", "false")
+
+	cfg, err := bootstrap.LoadConfiguration()
+	if err != nil {
+		t.Fatalf("LoadConfiguration: %v", err)
+	}
+	if cfg.View.Reload {
+		t.Error("the reload script is on with debug off")
+	}
+	if !cfg.View.Fragments {
+		t.Error("fragments are off; every HTMX swap would re-render the chrome around the part that changed")
+	}
+}
