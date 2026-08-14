@@ -1,35 +1,20 @@
+// The three transports that need no provider, answered by
+// github.com/arandu-io/hesape/mail/transport -- the same three names there,
+// which is why the fields below are the fields there.
+//
+// None of them is an alias, for one reason that applies to all five transports
+// in this package: hesape's Send answers (mail.SentMessage, error) where the
+// Transport interface here answers error. Each is a shell that builds the hesape
+// transport, calls it, and drops the receipt.
+
 package mail
 
 import (
 	"context"
-	"crypto/tls"
-	"fmt"
-	"net"
-	"net/smtp"
-	"strings"
-	"sync"
 	"time"
 
-	"github.com/arandu-io/framework/observability"
+	"github.com/arandu-io/hesape/mail/transport"
 )
-
-// The transports that ship in the core, and why these five.
-//
-// SMTP is the one every provider speaks, and it needs no dependency: net/smtp
-// is in the standard library. Whatever somebody buys, it accepts SMTP, so an
-// application is never blocked waiting for an adapter to exist.
-//
-// Log is what development uses. Laravel ships the same thing, and for the same
-// reason: an example that needs a mail server is an example nobody runs.
-//
-// Array is what tests use. It keeps what was sent so a test can read it, which
-// is the difference between proving an e-mail was sent and proving nothing.
-//
-// Resend and SendGrid are in api.go, in this package, because neither needs a
-// dependency: both are one POST with a JSON body, which net/http already does.
-// RULE 11 sends an adapter to a submodule when it drags an SDK in behind it, and
-// these two drag nothing. Amazon SES is the one that would -- it needs request
-// signing -- and it is deliberately absent. See ADR 0031.
 
 // SMTP sends over SMTP, with STARTTLS.
 type SMTP struct {
@@ -49,66 +34,23 @@ type SMTP struct {
 	Timeout time.Duration
 }
 
+func (t SMTP) hesape() transport.SMTP {
+	return transport.SMTP{
+		Host:     t.Host,
+		Port:     t.Port,
+		Username: t.Username,
+		Password: t.Password,
+		Timeout:  t.Timeout,
+	}
+}
+
 // Name identifies the transport in a log line.
-func (SMTP) Name() string { return "smtp" }
+func (t SMTP) Name() string { return t.hesape().Name() }
 
 // Send delivers the message.
 func (t SMTP) Send(ctx context.Context, m Message) error {
-	timeout := t.Timeout
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-
-	addr := net.JoinHostPort(t.Host, t.Port)
-	dialer := &net.Dialer{Timeout: timeout}
-
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
-	if err != nil {
-		return fmt.Errorf("mail: dialing %s: %w", addr, err)
-	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(timeout))
-
-	c, err := smtp.NewClient(conn, t.Host)
-	if err != nil {
-		return fmt.Errorf("mail: %s: %w", addr, err)
-	}
-	defer c.Close()
-
-	// STARTTLS when the server offers it, and that is not optional when there
-	// are credentials: PlainAuth refuses to send a password over a connection
-	// that is not encrypted, and it is right to.
-	if ok, _ := c.Extension("STARTTLS"); ok {
-		if err := c.StartTLS(&tls.Config{ServerName: t.Host}); err != nil {
-			return fmt.Errorf("mail: starttls: %w", err)
-		}
-	}
-	if t.Username != "" {
-		if err := c.Auth(smtp.PlainAuth("", t.Username, t.Password, t.Host)); err != nil {
-			return fmt.Errorf("mail: authenticating: %w", err)
-		}
-	}
-
-	if err := c.Mail(m.From.Email); err != nil {
-		return fmt.Errorf("mail: from %s: %w", m.From.Email, err)
-	}
-	for _, a := range append(append(append([]Address{}, m.To...), m.CC...), m.BCC...) {
-		if err := c.Rcpt(a.Email); err != nil {
-			return fmt.Errorf("mail: to %s: %w", a.Email, err)
-		}
-	}
-
-	w, err := c.Data()
-	if err != nil {
-		return fmt.Errorf("mail: data: %w", err)
-	}
-	if _, err := w.Write([]byte(Render(m))); err != nil {
-		return fmt.Errorf("mail: writing the message: %w", err)
-	}
-	if err := w.Close(); err != nil {
-		return fmt.Errorf("mail: closing the message: %w", err)
-	}
-	return c.Quit()
+	_, err := t.hesape().Send(ctx, m.hesape())
+	return err
 }
 
 // Log writes the message to the log instead of sending it.
@@ -116,74 +58,69 @@ func (t SMTP) Send(ctx context.Context, m Message) error {
 // It is the development default, and what makes `aru dev` work with nothing
 // installed. The whole body is logged, because the reason to read it is to
 // follow the link inside.
+//
+// It writes wherever the context is logging, as it always did. What changed is
+// which package the context is asked: it is hesape/log now rather than
+// framework/observability, and framework/observability is a bridge over that
+// same package, so a request logger installed by either is the one found here.
 type Log struct{}
 
 // Name identifies the transport in a log line.
-func (Log) Name() string { return "log" }
+func (Log) Name() string { return transport.Log{}.Name() }
 
 // Send logs the message.
 func (Log) Send(ctx context.Context, m Message) error {
-	to := make([]string, 0, len(m.To))
-	for _, a := range m.To {
-		to = append(to, a.Email)
-	}
-
-	observability.Log(ctx).Info("mail: this transport logs instead of sending",
-		"to", strings.Join(to, ", "),
-		"subject", m.Subject,
-		"body", firstNonEmpty(m.Text, m.HTML))
-	return nil
+	_, err := transport.Log{}.Send(ctx, m.hesape())
+	return err
 }
 
 // Array keeps what was sent, for a test to read.
 //
 // It is safe for concurrent use, because a test that sends from two goroutines
 // and reads from a third is a test that would otherwise fail under -race for a
-// reason that has nothing to do with what it is proving.
+// reason that has nothing to do with what it is proving. The lock and the slice
+// are hesape's: this type holds no storage of its own.
+//
+// Its three readers were renamed on the way over -- Sent is Messages there and
+// Reset is Flush -- so the three below are the old names reaching the new ones.
 type Array struct {
-	mu   sync.Mutex
-	sent []Message
+	inner transport.Array
 }
 
 // Name identifies the transport in a log line.
-func (*Array) Name() string { return "array" }
+func (a *Array) Name() string { return a.inner.Name() }
 
 // Send records the message.
-func (a *Array) Send(_ context.Context, m Message) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.sent = append(a.sent, m)
-	return nil
+func (a *Array) Send(ctx context.Context, m Message) error {
+	_, err := a.inner.Send(ctx, m.hesape())
+	return err
 }
 
 // Sent is everything sent so far, oldest first.
 func (a *Array) Sent() []Message {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return append([]Message(nil), a.sent...)
+	kept := a.inner.Messages()
+	out := make([]Message, 0, len(kept))
+	for _, m := range kept {
+		out = append(out, messageFrom(m))
+	}
+	return out
 }
 
 // Last is the most recent message, and whether there was one.
 func (a *Array) Last() (Message, bool) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if len(a.sent) == 0 {
+	m, ok := a.inner.Last()
+	if !ok {
 		return Message{}, false
 	}
-	return a.sent[len(a.sent)-1], true
+	return messageFrom(m), true
 }
 
 // Reset forgets everything. A test that shares a transport between cases calls
 // it, and one that does not share it does not need to.
-func (a *Array) Reset() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.sent = nil
-}
+func (a *Array) Reset() { a.inner.Flush() }
 
-func firstNonEmpty(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
-}
+var (
+	_ Transport = SMTP{}
+	_ Transport = Log{}
+	_ Transport = (*Array)(nil)
+)
