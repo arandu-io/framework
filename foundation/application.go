@@ -1,0 +1,499 @@
+// The Application: what Illuminate\Foundation\Application is, under the name a
+// Laravel developer types. It was kernel.Kernel until this package landed, and
+// github.com/arandu-io/framework/kernel is the old name pointing here.
+
+package foundation
+
+import (
+	"context"
+	"crypto/subtle"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/arandu-io/framework/config"
+	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/httpx/middleware"
+	"github.com/arandu-io/framework/observability"
+	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/routing"
+)
+
+// Timeouts of the HTTP server. They are set rather than left at zero because a
+// server without timeouts is one slow client away from running out of file
+// descriptors.
+const (
+	readHeaderTimeout = 10 * time.Second
+	idleTimeout       = 60 * time.Second
+	shutdownTimeout   = 20 * time.Second
+)
+
+// Application holds the composed application: configuration, modules, the global
+// middleware pipeline and the router.
+type Application struct {
+	cfg      config.Config
+	log      *slog.Logger
+	router   *httpx.Router
+	modules  []Module
+	pipeline []httpx.Middleware
+	srv      *http.Server
+
+	// flash carries the messages of a rejected form across the redirect that
+	// answers it. The Application builds it rather than the project, for the
+	// reason the renderer is found rather than passed: it takes no decision --
+	// the key and the environment are already here -- and a wiring line an
+	// application can leave out is one an application leaves out, with a form
+	// that comes back blank as the only symptom.
+	flash *security.Flash
+
+	booted bool
+	// recorder is the ring buffer behind the console. It exists in development
+	// and under a tracing secret, and is nil otherwise -- which is what makes
+	// the console cost nothing in production rather than cost little.
+	recorder *observability.Recorder
+}
+
+// New assembles the Application. It opens no connection and listens on no port
+// -- that is Boot and Run.
+func New(cfg config.Config) *Application {
+	log := observability.NewLogger(string(cfg.Env), cfg.LogLevel)
+
+	// The flash is built here, before any route exists, because the router is
+	// wired with it and a route is wired with the router it was registered on.
+	// Secure outside development, for the reason the session cookie is: it
+	// carries what somebody typed into a form, and without the attribute it
+	// travels over plain HTTP.
+	flash := security.NewFlash(cfg.AppKey, !cfg.IsDev())
+
+	a := &Application{
+		cfg:    cfg,
+		log:    log,
+		flash:  flash,
+		router: httpx.NewRouter().WithFlash(flash),
+	}
+
+	// The Application owns the recorder because it mounts the console route.
+	// One owner: an application that built its own would end up with a console
+	// showing a different buffer than the one the middleware fills.
+	if cfg.IsDev() || cfg.TracingSecret != "" {
+		a.recorder = observability.NewRecorder(observability.DefaultRecorderSize)
+	}
+	return a
+}
+
+// Recorder returns the buffer behind /_arandu/debug, or nil when nothing is
+// recording.
+//
+// Pass it to middleware.Observe, and to the background loops that deserve the
+// same page:
+//
+//	app.Use(middleware.Observe(app.Recorder(), cfg.TracingSecret))
+//	w := jobs.NewWorker(store, jobs.WorkerOptions{Recorder: app.Recorder()})
+//	scheduler.NewModule(app.Tasks(), scheduler.Options{Recorder: app.Recorder()})
+//
+// The nil is the point. Outside development, without a tracing secret, there is
+// no recorder -- so those loops build no Collector, record nothing, and cost
+// nothing. They used to build one unconditionally and throw it away.
+//
+// It is not wired automatically because the pipeline is assembled in the
+// project, in the open, and a middleware that reached back into the Application
+// for state would be the kind of hidden coupling the explicit wiring exists to
+// avoid.
+func (a *Application) Recorder() *observability.Recorder { return a.recorder }
+
+// Config returns the configuration the Application was built with.
+func (a *Application) Config() config.Config { return a.cfg }
+
+// Logger returns the root logger. Request handlers must use
+// observability.Log(ctx) instead, which carries the request id.
+func (a *Application) Logger() *slog.Logger { return a.log }
+
+// Register adds modules in the order they will be booted. Order matters: a
+// module may depend on another one already being up.
+func (a *Application) Register(mods ...Module) *Application {
+	a.modules = append(a.modules, mods...)
+	return a
+}
+
+// Use adds global middleware to the pipeline. The pipeline order is the order of
+// execution on the way in, and its reverse on the way out.
+func (a *Application) Use(mw ...httpx.Middleware) *Application {
+	a.pipeline = append(a.pipeline, mw...)
+	return a
+}
+
+// Boot initializes modules and registers routes. It fails fast: if any module
+// fails to boot the process does not come up. There is no silent degraded mode.
+func (a *Application) Boot(ctx context.Context) error {
+	if a.booted {
+		return errors.New("arandu: application already booted")
+	}
+
+	// The renderer is found before any route is registered, because a route is
+	// wired with the renderer its handlers will use. See RendererProvider.
+	if err := a.findRenderer(); err != nil {
+		return err
+	}
+
+	seen := make(map[string]struct{}, len(a.modules))
+	for _, m := range a.modules {
+		name := m.Name()
+		if name == "" {
+			return fmt.Errorf("arandu: module %T returned an empty Name()", m)
+		}
+		if _, dup := seen[name]; dup {
+			return fmt.Errorf("arandu: module %q registered twice", name)
+		}
+		seen[name] = struct{}{}
+
+		if b, ok := m.(Bootable); ok {
+			start := time.Now()
+			if err := b.Boot(ctx); err != nil {
+				return fmt.Errorf("arandu: booting module %q: %w", name, err)
+			}
+			a.log.Info("module booted", "module", name, "duration", time.Since(start))
+		}
+
+		m.Routes(a.router.ForModule(name))
+		a.log.Debug("routes registered", "module", name)
+	}
+
+	a.mountInternalRoutes()
+	a.booted = true
+	return nil
+}
+
+// findRenderer asks the modules which one brings the view layer.
+func (a *Application) findRenderer() error {
+	var found httpx.Renderer
+	var by string
+
+	for _, m := range a.modules {
+		p, ok := m.(RendererProvider)
+		if !ok {
+			continue
+		}
+		if found != nil {
+			return fmt.Errorf("arandu: modules %q and %q both provide a view renderer -- register one", by, m.Name())
+		}
+		found, by = p.Renderer(), m.Name()
+	}
+
+	if found != nil {
+		a.router = a.router.WithRenderer(found)
+		a.log.Debug("view renderer wired", "module", by)
+	}
+	return nil
+}
+
+// startBackground starts the loops of every Background module.
+//
+// A loop that fails to start stops the process, for the same reason a module
+// that fails to boot does: an application whose scheduler silently did not
+// start looks healthy and does no scheduled work, and nobody finds out until
+// the invoices are a day late.
+func (a *Application) startBackground(ctx context.Context) error {
+	for _, m := range a.modules {
+		b, ok := m.(Background)
+		if !ok {
+			continue
+		}
+		if err := b.Start(ctx); err != nil {
+			return fmt.Errorf("arandu: starting module %q: %w", m.Name(), err)
+		}
+		a.log.Info("background loop started", "module", m.Name())
+	}
+	return nil
+}
+
+// mountInternalRoutes exposes the framework's own routes.
+//
+// /_arandu/health answers everywhere. The console answers in development, and
+// outside it only to a request carrying the tracing secret -- which is not the
+// same as "only when a tracing secret is configured".
+//
+// That distinction was a hole. The recorder exists whenever the secret is set,
+// so the routes were mounted in production, and the secret was checked only by
+// the middleware that decides whether to RECORD. Anyone could then read the
+// buffer: SQL with bound arguments, dumps, event payloads, across every tenant,
+// with no session and no header. Found by audit, reproduced over a real socket.
+func (a *Application) mountInternalRoutes() {
+	internal := a.router.ForModule("arandu")
+	internal.Get(internalPrefix+"health", a.handleHealth)
+
+	// Development only, and mounted from the same condition that injects the
+	// script -- so there is no arrangement in which a production page listens
+	// for a stream nothing answers. See reload.go.
+	if a.cfg.IsDev() {
+		internal.Get(reloadPath, a.handleReload)
+		for _, m := range a.modules {
+			if t, ok := m.(ReloadTagger); ok {
+				reloadTag = []byte(t.ReloadTag(reloadPath))
+				break
+			}
+		}
+	}
+
+	if a.recorder == nil {
+		return
+	}
+	console := observability.NewConsole(a.recorder, a.cfg.Editor)
+	handler := console.Handler
+	if !a.cfg.IsDev() {
+		handler = requireTracingSecret(a.cfg.TracingSecret, handler)
+	}
+	internal.Get(observability.ConsolePath, handler)
+	internal.Get(observability.ConsolePath+"/{id}", handler)
+}
+
+// requireTracingSecret gates the console outside development.
+//
+// It answers 404 rather than 401, because a 401 confirms that the console is
+// there. Somebody scanning for /_arandu/debug learns nothing from a 404 that
+// they did not already know.
+//
+// The comparison is constant-time: a byte-by-byte one leaks the secret to
+// anybody willing to measure, and this secret is the whole gate.
+func requireTracingSecret(secret string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// An empty secret cannot authorize anything. It is also the zero value
+		// of the configuration, so treating it as "no gate" would open the
+		// console for every application that never set one.
+		if secret == "" {
+			http.NotFound(w, r)
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get(observability.TracingHeader)), []byte(secret)) != 1 {
+			http.NotFound(w, r)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// handleHealth answers 200 only when every module that implements Health is
+// healthy. It names the failing module in the body, because a load balancer
+// probe that only says "unhealthy" costs an hour of guessing.
+func (a *Application) handleHealth(w http.ResponseWriter, r *http.Request) {
+	for _, m := range a.modules {
+		h, ok := m.(Health)
+		if !ok {
+			continue
+		}
+		if err := h.Health(r.Context()); err != nil {
+			observability.Log(r.Context()).Error("health check failed", "module", m.Name(), "error", err)
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintf(w, "module %s unavailable", m.Name())
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
+}
+
+// Handler returns the composed handler: the router wrapped in the global
+// pipeline, with the application logger installed above everything else. Useful
+// for tests, which drive the whole stack without a socket.
+//
+// The logger has to be outermost. Without it, every Log(ctx) call in a request
+// would fall back to slog.Default() and ignore the configured handler and level,
+// which in production means request logs in the wrong format.
+func (a *Application) Handler() http.Handler {
+	// Live reload is outermost after the logger, so it sees the finished
+	// document rather than a handler's intention to write one.
+	outer := append([]httpx.Middleware{observability.RootLogger(a.log)}, devReload(a.cfg.IsDev())...)
+
+	// The flash is consumed above the application's own pipeline and below the
+	// logger, and the Application installs it rather than bootstrap/app.go for
+	// the reason the field on the Application says: there is nothing to decide.
+	//
+	// exceptInternal for the same reason everything else is: the debug console
+	// is a page a browser asks for with text/html, so without this it would
+	// spend the one-shot flash on a request that draws none of it, and the form
+	// the person was sent back to would come back blank -- a bug reachable only
+	// with the console open, which is exactly when somebody is debugging
+	// something else.
+	outer = append(outer, exceptInternal(middleware.Flash(a.flash)))
+
+	// The application's middleware runs on the application's routes. What this
+	// framework mounts under internalPrefix is not the application's traffic and
+	// must not be measured as if it were.
+	//
+	// It was. The development reload asks once a second which process is
+	// answering, and that ran through the rate limit an application mounts for
+	// its own visitors -- 60 of a 300-per-minute budget per open tab, shared,
+	// because the key falls back to the address for a request with no session.
+	// Ordinary browsing with two tabs open answered "too many requests: wait 32
+	// seconds", on a page nobody had hammered.
+	app := make([]httpx.Middleware, 0, len(a.pipeline))
+	for _, mw := range a.pipeline {
+		app = append(app, exceptInternal(mw))
+	}
+
+	return httpx.Chain(a.router, append(outer, app...)...)
+}
+
+// internalPrefix is what this framework mounts for itself: the health probe,
+// the debug console, the development reload.
+const internalPrefix = "/_arandu/"
+
+// exceptInternal runs an application's middleware everywhere except on the
+// framework's own routes.
+//
+// The framework's endpoints answer to the framework: the health probe must not
+// be rate limited by the application it reports on, the debug console is gated
+// by its own secret, and the reload is a question the page asks about the
+// process rather than a request the visitor made. None of them touch the
+// database, hold a session, or write anything.
+//
+// The prefix is the boundary because it already is one everywhere else -- one
+// name for what belongs to the framework, checked in one place.
+func exceptInternal(mw httpx.Middleware) httpx.Middleware {
+	return func(next http.Handler) http.Handler {
+		wrapped := mw(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, internalPrefix) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			wrapped.ServeHTTP(w, r)
+		})
+	}
+}
+
+// Run starts the server and blocks until SIGINT or SIGTERM, then shuts down
+// gracefully.
+func (a *Application) Run(ctx context.Context) error {
+	if !a.booted {
+		return errors.New("arandu: Run called before Boot")
+	}
+
+	// The background loops start here rather than at boot, so only the process
+	// that serves runs them. See Background.
+	if err := a.startBackground(ctx); err != nil {
+		return err
+	}
+
+	a.srv = &http.Server{
+		Addr:              a.cfg.HTTPAddr,
+		Handler:           a.Handler(),
+		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
+		ErrorLog:          slog.NewLogLogger(a.log.Handler(), slog.LevelError),
+	}
+
+	errc := make(chan error, 1)
+	go func() {
+		a.log.Info("server listening", "addr", a.cfg.HTTPAddr, "env", a.cfg.Env)
+		if err := a.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errc <- err
+		}
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(stop)
+
+	select {
+	case err := <-errc:
+		return err
+	case <-stop:
+		a.log.Info("shutdown started")
+	case <-ctx.Done():
+		a.log.Info("shutdown started", "reason", ctx.Err())
+	}
+
+	return a.Shutdown()
+}
+
+// Shutdown stops the server and closes the modules in reverse registration
+// order, which is the only order that respects dependencies between them.
+func (a *Application) Shutdown() error {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	var errs []error
+	if a.srv != nil {
+		if err := a.srv.Shutdown(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	for i := len(a.modules) - 1; i >= 0; i-- {
+		if c, ok := a.modules[i].(Closable); ok {
+			if err := c.Close(ctx); err != nil {
+				errs = append(errs, fmt.Errorf("closing %s: %w", a.modules[i].Name(), err))
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// Migrations collects the migrations of every module, in registration order.
+// Hand the result to data.Migrate.
+func (a *Application) Migrations() []Migration {
+	var out []Migration
+	for _, m := range a.modules {
+		if mm, ok := m.(Migratable); ok {
+			out = append(out, mm.Migrations()...)
+		}
+	}
+	return out
+}
+
+// Tasks collects the scheduled work from every registered module, in
+// registration order.
+//
+// Same shape as Migrations(): the module declares, the Application collects,
+// and the scheduler module runs. Pass it to scheduler.NewModule, which is why
+// that one is registered last.
+func (a *Application) Tasks() []Task {
+	var out []Task
+	for _, m := range a.modules {
+		s, ok := m.(Schedulable)
+		if !ok {
+			continue
+		}
+		out = append(out, s.Schedule()...)
+	}
+	return out
+}
+
+// Diagnose asks every module that implements Diagnostic what is wrong right
+// now, and returns what they say.
+//
+// Pass it to errorpage.Options.Diagnose. It is not wired automatically because
+// the pipeline is assembled in the open, in the application.
+func (a *Application) Diagnose(ctx context.Context) []string {
+	var out []string
+	for _, m := range a.modules {
+		d, ok := m.(Diagnostic)
+		if !ok {
+			continue
+		}
+		out = append(out, d.Diagnose(ctx)...)
+	}
+	return out
+}
+
+// Routes returns the registered routes. It is empty before Boot, because a
+// module only registers its routes when it boots.
+func (a *Application) Routes() []*httpx.Route { return a.router.Routes() }
+
+// FormatRoutes renders the route table for the terminal, grouped by module and
+// sorted by pattern. It is here, and not in the CLI, so that every project
+// prints the same table.
+//
+// The table itself is hesape/routing.FormatRoutes (docs/31:192), and this is a
+// call through rather than a copy: httpx.Route is an alias for routing.Route,
+// so the slice needs no translation and there is one implementation of the
+// format. A wrapper and not an alias, because Go has no alias form for a
+// function.
+func FormatRoutes(routes []*httpx.Route) string { return routing.FormatRoutes(routes) }

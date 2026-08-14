@@ -1,4 +1,4 @@
-package kernel_test
+package foundation_test
 
 import (
 	"context"
@@ -13,8 +13,8 @@ import (
 
 	"github.com/arandu-io/framework/config"
 	"github.com/arandu-io/framework/data"
+	"github.com/arandu-io/framework/foundation"
 	"github.com/arandu-io/framework/httpx"
-	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/observability"
 )
 
@@ -52,8 +52,8 @@ func (s *stub) Close(ctx context.Context) error {
 	return nil
 }
 
-func (s *stub) Migrations() []kernel.Migration {
-	return []kernel.Migration{{ID: s.name + "_0001", Up: "SELECT 1"}}
+func (s *stub) Migrations() []foundation.Migration {
+	return []foundation.Migration{{ID: s.name + "_0001", Up: "SELECT 1"}}
 }
 
 func testConfig(env config.Env) config.Config {
@@ -71,7 +71,7 @@ func testConfig(env config.Env) config.Config {
 }
 
 func TestBootRegistersModuleRoutes(t *testing.T) {
-	k := kernel.New(testConfig(config.EnvProd)).Register(&stub{name: "billing"})
+	k := foundation.New(testConfig(config.EnvProd)).Register(&stub{name: "billing"})
 
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
@@ -87,7 +87,7 @@ func TestBootRegistersModuleRoutes(t *testing.T) {
 // TestBootRejectsDuplicateModule catches the copy-paste in the wiring file, where
 // two entries would otherwise fight over the same routes.
 func TestBootRejectsDuplicateModule(t *testing.T) {
-	k := kernel.New(testConfig(config.EnvProd)).
+	k := foundation.New(testConfig(config.EnvProd)).
 		Register(&stub{name: "billing"}, &stub{name: "billing"})
 
 	err := k.Boot(context.Background())
@@ -100,7 +100,7 @@ func TestBootRejectsDuplicateModule(t *testing.T) {
 }
 
 func TestBootRejectsEmptyModuleName(t *testing.T) {
-	k := kernel.New(testConfig(config.EnvProd)).Register(&stub{name: ""})
+	k := foundation.New(testConfig(config.EnvProd)).Register(&stub{name: ""})
 
 	if err := k.Boot(context.Background()); err == nil {
 		t.Fatal("a module without a name was accepted")
@@ -111,7 +111,7 @@ func TestBootRejectsEmptyModuleName(t *testing.T) {
 // the process, rather than serving a subset of the application.
 func TestBootFailsFast(t *testing.T) {
 	failing := &stub{name: "broken", bootErr: errors.New("no connection")}
-	k := kernel.New(testConfig(config.EnvProd)).Register(failing)
+	k := foundation.New(testConfig(config.EnvProd)).Register(failing)
 
 	err := k.Boot(context.Background())
 	if err == nil {
@@ -123,7 +123,7 @@ func TestBootFailsFast(t *testing.T) {
 }
 
 func TestBootTwiceIsRejected(t *testing.T) {
-	k := kernel.New(testConfig(config.EnvProd)).Register(&stub{name: "a"})
+	k := foundation.New(testConfig(config.EnvProd)).Register(&stub{name: "a"})
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestBootTwiceIsRejected(t *testing.T) {
 
 func TestHealthReportsTheFailingModule(t *testing.T) {
 	broken := &stub{name: "billing", healthErr: errors.New("database is away")}
-	k := kernel.New(testConfig(config.EnvProd)).Register(&stub{name: "auth"}, broken)
+	k := foundation.New(testConfig(config.EnvProd)).Register(&stub{name: "auth"}, broken)
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestHealthReportsTheFailingModule(t *testing.T) {
 }
 
 func TestHealthIsOKWhenEveryModuleIsHealthy(t *testing.T) {
-	k := kernel.New(testConfig(config.EnvProd)).Register(&stub{name: "auth"})
+	k := foundation.New(testConfig(config.EnvProd)).Register(&stub{name: "auth"})
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestDebugConsoleIsDevelopmentOnly(t *testing.T) {
 		config.EnvStaging: http.StatusNotFound,
 		config.EnvProd:    http.StatusNotFound,
 	} {
-		k := kernel.New(testConfig(env))
+		k := foundation.New(testConfig(env))
 		if err := k.Boot(context.Background()); err != nil {
 			t.Fatalf("Boot in %s: %v", env, err)
 		}
@@ -188,7 +188,7 @@ func TestDebugConsoleIsDevelopmentOnly(t *testing.T) {
 }
 
 func TestMigrationsAreCollectedInRegistrationOrder(t *testing.T) {
-	k := kernel.New(testConfig(config.EnvProd)).
+	k := foundation.New(testConfig(config.EnvProd)).
 		Register(&stub{name: "auth"}, &stub{name: "billing"})
 
 	migrations := k.Migrations()
@@ -207,7 +207,7 @@ func TestShutdownClosesInReverseOrder(t *testing.T) {
 	var order []string
 	first := &stub{name: "database", closeOrder: &order}
 	second := &stub{name: "cache", closeOrder: &order}
-	k := kernel.New(testConfig(config.EnvProd)).Register(first, second)
+	k := foundation.New(testConfig(config.EnvProd)).Register(first, second)
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestShutdownClosesInReverseOrder(t *testing.T) {
 }
 
 func TestRunBeforeBootIsRejected(t *testing.T) {
-	k := kernel.New(testConfig(config.EnvProd))
+	k := foundation.New(testConfig(config.EnvProd))
 
 	if err := k.Run(context.Background()); err == nil {
 		t.Fatal("Run before Boot was accepted: it would serve no routes at all")
@@ -230,13 +230,13 @@ func TestRunBeforeBootIsRejected(t *testing.T) {
 }
 
 func TestFormatRoutesGroupsByModule(t *testing.T) {
-	k := kernel.New(testConfig(config.EnvProd)).
+	k := foundation.New(testConfig(config.EnvProd)).
 		Register(&stub{name: "billing"}, &stub{name: "auth"})
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
 
-	out := kernel.FormatRoutes(k.Routes())
+	out := foundation.FormatRoutes(k.Routes())
 
 	if !strings.Contains(out, "auth\n  GET     /auth") {
 		t.Errorf("routes are not grouped under their module:\n%s", out)
@@ -269,7 +269,7 @@ func (p *loggerProbe) Routes(r *httpx.Router) {
 // that is not there.
 func TestRequestLoggerIsTheApplicationLogger(t *testing.T) {
 	probe := &loggerProbe{}
-	k := kernel.New(testConfig(config.EnvProd)).Register(probe)
+	k := foundation.New(testConfig(config.EnvProd)).Register(probe)
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestRequestLoggerIsTheApplicationLogger(t *testing.T) {
 }
 
 func TestFormatRoutesWithoutRoutes(t *testing.T) {
-	if got := kernel.FormatRoutes(nil); !strings.Contains(got, "no routes") {
+	if got := foundation.FormatRoutes(nil); !strings.Contains(got, "no routes") {
 		t.Fatalf("FormatRoutes(nil) = %q", got)
 	}
 }
@@ -310,7 +310,7 @@ func TestTheConsoleIsClosedInProduction(t *testing.T) {
 		TracingSecret: "s3cret-operator-only",
 		HTTPAddr:      ":0",
 	}
-	k := kernel.New(cfg)
+	k := foundation.New(cfg)
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
@@ -362,7 +362,7 @@ func TestTheConsoleIsClosedInProduction(t *testing.T) {
 // the configuration, and treating it as "no gate" would open the console for
 // every application that never set one.
 func TestAnEmptySecretDoesNotOpenTheConsole(t *testing.T) {
-	k := kernel.New(config.Config{Env: config.EnvProd, AppKey: make([]byte, 32), HTTPAddr: ":0"})
+	k := foundation.New(config.Config{Env: config.EnvProd, AppKey: make([]byte, 32), HTTPAddr: ":0"})
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
@@ -404,7 +404,7 @@ func (b *backgroundSpy) Start(context.Context) error { b.started.Store(true); re
 // runs all of them. The lock made it harmless, not correct.
 func TestBootDoesNotStartBackgroundLoops(t *testing.T) {
 	spy := &backgroundSpy{}
-	k := kernel.New(testConfig(config.EnvProd)).Register(spy)
+	k := foundation.New(testConfig(config.EnvProd)).Register(spy)
 
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
@@ -423,7 +423,7 @@ func TestRunStartsBackgroundLoops(t *testing.T) {
 	spy := &backgroundSpy{}
 	cfg := testConfig(config.EnvProd)
 	cfg.HTTPAddr = "127.0.0.1:0"
-	k := kernel.New(cfg).Register(spy)
+	k := foundation.New(cfg).Register(spy)
 
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
@@ -465,7 +465,7 @@ func TestTheFrameworksOwnRoutesDoNotSpendTheApplicationsBudget(t *testing.T) {
 		})
 	}
 
-	k := kernel.New(config.Config{Env: config.EnvDev, AppKey: make([]byte, config.AppKeyLen), HTTPAddr: ":0"})
+	k := foundation.New(config.Config{Env: config.EnvDev, AppKey: make([]byte, config.AppKeyLen), HTTPAddr: ":0"})
 	k.Use(counting)
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatal(err)

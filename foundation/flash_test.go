@@ -1,4 +1,4 @@
-package kernel_test
+package foundation_test
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/arandu-io/framework/config"
+	"github.com/arandu-io/framework/foundation"
 	"github.com/arandu-io/framework/httpx"
-	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
 )
@@ -43,7 +43,7 @@ func (m flashModule) Routes(r *httpx.Router) {
 // built to fix.
 func TestTheFlashMiddlewareIsInstalledWithoutTheApplicationWiringIt(t *testing.T) {
 	seen := make(chan httpx.State, 1)
-	k := kernel.New(testConfig(config.EnvProd)).Register(flashModule{seen: seen})
+	k := foundation.New(testConfig(config.EnvProd)).Register(flashModule{seen: seen})
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestTheFlashMiddlewareIsInstalledWithoutTheApplicationWiringIt(t *testing.T
 	handler.ServeHTTP(rejected, post)
 
 	if rejected.Code != http.StatusSeeOther {
-		t.Fatalf("the kernel's router did not answer the rejection: %d", rejected.Code)
+		t.Fatalf("the Application's router did not answer the rejection: %d", rejected.Code)
 	}
 
 	var flash *http.Cookie
@@ -67,7 +67,7 @@ func TestTheFlashMiddlewareIsInstalledWithoutTheApplicationWiringIt(t *testing.T
 		}
 	}
 	if flash == nil {
-		t.Fatal("no flash cookie: the kernel did not wire one into the router")
+		t.Fatal("no flash cookie: the Application did not wire one into the router")
 	}
 	// Secure outside development, because it carries what somebody typed.
 	if !flash.Secure {
@@ -81,7 +81,7 @@ func TestTheFlashMiddlewareIsInstalledWithoutTheApplicationWiringIt(t *testing.T
 
 	state := <-seen
 	if got := state.Errors["title"]; len(got) != 1 || got[0] != "is required" {
-		t.Errorf("the handler was given %v: the kernel did not install middleware.Flash", state.Errors)
+		t.Errorf("the handler was given %v: the Application did not install middleware.Flash", state.Errors)
 	}
 	if got := state.Old.Get("body"); got != "a draft" {
 		t.Errorf("old input = %q", got)
@@ -108,7 +108,7 @@ func TestTheConsoleDoesNotSpendTheFlash(t *testing.T) {
 	}
 
 	seen := make(chan httpx.State, 1)
-	k := kernel.New(testConfig(config.EnvDev)).Register(flashModule{seen: seen})
+	k := foundation.New(testConfig(config.EnvDev)).Register(flashModule{seen: seen})
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}

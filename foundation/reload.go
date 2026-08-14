@@ -1,4 +1,4 @@
-package kernel
+package foundation
 
 import (
 	"bytes"
@@ -13,6 +13,30 @@ import (
 )
 
 // Live reload: the browser follows the restart, in development only.
+//
+// # This file is a copy, and the reason is visibility
+//
+// hesape/foundation/reload.go holds the same code, and this is not a second way
+// to do one thing that RULE 9 would refuse -- it is the same way, written twice,
+// because the first copy is out of reach.
+//
+// That package exports exactly one symbol from the file, ReloadTagger, and this
+// package aliases it. Everything the reload actually needs -- devReload,
+// liveReload, htmlRecorder and its five methods, newBootID -- is unexported, and
+// so is the whole of hesape/foundation/internal.go, which is where
+// internalPrefix, exceptInternal and requireTracingSecret restated below come
+// from. Go has no way to reach any of them from another module.
+//
+// An audit reported this as a RULE 9 failure and named the wrong cause: it read
+// the signature difference between []httpx.Middleware and
+// []pipeline.Middleware[http.Handler] as the obstacle, and those two are the
+// same type -- httpx.Middleware is an alias. The obstacle is the lower-case
+// letter, and no aliasing removes it.
+//
+// The way out is for hesape/foundation to export what a kernel above it needs,
+// and that is a change to a published module rather than a rewrite here. Until
+// it happens the copy stays, with this note, so that nobody deletes it believing
+// an alias will do.
 //
 // # Why it asks rather than listens
 //
@@ -102,7 +126,7 @@ func newBootID() string {
 //
 // It does NOT hold the connection. See the header of this file for why that
 // mattered enough to be rewritten.
-func (k *Kernel) handleReload(w http.ResponseWriter, r *http.Request) {
+func (a *Application) handleReload(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	h.Set("Content-Type", "text/plain; charset=utf-8")
 	// Never cached, by anything. The whole answer is which process this is, and
@@ -113,18 +137,10 @@ func (k *Kernel) handleReload(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, bootID)
 }
 
-// ReloadTagger is what a module implements to supply the development live-reload
-// tag.
-//
-// Optional, and asked for the same way the renderer is: the kernel cannot import
-// the view package -- that package imports this one in order to be a Module --
-// so what it needs arrives through an interface declared here and satisfied
-// there. The kernel supplies the address of its own stream, because the route is
-// its own, and two constants for one address is how a client and a server come
-// to disagree about it.
-type ReloadTagger interface {
-	ReloadTag(stream string) string
-}
+// ReloadTagger is not declared here: it is hesape/foundation.ReloadTagger,
+// aliased in module.go with the rest of the module vocabulary. What stays in
+// this file is the endpoint it names and the middleware that injects what it
+// returns.
 
 // reloadTag is the markup injected into a document, filled at Boot from the
 // module that brought it. Empty means nothing is injected, which is every

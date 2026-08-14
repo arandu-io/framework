@@ -1,4 +1,4 @@
-package kernel
+package foundation
 
 import (
 	"net/http"
@@ -176,7 +176,7 @@ func TestProductionHasNoneOfThis(t *testing.T) {
 // its full timeout for the same request was the second symptom of the one
 // defect.
 func TestAskingWhichProcessAnsweredDoesNotHoldTheConnection(t *testing.T) {
-	k := &Kernel{}
+	k := &Application{}
 
 	done := make(chan struct{})
 	go func() {
@@ -195,7 +195,7 @@ func TestAskingWhichProcessAnsweredDoesNotHoldTheConnection(t *testing.T) {
 // cached answer is the previous process answering forever, so the page would
 // never learn that the code changed.
 func TestTheAnswerIsThisProcessAndIsNeverCached(t *testing.T) {
-	k := &Kernel{}
+	k := &Application{}
 	rec := httptest.NewRecorder()
 	k.handleReload(rec, httptest.NewRequest(http.MethodGet, reloadPath, nil))
 

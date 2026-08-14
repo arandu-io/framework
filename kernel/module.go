@@ -1,13 +1,11 @@
+// The composition vocabulary, answered by
+// github.com/arandu-io/framework/foundation -- and through it, for everything
+// except Module, RendererProvider and Locker, by
+// github.com/arandu-io/hesape/foundation.
+
 package kernel
 
-import (
-	"context"
-	"time"
-
-	"github.com/arandu-io/framework/data"
-	"github.com/arandu-io/framework/httpx"
-	"github.com/arandu-io/framework/security"
-)
+import "github.com/arandu-io/framework/foundation"
 
 // Module is the only unit of composition in the framework.
 //
@@ -19,59 +17,40 @@ import (
 // Every third-party module implements this interface and nothing else. It is the
 // public contract of the framework -- change it and the whole ecosystem breaks,
 // so change it with great care.
-type Module interface {
-	// Name is the stable identifier of the module: a lowercase slug, no spaces.
-	Name() string
-
-	// Routes registers the module's HTTP routes.
-	Routes(r *httpx.Router)
-}
+type Module = foundation.Module
 
 // Bootable is optional: implement it when the module needs to prepare state at
 // boot -- open a pool, warm a cache, register codecs.
 //
 // Boot wires; it does not run. A module that needs a loop of its own implements
 // Background instead, and validates in Boot whatever would make that loop fail.
-type Bootable interface {
-	Boot(ctx context.Context) error
-}
+type Bootable = foundation.Bootable
 
 // Background is optional: the module runs a loop of its own -- the scheduler
 // and the outbox relay do.
 //
 // Start is called by Run, never by Boot, and that distinction is the difference
-// between a process that serves and a process that does something else. Every
-// command boots: `aru work`, `aru routes`, `aru schedule:list`, `aru migrate`.
-// Starting the loops at boot meant every worker replica also ran a scheduler
-// and a relay, and `aru schedule:run`, which exists to run one task by hand,
-// started the loop that runs all of them. Found by audit.
+// between a process that serves and a process that does something else.
 //
-// One process, one job. The lock in the scheduler makes the duplicate harmless
-// rather than correct, and "harmless because something else catches it" is not
-// a design.
-type Background interface {
-	Module
-	Start(ctx context.Context) error
-}
+// It no longer embeds Module: hesape/foundation.Background declares Start
+// alone. Nothing changes at a call site, because Register takes a Module and
+// anything the kernel asks for a loop is already one.
+type Background = foundation.Background
 
 // RendererProvider is optional: the module supplies the view renderer.
 //
 // The view package implements it. The kernel cannot import that package -- it
-// implements kernel.Module, so the import would be a cycle -- and an
-// application calling a wiring function by hand is a line somebody forgets. An
-// optional interface solves both: the kernel asks every module whether it
-// brings a renderer, before any route is registered.
+// implements Module, so the import would be a cycle -- and an application
+// calling a wiring function by hand is a line somebody forgets. An optional
+// interface solves both: the kernel asks every module whether it brings a
+// renderer, before any route is registered.
 //
 // Two modules providing one is a wiring mistake, and the kernel refuses to boot
 // rather than pick one.
-type RendererProvider interface {
-	Renderer() httpx.Renderer
-}
+type RendererProvider = foundation.RendererProvider
 
 // Closable is optional: implement it to release resources on shutdown.
-type Closable interface {
-	Close(ctx context.Context) error
-}
+type Closable = foundation.Closable
 
 // Diagnostic is optional: the module reports what it knows about the state of
 // the system, in sentences a person can act on.
@@ -80,27 +59,21 @@ type Closable interface {
 // happened outside the failing request -- the outbox stuck for four minutes, a
 // job that has not run -- and a page that only looks at the request cannot see
 // any of it.
-//
-// Return nothing when there is nothing wrong. A diagnosis that always says
-// something is a diagnosis nobody reads.
-type Diagnostic interface {
-	Diagnose(ctx context.Context) []string
-}
+type Diagnostic = foundation.Diagnostic
 
 // Locker is a distributed lock, for work that must happen once across replicas.
 //
-// It lives here because two things need it -- the outbox relay and the
+// It lives in foundation because two things need it -- the outbox relay and the
 // scheduler -- and two identical interfaces in two packages is the duplication
-// that the second one would create. github.com/arandu-io/kv implements it.
+// that the second one would create. github.com/arandu-io/kv implements it, and
+// events.Locker is an alias to this name.
 //
 // Nil is correct for a single replica and wrong for two. What it costs is
 // duplicate work, which every task here has to tolerate anyway.
-type Locker interface {
-	Run(ctx context.Context, name string, ttl time.Duration, fn func(context.Context) error) error
-}
+type Locker = foundation.Locker
 
 // Scope says whether a task runs once or once per tenant.
-type Scope int
+type Scope = foundation.Scope
 
 const (
 	// Global runs the task once for the whole instance.
@@ -111,10 +84,10 @@ const (
 	// cleaning temporary files, warming a cache, checking a certificate. Work
 	// that reads a customer's rows is PerTenant, and having to say so is the
 	// point.
-	Global Scope = iota
+	Global = foundation.Global
 	// PerTenant expands the task to every active tenant, each with its own
 	// Grant and its own lock.
-	PerTenant
+	PerTenant = foundation.PerTenant
 )
 
 // Task is scheduled work.
@@ -122,46 +95,31 @@ const (
 // The shape mirrors Migrations(): the module declares, the kernel collects, and
 // nothing runs until something asks. What a module never does is start its own
 // goroutine.
-type Task struct {
-	// ID identifies the task in logs, in `aru schedule:list` and in the lock.
-	// It is stable: changing it starts a new task rather than renaming one.
-	ID string
-	// Spec is a five-field cron expression: minute hour day month weekday.
-	Spec string
-	// Scope decides Global or PerTenant.
-	Scope Scope
-	// Timeout bounds one run, and is also the lock TTL: a process that dies
-	// holding the lock releases it when the timeout passes.
-	Timeout time.Duration
-	// Singleton takes the distributed lock, so exactly one replica runs it.
-	// Set it false only for work that is harmless to do N times.
-	Singleton bool
-	// Action is what the run is authorized for. It becomes the SystemGrant the
-	// task receives, so a task reaches repositories the same way a request
-	// does -- there is no unauthorized path from the scheduler either.
-	Action security.Action
-	// Run does the work. It gets the Grant built from Action and the tenant.
-	Run func(ctx context.Context, g security.Grant) error
-}
+type Task = foundation.Task
 
 // Schedulable is optional: the module declares its scheduled work.
-type Schedulable interface {
-	Schedule() []Task
-}
+type Schedulable = foundation.Schedulable
 
 // Migratable is optional: the module declares its migrations, and the Kernel
 // collects them from every registered module in registration order.
-type Migratable interface {
-	Migrations() []Migration
-}
+type Migratable = foundation.Migratable
 
 // Migration is a versioned, immutable-once-published schema change.
 //
 // It is an alias, not a copy: the migration runner lives in the data package,
 // and a module must be able to hand its migrations straight to it.
-type Migration = data.Migration
+type Migration = foundation.Migration
 
 // Health is optional and feeds `aru doctor` and the /_arandu/health endpoint.
-type Health interface {
-	Health(ctx context.Context) error
-}
+type Health = foundation.Health
+
+// ReloadTagger is what a module implements to supply the development
+// live-reload tag.
+//
+// Optional, and asked for the same way the renderer is: the kernel cannot
+// import the view package -- that package imports this one in order to be a
+// Module -- so what it needs arrives through an interface declared there and
+// satisfied here. The kernel supplies the address of its own endpoint, because
+// the route is its own, and two constants for one address is how a client and a
+// server come to disagree about it.
+type ReloadTagger = foundation.ReloadTagger

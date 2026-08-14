@@ -1,4 +1,4 @@
-package kernel_test
+package foundation_test
 
 import (
 	"io/fs"
