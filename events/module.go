@@ -1,3 +1,13 @@
+// The module, which is the one file here that is not a bridge.
+//
+// github.com/arandu-io/hesape/events has a Module of its own and this is not an
+// envelope over it, for two reasons. It answers the contract the kernel collects
+// -- Routes and Migrations included -- and a Migration is a value the migrator
+// consumes, so the outbox table cannot travel to hesape until the migrator does.
+// And Start hands the loop to Relay.Run, which is where the Locker this
+// framework still hands out is driven; hesape's Module would take a relay that
+// cannot carry one.
+
 package events
 
 import (
