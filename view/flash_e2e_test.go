@@ -79,11 +79,19 @@ func (signupModule) Routes(r *httpx.Router) {
 	})
 
 	r.Action(http.MethodPost, "/signup", func(ctx *httpx.Context) error {
-		in, err := ctx.Validate(storeSignup)
-		if err != nil {
+		if err := ctx.Request.ParseForm(); err != nil {
+			return err
+		}
+		in, errs := storeSignup.Validate(ctx.Request.PostForm)
+		if errs.Any() {
 			// The whole of the failure path. It writes nothing and renders
 			// nothing: the router recognises the error and answers it.
-			return err
+			//
+			// It used to be `ctx.Validate(storeSignup)`, which read the form and
+			// applied the set in one call. That method was removed as the second
+			// way to validate (RULE 9), so the set is asked directly -- which is
+			// the one way, and the way `aru make:module` generates.
+			return errs
 		}
 		// Only what the set declares is readable, and it is read by name.
 		if in.String("email") == "" {

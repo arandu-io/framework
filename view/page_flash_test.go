@@ -112,9 +112,17 @@ func TestErrorSummaryNamesTheFieldAndTheBareMessageDoesNot(t *testing.T) {
 
 	// Sorted, so the banner does not reshuffle between two renders of the same
 	// failure.
+	//
+	// "Password Confirmation" and not "Password confirmation": the name comes
+	// from validation.Humanize, which is now hesape/str.Headline, and Headline
+	// title cases every word where this project sentence cased the first. The
+	// sentence casing was an Arandu divergence from Str::headline and the
+	// validation bridge closed it deliberately -- see the doc comment on
+	// validation.Humanize. It changes the text of a banner, never whether a
+	// form passes, and a one-word field reads identically, which is most of them.
 	want := []string{
 		"Email is not a valid email address",
-		"Password confirmation does not match",
+		"Password Confirmation does not match",
 	}
 	if got := page.ErrorSummary(); !reflect.DeepEqual(got, want) {
 		t.Errorf("ErrorSummary =\n%q\nwant\n%q", got, want)

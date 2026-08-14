@@ -1,144 +1,57 @@
+// The runtime generated views call, answered by
+// github.com/arandu-io/hesape/view.
+//
+// These are the functions a compiled `.kyse.go` emits calls to. They read the
+// same two package-level tables the renderer does -- views and layouts -- so
+// they bridge with it or not at all.
+
 package view
 
 import (
-	"fmt"
 	"io"
-	"reflect"
-	"strconv"
-)
 
-// The functions here are what generated views call. They are the runtime of
-// kyse, and it is deliberately small: everything that can be decided at build
-// time was, and what is left is the handful of things that cannot.
+	hview "github.com/arandu-io/hesape/view"
+)
 
 // Text renders a value as a string, for interpolation.
 //
 // It handles the types a view actually interpolates, and formats anything else
 // with %v. It is not reflection over a struct: the field access already happened
 // in generated Go, and this only turns the result into characters.
-func Text(v any) string {
-	switch x := v.(type) {
-	case string:
-		return x
-	case int:
-		return strconv.Itoa(x)
-	case int64:
-		return strconv.FormatInt(x, 10)
-	case bool:
-		if x {
-			return "true"
-		}
-		return "false"
-	case float64:
-		return strconv.FormatFloat(x, 'f', -1, 64)
-	case nil:
-		return ""
-	case fmt.Stringer:
-		return x.String()
-
-	// A method value, which means the view wrote {{ .Greeting }} where it meant
-	// {{ .Greeting() }}. Both compile: without the parentheses the expression is
-	// the method itself, and %v prints a function as its address.
-	//
-	// It shipped. The showcase's plain-text verification message read
-	// "Hello 0x10273d6d0, and welcome." for every person who registered, and it
-	// was invisible because the HTML part beside it was written correctly -- only
-	// a reader whose client prefers text ever saw it, which is the audience the
-	// text part exists for.
-	//
-	// Answered by panicking rather than by printing something tidier: this is a
-	// mistake with no correct output, and a view that renders "" or the method
-	// name would hide it exactly as %v did. In development it reaches the error
-	// page, which names the file and the line of the .kyse.go.
-	case func() string:
-		panic("view: a method was interpolated instead of its result. Write {{ .Name() }} rather than {{ .Name }}")
-
-	default:
-		if s := funcName(v); s != "" {
-			panic("view: " + s + " was interpolated instead of its result. Write {{ .Name() }} rather than {{ .Name }}")
-		}
-		return fmt.Sprint(v)
-	}
-}
-
-// funcName reports that a value is a function, and nothing otherwise.
 //
-// Separate from the type switch above because a method can have any signature --
-// func() int, func() time.Time, func() (string, error) -- and every one of them
-// is the same mistake. reflect is reached for here and nowhere else in this
-// runtime, on a path that only runs when something is already wrong.
-func funcName(v any) string {
-	if v == nil {
-		return ""
-	}
-	if reflect.TypeOf(v).Kind() != reflect.Func {
-		return ""
-	}
-	return "a method"
-}
+// It panics on a method value, which is {{ .Name }} written where
+// {{ .Name() }} was meant. That behaviour is hesape's now, and unchanged.
+func Text(v any) string { return hview.Text(v) }
 
 // Yield renders the section a child view declared, or nothing.
 //
 // A layout yields sections that a given child may not have, and the answer is
-// the empty string. A missing section is a
-// page without a sidebar, not an error.
+// the empty string. A missing section is a page without a sidebar, not an error.
 func Yield(w io.Writer, sections map[string]func(io.Writer) error, name string) error {
-	section, declared := sections[name]
-	if !declared {
-		return nil
-	}
-	return section(w)
+	return hview.Yield(w, sections, name)
 }
 
 // RenderInto renders a layout, handing it the sections of the child view.
 //
 // This is what `@extends` compiles to: the child does not write markup, it
-// renders the layout and passes what goes in the holes: the child is evaluated
-// to fill the sections before the layout runs.
+// renders the layout and passes what goes in the holes.
 func RenderInto(w io.Writer, layout string, data any, sections map[string]func(io.Writer) error) error {
-	mu.RLock()
-	f, known := layouts[layout]
-	mu.RUnlock()
-
-	if !known {
-		return fmt.Errorf("view: %q extends a layout that does not exist. "+
-			"Layouts are views too -- resources/views/%s.kyse.go", layout, layout)
-	}
-	return f(w, data, sections)
+	return hview.RenderInto(w, layout, data, sections)
 }
 
 // LayoutFunc is a view that receives sections, which is what a layout is.
-type LayoutFunc func(w io.Writer, data any, sections map[string]func(io.Writer) error) error
-
-var layouts = map[string]LayoutFunc{}
+type LayoutFunc = hview.LayoutFunc
 
 // RegisterLayout records a compiled layout. Generated code calls it from init()
 // when the view contains a @yield.
-func RegisterLayout(name string, f LayoutFunc) {
-	mu.Lock()
-	defer mu.Unlock()
-	if _, taken := layouts[name]; taken {
-		panic("view: layout " + name + " is already registered -- a stale generated file is probably still on disk")
-	}
-	layouts[name] = f
-}
+func RegisterLayout(name string, f LayoutFunc) { hview.RegisterLayout(name, f) }
 
 // Include renders a partial with the same data as the page.
 //
 // A partial shares the page's data. That data is one typed struct, so the
-// partial receives exactly it -- and a partial that wants
-// something else is a partial that takes different data, which is what a
-// component is for.
-func Include(w io.Writer, name string, data any) error {
-	mu.RLock()
-	f, known := views[name]
-	mu.RUnlock()
-
-	if !known {
-		return unknownView(name)
-	}
-	return f(w, data)
-}
+// partial receives exactly it -- and a partial that wants something else is a
+// partial that takes different data, which is what a component is for.
+func Include(w io.Writer, name string, data any) error { return hview.Include(w, name, data) }
 
 // CSRF writes the hidden input a form needs.
 //
@@ -146,12 +59,4 @@ func Include(w io.Writer, name string, data any) error {
 // It is not read from a global: a template that reaches for request state
 // outside the data it was given is how a form ends up with another session's
 // token under load.
-func CSRF(w io.Writer, data any) error {
-	holder, ok := data.(interface{ CSRFToken() string })
-	if !ok {
-		return fmt.Errorf("view: @csrf needs the page data to provide the token. " +
-			"Add a CSRFToken() string method to the struct the view declares")
-	}
-	_, err := fmt.Fprintf(w, `<input type="hidden" name="_csrf" value="%s">`, holder.CSRFToken())
-	return err
-}
+func CSRF(w io.Writer, data any) error { return hview.CSRF(w, data) }
