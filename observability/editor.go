@@ -1,29 +1,26 @@
+// The editor links, answered by github.com/arandu-io/hesape/log.
+
 package observability
 
-import "strconv"
+import hlog "github.com/arandu-io/hesape/log"
 
 // EditorLink builds the link that opens a file straight in the IDE, at the line.
 //
 // It lives here rather than in errorpage because two things need it now -- the
 // error page and the console -- and a second copy is a second place to add the
-// next editor. The editor name comes from config.Config.Editor.
+// next editor. The editor name comes from the log configuration.
 //
 // The scheme has to reach the template as template.URL: html/template rewrites
 // an unknown scheme to #ZgotmplZ, which turns every link on the page into a dead
 // one and gives no hint why.
+//
+// Two things changed with the move, and both are visible from here. The table
+// is hesape's, which knows the fourteen names the PHP one does rather than
+// four, and an unset or unknown editor now gets "" instead of a vscode:// link
+// that opens nothing for somebody who configured emacs. And hesape takes an
+// optional path rewrite, for a link built inside a container that has to open a
+// file outside it; this signature has no room for one, so it is the case that
+// needs hesape/log.EditorLink directly.
 func EditorLink(editor, file string, line int) string {
-	at := strconv.Itoa(line)
-	switch editor {
-	case "cursor":
-		return "cursor://file" + file + ":" + at
-	case "goland":
-		return "jetbrains://goland/navigate/reference?path=" + file + ":" + at
-	case "zed":
-		return "zed://file" + file + ":" + at
-	default:
-		// VS Code, and whatever forks it next. It is also what an unset editor
-		// gets, because the wrong scheme fails visibly and no link fails
-		// silently.
-		return "vscode://file" + file + ":" + at
-	}
+	return hlog.EditorLink(editor, file, line)
 }

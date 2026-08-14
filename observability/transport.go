@@ -1,8 +1,12 @@
+// The outbound HTTP recorder, answered by github.com/arandu-io/hesape/log.
+
 package observability
 
 import (
 	"net/http"
 	"time"
+
+	hlog "github.com/arandu-io/hesape/log"
 )
 
 // Transport records every outbound call on the request's Collector.
@@ -21,10 +25,7 @@ import (
 // It costs nothing in production for the same reason everything else here does:
 // with no Collector in the context, RecordExternal returns on a nil receiver.
 func Transport(next http.RoundTripper) http.RoundTripper {
-	if next == nil {
-		next = http.DefaultTransport
-	}
-	return roundTripper{next: next}
+	return hlog.Transport(next)
 }
 
 // Client returns an http.Client that records what it calls.
@@ -33,41 +34,5 @@ func Transport(next http.RoundTripper) http.RoundTripper {
 // default, and a call with no deadline is how one slow dependency turns into
 // every request of the process hanging.
 func Client(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: Transport(nil)}
-}
-
-type roundTripper struct{ next http.RoundTripper }
-
-func (t roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	start := time.Now()
-	resp, err := t.next.RoundTrip(r)
-
-	status := 0
-	if resp != nil {
-		status = resp.StatusCode
-	}
-	// The nil check comes first. RecordExternal is a no-op on a nil Collector,
-	// which is what production is -- but the arguments are evaluated before the
-	// call, so redactURL built and formatted a URL on every outbound request
-	// that nothing would ever read. "Zero cost, not low cost" is the claim in
-	// the Collector's own doc comment. Found by audit.
-	if col := FromContext(r.Context()); col != nil {
-		// A URL can carry a token in the query string, and the console is a page
-		// somebody screenshots. The path stays; the query does not.
-		col.RecordExternal(r.Method, redactURL(r), status, time.Since(start))
-	}
-
-	return resp, err
-}
-
-// redactURL keeps scheme, host and path.
-func redactURL(r *http.Request) string {
-	if r.URL == nil {
-		return ""
-	}
-	u := *r.URL
-	u.RawQuery = ""
-	u.Fragment = ""
-	u.User = nil
-	return u.String()
+	return hlog.Client(timeout)
 }

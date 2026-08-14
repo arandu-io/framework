@@ -1,27 +1,36 @@
+// The logger, answered by github.com/arandu-io/hesape/log.
+//
+// All four names were renamed on the way over, so all four are a call through
+// rather than an alias. The types they carry are the standard library's, so
+// nothing about the values changed: a *slog.Logger built here is the same
+// *slog.Logger hesape builds.
+
 package observability
 
 import (
 	"context"
 	"log/slog"
 	"net/http"
-	"os"
-)
 
-type ctxLoggerKey struct{}
+	hlog "github.com/arandu-io/hesape/log"
+)
 
 // NewLogger returns the root logger: readable text in development, JSON
 // everywhere else, so it reaches the aggregator without fragile parsing.
+//
+// It is hesape/log.New. The rename is the only difference; hesape also renders
+// the four PSR-3 levels slog does not name, which a caller sees only in the
+// output.
 func NewLogger(env string, level slog.Level) *slog.Logger {
-	opts := &slog.HandlerOptions{Level: level, AddSource: true}
-	if env == "dev" {
-		return slog.New(slog.NewTextHandler(os.Stdout, opts))
-	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, opts))
+	return hlog.New(env, level)
 }
 
 // WithLogger stores the request-scoped logger in the context.
+//
+// It is hesape/log.Into. The context key belongs to hesape, so a logger put in
+// by this name is read back by hesape/log.For and the other way round.
 func WithLogger(ctx context.Context, l *slog.Logger) context.Context {
-	return context.WithValue(ctx, ctxLoggerKey{}, l)
+	return hlog.Into(ctx, l)
 }
 
 // RootLogger installs the application logger at the very top of the pipeline.
@@ -31,12 +40,11 @@ func WithLogger(ctx context.Context, l *slog.Logger) context.Context {
 // default text format instead of the JSON the aggregator expects, and the level
 // filter from the configuration would not apply either. The Kernel installs this
 // as the outermost middleware, so even a panic in Recover logs correctly.
+//
+// It is hesape/log.Middleware, which returns the same func(http.Handler)
+// http.Handler this has always returned.
 func RootLogger(l *slog.Logger) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			next.ServeHTTP(w, r.WithContext(WithLogger(r.Context(), l)))
-		})
-	}
+	return hlog.Middleware(l)
 }
 
 // Log returns the request logger. It never returns nil.
@@ -44,9 +52,8 @@ func RootLogger(l *slog.Logger) func(http.Handler) http.Handler {
 // This is the only way to log inside a handler or a service. There is no
 // exported global logger, on purpose: a log line without request_id and tenant
 // is noise, and the only way to guarantee both is to force the context through.
+//
+// It is hesape/log.For.
 func Log(ctx context.Context) *slog.Logger {
-	if l, ok := ctx.Value(ctxLoggerKey{}).(*slog.Logger); ok && l != nil {
-		return l
-	}
-	return slog.Default()
+	return hlog.For(ctx)
 }

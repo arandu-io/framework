@@ -1,88 +1,49 @@
+// The stack capture, answered by github.com/arandu-io/hesape/exception.
+
 package errorpage
 
 import (
-	"os"
-	"runtime"
-	"strings"
-
 	"github.com/arandu-io/framework/observability"
+	"github.com/arandu-io/hesape/exception"
 )
 
 // StackFrame is one frame of the stack, already enriched with the source
 // snippet around the failing line.
-type StackFrame struct {
-	Func    string
-	File    string
-	Line    int
-	IsApp   bool     // false for the runtime, the stdlib and the framework itself
-	Snippet []string // surrounding lines, rendered inline
-	SnipTop int      // line number of the first snippet line
-}
-
-// modulePrefix is the framework's own import path, collapsed by default:
-// whoever is debugging wants to see THEIR code, not ours.
-const modulePrefix = "github.com/arandu-io/framework"
+type StackFrame = exception.StackFrame
 
 // Capture collects the stack from skip onwards, marking which frames belong to
 // the application. Same decision as Ignition: application frames are expanded
 // by default and everything else is collapsed.
 //
-// appModule is the caller's module path. When empty, every frame that is not
-// runtime, stdlib or framework counts as application code.
+// appModule is the caller's module path.
+//
+// It is hesape/exception.Capture, and that is the point of it rather than an
+// implementation detail. The rule this package used to apply was "collapse
+// github.com/arandu-io/framework", which stopped being true the moment the
+// implementation moved: a hesape frame matched no branch, so it was called
+// application code, expanded, and its source read off disk on every page. The
+// rule hesape applies is its own import path, the standard library, and package
+// main -- and, for everything else, the module path the application declared.
+//
+// What that leaves: with appModule empty there is nothing left to tell the
+// application from what it imported, and hesape is generous on purpose -- a page
+// that collapses the frame somebody is looking for is worse than one that
+// expands a frame they are not. So an empty AppModule expands the frames of
+// this bridge along with everybody else's. Both skeletons set it, and it is the
+// field Options exists for.
+//
+// The snippet is five lines each side of the failing one rather than six: the
+// page is laid out for the eleven lines the PHP renders.
 func Capture(skip int, appModule string) []StackFrame {
-	pcs := make([]uintptr, 64)
-	n := runtime.Callers(skip, pcs)
-	frames := runtime.CallersFrames(pcs[:n])
-
-	var out []StackFrame
-	for {
-		f, more := frames.Next()
-
-		sf := StackFrame{Func: f.Function, File: f.File, Line: f.Line}
-		sf.IsApp = isApp(f.Function, appModule)
-		if sf.IsApp {
-			sf.Snippet, sf.SnipTop = snippet(f.File, f.Line, 6)
-		}
-		out = append(out, sf)
-
-		if !more {
-			break
-		}
-	}
-	return out
-}
-
-func isApp(fn, appModule string) bool {
-	switch {
-	case appModule != "" && strings.HasPrefix(fn, appModule):
-		return true
-	case strings.HasPrefix(fn, modulePrefix):
-		return false
-	case strings.HasPrefix(fn, "runtime."), strings.HasPrefix(fn, "net/http."):
-		return false
-	}
-	return !strings.Contains(fn, "/vendor/")
-}
-
-// snippet reads the source around the line. When the binary runs far from its
-// sources -- a production container -- it returns nothing and the page degrades
-// instead of breaking.
-func snippet(file string, line, radius int) ([]string, int) {
-	b, err := os.ReadFile(file)
-	if err != nil {
-		return nil, 0
-	}
-	lines := strings.Split(string(b), "\n")
-	from := max(0, line-radius-1)
-	to := min(len(lines), line+radius)
-	return lines[from:to], from + 1
+	return exception.Capture(skip, appModule)
 }
 
 // EditorLink builds the link that opens the file straight in the IDE.
 //
 // It forwards to observability.EditorLink, which is where the one
 // implementation lives: the console needs the same links, and two copies is two
-// places to add the next editor.
+// places to add the next editor. That package is itself a bridge, so the table
+// answering is hesape/log's -- see its note on what an unset editor now gets.
 func EditorLink(editor, file string, line int) string {
 	return observability.EditorLink(editor, file, line)
 }
