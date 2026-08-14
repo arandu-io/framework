@@ -37,30 +37,23 @@
 // hesape/routing.FormatRoutes (docs/31:192), which the alias on http.Route
 // makes possible without translating anything.
 //
-// # Builtins is not here, and needs a decision rather than code
+// # Builtins does not exist, and that is decided
 //
-// docs/31:190 gives this package a Builtins() []console.Command -- what a
-// project's own binary answers on the command line without the aru CLI. It is
-// not declared, because the shape cannot be derived from what an Application
-// holds, and a half-design occupying the slot is worse than an empty one
-// (RULE 9). What is undecided, precisely:
+// docs/31:190 gave this package a Builtins() []console.Command -- what a
+// project's own binary answers without the aru CLI. ADR 0050 refused it, and
+// the shortest of its three reasons is that the name is not Illuminate's: ADR
+// 0044 requires the Laravel name, and Builtins was invented by the
+// specification.
 //
-//   - Of the eleven commands bootstrap/console.go dispatches today, only serve,
-//     routes and Version are answerable from an Application. migrate,
-//     migrate:rollback, migrate:status and migrate:fresh need a *data.DB, which
-//     an Application does not hold and does not open; db:seed is project code;
-//     schedule:list and schedule:run need the scheduler module the project
-//     registered last.
-//   - work needs a queue store from github.com/arandu-io/queue, a separate
-//     module that imports this one. The framework cannot import it back, so
-//     either the command does not come from here or the Application grows a
-//     registration hook -- which is a container by another name (ADR 0001).
-//   - Whatever answers it has to take a *data.DB or a connection from
-//     somewhere, and config.Config is what would carry it. That file is frozen
-//     for this change, and it is the seventeen-typed-config front that decides
-//     the shape.
+// What Laravel has in that place is ArtisanServiceProvider, which registers 110
+// commands into the container -- the mechanism ADR 0001 and ADR 0002 rejected.
+// Of the eleven commands a project dispatches today, only serve, routes and
+// Version are answerable from an Application at all; the rest need a *data.DB
+// it does not hold, project code it does not know, or a queue store from a
+// module that imports this one. Letting them register themselves would be a
+// container under another name.
 //
-// The decision belongs in an ADR, next to the one that folds the aru commands
-// into console.Command values. Until it exists, a project's binary keeps its
-// own switch and nothing here pretends otherwise.
+// What is written instead is the switch in the skeleton's bootstrap/console.go.
+// It is in the project's own repository, the whole set reads at once, and
+// adding one is writing a case.
 package foundation
