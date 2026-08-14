@@ -1,174 +1,84 @@
-// Package data defines the data access contract.
+// The data access contract, answered by github.com/arandu-io/hesape/database.
 //
-// There is no ORM. Queries are plain parameterized SQL, written by hand in the
-// templates `aru make:module` emits, which keeps the query plan predictable and
-// the value always in a placeholder. What this package adds on top is:
-//
-//  1. a security.Grant required by every operation (the mandatory path);
-//  2. tenant scoping taken from the Grant, never from a parameter;
-//  3. automatic instrumentation into the Collector.
+// The handle, the query shape and the identifier generator are the hesape
+// types, so a repository written against this package and one written against
+// hesape/database take the same *DB and the same Grant. Repository itself is
+// the exception, and it says why on the type.
+
 package data
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"fmt"
-	"time"
 
-	"github.com/arandu-io/framework/observability"
-	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/hesape/database"
 )
 
 // Repository is the contract every module repository implements.
 //
-// Look at the signature: security.Grant is mandatory and comes before the id.
-// Because a Grant cannot be constructed outside the security package, there is
-// no path from a handler to the database that skips a Policy.
+// Look at the signature: the Grant is mandatory and comes before the id.
+// Because a Grant cannot be constructed outside the authorization package,
+// there is no path from a handler to the database that skips a Policy -- on the
+// way out as much as on the way in (RULE 17).
+//
+// It stays declared here rather than aliasing hesape/database.Repository, which
+// changed the return of List from ([]T, error) to (Page[T], error) so that a
+// caller can tell "this is the last page" from "this page happens to be full".
+// The better shape is hesape's; the alias is still refused. Every module
+// repository the generator emits carries a
+// `var _ data.Repository[T, string] = (*R)(nil)` line -- framework/modules/auth,
+// aru's templates and the three repositories in examples -- and an alias would
+// break all of them at once, in a package none of them can see, with an error
+// about a return type they never wrote. A bridge that changes a signature is
+// not a bridge.
+//
+// The migration is the caller's, one repository at a time: change List to
+// answer database.Page[T] and drop this contract for hesape's. Nothing in
+// hesape consumes either shape, so the two can coexist until v1.0.0 removes
+// this one.
+//
+// The Grant here is auth.Grant, which is what security.Grant already is -- the
+// security bridge aliases it -- so a repository written against either name
+// satisfies this.
 type Repository[T any, ID comparable] interface {
-	Find(ctx context.Context, g security.Grant, id ID) (T, error)
-	List(ctx context.Context, g security.Grant, q Query) ([]T, error)
-	Create(ctx context.Context, g security.Grant, entity T) (T, error)
-	Update(ctx context.Context, g security.Grant, entity T) (T, error)
-	Delete(ctx context.Context, g security.Grant, id ID) error
+	Find(ctx context.Context, g auth.Grant, id ID) (T, error)
+	List(ctx context.Context, g auth.Grant, q Query) ([]T, error)
+	Create(ctx context.Context, g auth.Grant, entity T) (T, error)
+	Update(ctx context.Context, g auth.Grant, entity T) (T, error)
+	Delete(ctx context.Context, g auth.Grant, id ID) error
 }
 
 // Query is pagination and ordering with an allowlist. The sort field is NEVER
 // interpolated directly: the repository validates it against a permitted set,
 // or ordering becomes injection through another door.
 //
-// There is no Filter here, and that is a decision rather than an omission.
-//
-// The field existed, exported, with no producer and no consumer in any of the
-// ten repositories: List(ctx, g, Query{Filter: ...}) returned the whole list,
-// with no error and no warning. A field that silently does nothing is worse than
-// one that does not exist -- the reader assumes it filtered, and in an
-// application where rows belong to tenants that assumption is how a leak starts.
-//
-// Filling it in would mean a generic predicate language over columns, which is a
-// query builder, which is the second way to reach data that RULE 9 rules out
-// (docs/09 lists "ORM, query builder fluente, segunda camada" as what does not
-// enter). A module that needs to read by something other than the id declares
-// the method it needs on its own repository, with the SQL written out and the
-// values in placeholders.
-type Query struct {
-	Limit  int
-	Cursor string
-	Sort   string
-}
+// There is no Filter here, and that is a decision rather than an omission: the
+// argument is on hesape/database.Query, where the field was deleted.
+type Query = database.Query
 
 // DB wraps *sql.DB to instrument the Collector and to rebind placeholders for
-// the connection's dialect. Repositories use this type rather than *sql.DB, which
-// is what makes every query show up on the debug page with the file and line that
-// issued it.
+// the connection's dialect. Repositories use this type rather than *sql.DB,
+// which is what makes every query show up on the debug page with the file and
+// line that issued it.
 //
-// It holds no driver import: the driver is chosen by the application, so the
-// core keeps its two dependencies.
-type DB struct {
-	inner   *sql.DB
-	dialect Dialect
-}
+// An alias, so a handle opened by hesape/database.Open is the handle a
+// repository written against this package takes.
+type DB = database.DB
 
 // Wrap returns an instrumented handle over an open *sql.DB.
 //
 // The dialect is what queries written with "?" are rebound to. An empty dialect
 // means SQLite, which is the development default.
-func Wrap(db *sql.DB, dialect Dialect) *DB {
-	if dialect == "" {
-		dialect = DialectSQLite
-	}
-	return &DB{inner: db, dialect: dialect}
-}
-
-// Dialect reports the flavour this handle speaks. Repositories use it only when
-// a statement genuinely cannot be written portably -- which should be rare, and
-// is a smell worth explaining in a comment when it happens.
-func (d *DB) Dialect() Dialect { return d.dialect }
-
-// Unwrap returns the underlying handle, for the rare case that needs a driver
-// specific feature. Prefer the wrapper: what goes through Unwrap does not show
-// up on the debug page.
-func (d *DB) Unwrap() *sql.DB { return d.inner }
-
-// PingContext verifies the connection. It feeds module health checks.
-func (d *DB) PingContext(ctx context.Context) error { return d.inner.PingContext(ctx) }
-
-// QueryContext runs a query and records it.
-//
-// Inside data.Transaction it runs on the open transaction. That is what lets a
-// repository written once work in both places, and what puts the outbox write in
-// the same transaction as the row it describes.
-func (d *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	if tx, ok := txFrom(ctx, d); ok {
-		return tx.queryContext(ctx, query, args...)
-	}
-	query = d.dialect.Rebind(query)
-	start := time.Now()
-	rows, err := d.inner.QueryContext(ctx, query, args...)
-	observability.FromContext(ctx).RecordQuery(query, args, time.Since(start), -1, err)
-	return rows, err
-}
-
-// ExecContext runs a statement and records it, with the affected row count.
-//
-// Inside data.Transaction it runs on the open transaction.
-func (d *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	if tx, ok := txFrom(ctx, d); ok {
-		return tx.execContext(ctx, query, args...)
-	}
-	query = d.dialect.Rebind(query)
-	start := time.Now()
-	res, err := d.inner.ExecContext(ctx, query, args...)
-	rows := -1
-	if err == nil && res != nil {
-		if n, e := res.RowsAffected(); e == nil {
-			rows = int(n)
-		}
-	}
-	observability.FromContext(ctx).RecordQuery(query, args, time.Since(start), rows, err)
-	return res, err
-}
-
-// QueryRowContext runs a single-row query and records it.
-//
-// The duration measured here covers issuing the query only: database/sql defers
-// the actual work to Row.Scan, so a slow row shows up on the timeline as scan
-// time rather than query time.
-func (d *DB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	if tx, ok := txFrom(ctx, d); ok {
-		return tx.queryRowContext(ctx, query, args...)
-	}
-	query = d.dialect.Rebind(query)
-	start := time.Now()
-	row := d.inner.QueryRowContext(ctx, query, args...)
-	observability.FromContext(ctx).RecordQuery(query, args, time.Since(start), 1, nil)
-	return row
-}
-
-// BeginTx starts a raw transaction on the underlying handle.
-//
-// Prefer data.Transaction: statements run through this one are invisible to the
-// Collector, and the outbox refuses to store events on it, because nothing
-// connects it to the context that repositories read.
-func (d *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
-	return d.inner.BeginTx(ctx, opts)
-}
-
-// Tenant returns the tenant from the Grant. Every multi-tenant statement must
-// take this value, never a tenant that came in with the request.
-func Tenant(g security.Grant) string { return g.Subject().Tenant }
+func Wrap(db *sql.DB, dialect Dialect) *DB { return database.Wrap(db, dialect) }
 
 // NewID returns a version 4 UUID as text.
 //
 // Ids are generated by the application, not by the database: gen_random_uuid,
 // UUID() and randomblob are three different spellings of the same idea, and
 // depending on any of them would tie the schema to one engine.
-func NewID() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("data: reading random bytes: %w", err)
-	}
-	b[6] = (b[6] & 0x0f) | 0x40 // version 4
-	b[8] = (b[8] & 0x3f) | 0x80 // variant 10
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
-}
+//
+// The bytes and the format are hesape's. The only difference a caller can
+// observe is the prefix on the error the reader returns when the system is out
+// of entropy, which reads "database:" rather than "data:".
+func NewID() (string, error) { return database.NewID() }

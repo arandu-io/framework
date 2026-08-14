@@ -1,88 +1,52 @@
+// The migrator, answered by github.com/arandu-io/hesape/database.
+//
+// The tracking table has the same name and the same columns on both sides, and
+// the batch numbering is the same code, so a database migrated by the old
+// binary is a database the new one reads without a step in between.
+
 package data
 
 import (
 	"context"
-	"fmt"
-	"strings"
-	"time"
+
+	"github.com/arandu-io/hesape/database"
 )
 
 // MigrationsTable is where applied migration ids are recorded.
-const MigrationsTable = "arandu_migrations"
+const MigrationsTable = database.MigrationsTable
 
 // KeyText is how a text column that takes part in a key is declared.
 //
 // TEXT is the portable spelling for text, and it is the wrong one for anything
 // indexed: MySQL stores TEXT off-page and refuses it in a key without a prefix
-// length, so `id TEXT PRIMARY KEY` fails with "BLOB/TEXT column used in key
-// specification without a key length". That is the first statement `aru
-// migrate` runs, which means MySQL never got past creating the tracking table
-// -- and every project table repeated the same mistake. Found by audit.
-//
-// VARCHAR(255) is accepted by all three: PostgreSQL treats it as varchar,
-// SQLite gives it TEXT affinity because the name contains CHAR, and MySQL
-// indexes it. 255 rather than something tighter so there is one width to
-// remember, and because two of them in a composite index still fit under
-// InnoDB's key limit.
+// length. VARCHAR(255) is accepted by all three.
 //
 // The rule: TEXT for free-form content nobody indexes, KeyText for an id, a
 // tenant, or anything a UNIQUE or an index names.
-const KeyText = "VARCHAR(255)"
+const KeyText = database.KeyText
 
 // Migration is a versioned, immutable-once-published schema change.
 //
 // The id carries its own order -- "2026_07_29_000001_create_users_table" -- for
 // the reason that convention exists: a migration that sorts differently on two
 // machines applies in a different order on two machines.
-type Migration struct {
-	ID   string
-	Up   string
-	Down string
-}
+type Migration = database.Migration
 
 // AppliedMigration is one row of the tracking table.
-type AppliedMigration struct {
-	ID        string
-	Batch     int
-	AppliedAt time.Time
-}
+type AppliedMigration = database.AppliedMigration
 
 // Migrate applies the pending migrations, in the given order, and returns the
 // ids it applied.
 //
 // Everything applied by one call shares a batch number, which is what makes
-// Rollback undo a deploy rather than a single migration, which is what makes a
-// rollback useful in practice instead of a per-file undo.
+// Rollback undo a deploy rather than a single migration. Each migration runs
+// inside its own transaction together with the insert into the tracking table,
+// so a failure halfway cannot leave the schema ahead of the record.
 //
-// Each migration runs inside its own transaction together with the insert into
-// the tracking table, so a failure halfway cannot leave the schema ahead of the
-// record. It stops at the first failure: applying later migrations over a broken
-// schema turns one clear error into an unrecoverable database.
+// It is a pipeline step and never a call on the way up: with N replicas, N
+// migrations race (RULE 16).
 func Migrate(ctx context.Context, db *DB, migrations []Migration) ([]string, error) {
-	pending, err := Pending(ctx, db, migrations)
-	if err != nil {
-		return nil, err
-	}
-	if len(pending) == 0 {
-		return nil, nil
-	}
-
-	batch, err := nextBatch(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-
-	var applied []string
-	for _, m := range pending {
-		if m.ID == "" {
-			return applied, fmt.Errorf("arandu: migration with empty id")
-		}
-		if err := applyOne(ctx, db, m, batch); err != nil {
-			return applied, err
-		}
-		applied = append(applied, m.ID)
-	}
-	return applied, nil
+	return database.Migrate(ctx, db, migrations)
 }
 
 // Rollback undoes the last batch and returns the ids it reverted, most recent
@@ -92,261 +56,21 @@ func Migrate(ctx context.Context, db *DB, migrations []Migration) ([]string, err
 // leaving part of a batch in place is how a rollback produces a schema that
 // matches neither version.
 func Rollback(ctx context.Context, db *DB, migrations []Migration) ([]string, error) {
-	applied, err := AppliedMigrations(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-	if len(applied) == 0 {
-		return nil, nil
-	}
-
-	last := 0
-	for _, a := range applied {
-		if a.Batch > last {
-			last = a.Batch
-		}
-	}
-
-	byID := make(map[string]Migration, len(migrations))
-	for _, m := range migrations {
-		byID[m.ID] = m
-	}
-
-	// Reverse order: the last thing applied is the first thing undone.
-	var batch []AppliedMigration
-	for i := len(applied) - 1; i >= 0; i-- {
-		if applied[i].Batch == last {
-			batch = append(batch, applied[i])
-		}
-	}
-
-	var reverted []string
-	for _, a := range batch {
-		m, known := byID[a.ID]
-		if !known {
-			return reverted, fmt.Errorf("arandu: migration %s is recorded but no longer declared by any module", a.ID)
-		}
-		if strings.TrimSpace(m.Down) == "" {
-			return reverted, fmt.Errorf("arandu: migration %s has no Down and cannot be rolled back", a.ID)
-		}
-		if err := revertOne(ctx, db, m); err != nil {
-			return reverted, err
-		}
-		reverted = append(reverted, a.ID)
-	}
-	return reverted, nil
+	return database.Rollback(ctx, db, migrations)
 }
 
 // Status returns every declared migration with the batch it was applied in, or
 // zero when it is still pending. It is what `aru migrate:status` prints.
 func Status(ctx context.Context, db *DB, migrations []Migration) ([]AppliedMigration, error) {
-	applied, err := AppliedMigrations(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-	byID := make(map[string]AppliedMigration, len(applied))
-	for _, a := range applied {
-		byID[a.ID] = a
-	}
-
-	out := make([]AppliedMigration, 0, len(migrations))
-	for _, m := range migrations {
-		if a, ok := byID[m.ID]; ok {
-			out = append(out, a)
-			continue
-		}
-		out = append(out, AppliedMigration{ID: m.ID})
-	}
-	return out, nil
+	return database.Status(ctx, db, migrations)
 }
 
 // AppliedMigrations returns the tracking table, ordered by batch and id.
 func AppliedMigrations(ctx context.Context, db *DB) ([]AppliedMigration, error) {
-	if err := ensureMigrationsTable(ctx, db); err != nil {
-		return nil, err
-	}
-	rows, err := db.QueryContext(ctx,
-		`SELECT id, batch, applied_at FROM `+MigrationsTable+` ORDER BY batch, id`)
-	if err != nil {
-		return nil, fmt.Errorf("arandu: reading %s: %w", MigrationsTable, err)
-	}
-	defer rows.Close()
-
-	var out []AppliedMigration
-	for rows.Next() {
-		var a AppliedMigration
-		if err := rows.Scan(&a.ID, &a.Batch, &a.AppliedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, a)
-	}
-	return out, rows.Err()
+	return database.AppliedMigrations(ctx, db)
 }
 
 // Pending returns the migrations that have not been applied yet, in order.
 func Pending(ctx context.Context, db *DB, migrations []Migration) ([]Migration, error) {
-	applied, err := AppliedMigrations(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-	done := make(map[string]bool, len(applied))
-	for _, a := range applied {
-		done[a.ID] = true
-	}
-
-	var out []Migration
-	for _, m := range migrations {
-		if !done[m.ID] {
-			out = append(out, m)
-		}
-	}
-	return out, nil
-}
-
-func nextBatch(ctx context.Context, db *DB) (int, error) {
-	applied, err := AppliedMigrations(ctx, db)
-	if err != nil {
-		return 0, err
-	}
-	batch := 0
-	for _, a := range applied {
-		if a.Batch > batch {
-			batch = a.Batch
-		}
-	}
-	return batch + 1, nil
-}
-
-func ensureMigrationsTable(ctx context.Context, db *DB) error {
-	// INTEGER and TIMESTAMP are spelled the same way by every supported
-	// database, and the key column uses KeyText -- see there for why TEXT is
-	// not portable in a key. There is no DEFAULT: the values come from Go, so
-	// the tracking table needs no database function.
-	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS `+MigrationsTable+` (
-		id         `+KeyText+` PRIMARY KEY,
-		batch      INTEGER NOT NULL,
-		applied_at TIMESTAMP NOT NULL
-	)`)
-	if err != nil {
-		return fmt.Errorf("arandu: creating %s: %w", MigrationsTable, err)
-	}
-	return nil
-}
-
-// splitStatements breaks a migration body into individual statements.
-//
-// Semicolons inside comments and string literals do not split, which sounds
-// pedantic until the first migration whose comment contains one: the tail of the
-// sentence reaches the database as a statement, and the error names a word from
-// the prose.
-func splitStatements(body string) []string {
-	var out []string
-	var current strings.Builder
-
-	runes := []rune(body)
-	for i := 0; i < len(runes); i++ {
-		c := runes[i]
-
-		switch {
-		case c == '-' && i+1 < len(runes) && runes[i+1] == '-':
-			// Line comment: copy it through so the statement sent to the
-			// database still reads like the migration that was written.
-			for i < len(runes) && runes[i] != '\n' {
-				current.WriteRune(runes[i])
-				i++
-			}
-			current.WriteRune('\n')
-
-		case c == '/' && i+1 < len(runes) && runes[i+1] == '*':
-			for i < len(runes) {
-				current.WriteRune(runes[i])
-				if runes[i] == '*' && i+1 < len(runes) && runes[i+1] == '/' {
-					current.WriteRune('/')
-					i++
-					break
-				}
-				i++
-			}
-
-		case c == '\'' || c == '"':
-			quote := c
-			current.WriteRune(c)
-			i++
-			for i < len(runes) {
-				current.WriteRune(runes[i])
-				// Doubling is how SQL escapes a quote inside a literal.
-				if runes[i] == quote {
-					if i+1 < len(runes) && runes[i+1] == quote {
-						current.WriteRune(quote)
-						i++
-					} else {
-						break
-					}
-				}
-				i++
-			}
-
-		case c == ';':
-			if strings.TrimSpace(current.String()) != "" {
-				out = append(out, current.String())
-			}
-			current.Reset()
-
-		default:
-			current.WriteRune(c)
-		}
-	}
-
-	if strings.TrimSpace(current.String()) != "" {
-		out = append(out, current.String())
-	}
-	return out
-}
-
-func applyOne(ctx context.Context, db *DB, m Migration, batch int) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("arandu: migration %s: begin: %w", m.ID, err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	// The migration body may hold more than one statement, and SQLite's driver
-	// refuses a multi-statement Exec.
-	for _, statement := range splitStatements(m.Up) {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("arandu: migration %s failed: %w", m.ID, err)
-		}
-	}
-
-	insert := db.dialect.Rebind(`INSERT INTO ` + MigrationsTable + ` (id, batch, applied_at) VALUES (?, ?, ?)`)
-	if _, err := tx.ExecContext(ctx, insert, m.ID, batch, time.Now().UTC()); err != nil {
-		return fmt.Errorf("arandu: recording migration %s: %w", m.ID, err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("arandu: migration %s: commit: %w", m.ID, err)
-	}
-	return nil
-}
-
-func revertOne(ctx context.Context, db *DB, m Migration) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("arandu: rollback of %s: begin: %w", m.ID, err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	for _, statement := range splitStatements(m.Down) {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("arandu: rollback of %s failed: %w", m.ID, err)
-		}
-	}
-
-	del := db.dialect.Rebind(`DELETE FROM ` + MigrationsTable + ` WHERE id = ?`)
-	if _, err := tx.ExecContext(ctx, del, m.ID); err != nil {
-		return fmt.Errorf("arandu: clearing the record of %s: %w", m.ID, err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("arandu: rollback of %s: commit: %w", m.ID, err)
-	}
-	return nil
+	return database.Pending(ctx, db, migrations)
 }

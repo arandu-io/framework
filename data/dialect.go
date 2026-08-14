@@ -1,163 +1,47 @@
+// The SQL flavour of a connection, answered by
+// github.com/arandu-io/hesape/database.
+//
+// Dialect is a named string type and aliases, so the three constants below are
+// the hesape values: a DB_CONNECTION parsed by this package and one parsed by
+// hesape/database produce the same value, and Rebind is the same function.
+
 package data
 
 import (
-	"fmt"
-	"strconv"
-	"strings"
 	"time"
+
+	"github.com/arandu-io/hesape/database"
 )
 
 // Dialect is the SQL flavour of a connection.
 //
 // The names are the conventional DB_CONNECTION values, so an .env reads the way
-// somebody expects it to.
-type Dialect string
+// somebody expects it to. Driver and Rebind are methods on the hesape type and
+// come across with the alias.
+type Dialect = database.Dialect
 
 // Supported dialects.
 const (
 	// DialectSQLite is the default for local development: a file, no server,
 	// nothing to install.
-	DialectSQLite Dialect = "sqlite"
+	DialectSQLite = database.DialectSQLite
 	// DialectPostgres is the production target.
-	DialectPostgres Dialect = "pgsql"
+	DialectPostgres = database.DialectPostgres
 	// DialectMySQL is supported and is not the recommendation. Every query here
 	// is written with "?", which MySQL takes directly, so nothing about the SQL
 	// changes; what changes is that Postgres is where the migration story, the
 	// transactional DDL and the outbox relay are least surprising.
-	//
-	// The conformance suite runs the generated queries against a real server on
-	// all three (ADR 0018), MySQL included.
-	DialectMySQL Dialect = "mysql"
+	DialectMySQL = database.DialectMySQL
 )
 
 // ParseDialect validates a DB_CONNECTION value.
-func ParseDialect(v string) (Dialect, error) {
-	switch d := Dialect(v); d {
-	case DialectSQLite, DialectPostgres, DialectMySQL:
-		return d, nil
-	default:
-		return "", fmt.Errorf("unknown database connection %q (expected sqlite, pgsql or mysql)", v)
-	}
-}
-
-// Driver is the database/sql driver name a dialect expects to be registered
-// under. The application imports the driver; the framework only names it, which
-// is what keeps the core free of database dependencies.
-func (d Dialect) Driver() string {
-	switch d {
-	case DialectPostgres:
-		return "pgx"
-	case DialectMySQL:
-		return "mysql"
-	default:
-		return "sqlite"
-	}
-}
-
-// Rebind translates the portable "?" placeholder into what the dialect expects.
-//
-// Every query in this framework is written with "?", the form SQLite and MySQL
-// use, and Postgres gets "$1, $2, ..." here. That is the entire portability
-// layer: there is no query builder, and the SQL you read in a repository is the
-// SQL that runs. Anything beyond placeholders -- a type, a function -- is the
-// repository's job to keep portable.
-//
-// Placeholders inside string literals are left alone, because '?' is an ordinary
-// character in a LIKE pattern or in seeded data.
-func (d Dialect) Rebind(query string) string {
-	if d != DialectPostgres || !strings.ContainsRune(query, '?') {
-		return query
-	}
-
-	var (
-		b strings.Builder
-		n int
-	)
-	b.Grow(len(query) + 8)
-
-	for i := 0; i < len(query); i++ {
-		c := query[i]
-		switch {
-		case c == '-' && i+1 < len(query) && query[i+1] == '-':
-			// A line comment is copied through untouched.
-			//
-			// It used to be treated as ordinary text, so an apostrophe in prose
-			// opened a string literal that never closed:
-			//
-			//	SELECT id FROM invoice -- don't page this by hand
-			//	WHERE tenant_id = ?
-			//
-			// left the ? unbound, and PostgreSQL answered with a syntax error
-			// about a character position, three lines from the comment that
-			// caused it. splitStatements had already learned this lesson for
-			// semicolons; this had not. Found by audit.
-			for i < len(query) && query[i] != '\n' {
-				b.WriteByte(query[i])
-				i++
-			}
-			if i < len(query) {
-				b.WriteByte('\n')
-			}
-
-		case c == '/' && i+1 < len(query) && query[i+1] == '*':
-			for i < len(query) {
-				b.WriteByte(query[i])
-				if query[i] == '*' && i+1 < len(query) && query[i+1] == '/' {
-					b.WriteByte('/')
-					i++
-					break
-				}
-				i++
-			}
-
-		case c == '\'' || c == '"':
-			// A literal, or a quoted identifier. Neither holds a placeholder.
-			quote := c
-			b.WriteByte(c)
-			i++
-			for i < len(query) {
-				b.WriteByte(query[i])
-				// Doubling is how SQL escapes a quote inside a literal.
-				if query[i] == quote {
-					if i+1 < len(query) && query[i+1] == quote {
-						b.WriteByte(quote)
-						i++
-					} else {
-						break
-					}
-				}
-				i++
-			}
-
-		case c == '?':
-			n++
-			b.WriteByte('$')
-			b.WriteString(strconv.Itoa(n))
-
-		default:
-			b.WriteByte(c)
-		}
-	}
-	return b.String()
-}
+func ParseDialect(v string) (Dialect, error) { return database.ParseDialect(v) }
 
 // Day truncates a time to midnight UTC, which is what a date column means.
 //
 // It exists because DATE is the one type in the portable subset that the three
-// engines do not agree about. PostgreSQL drops the time part on write, so the
-// value read back differs from the one written. SQLite gives DATE numeric
-// affinity and stores whatever the driver sends, time and zone included -- so
-// the same code, on the same day, returns different values depending on the
-// engine, and a comparison between two dates is true on one and false on the
-// other. Found by audit.
-//
-// Normalizing on the way in makes the engines agree: what SQLite stores is what
-// PostgreSQL would have stored anyway. `aru make:module` emits it for every
-// field declared as a date.
-func Day(t time.Time) time.Time {
-	if t.IsZero() {
-		return t
-	}
-	utc := t.UTC()
-	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
-}
+// engines do not agree about: PostgreSQL drops the time part on write and
+// SQLite stores whatever the driver sent, so the same code, on the same day,
+// returns different values depending on the engine. `aru make:module` emits it
+// for every field declared as a date.
+func Day(t time.Time) time.Time { return database.Day(t) }
