@@ -1,37 +1,41 @@
-// Package jobs is the queue contract: work that happens after the response.
+// The job, its constructor and the two Grant functions, answered by
+// github.com/arandu-io/hesape/queue/jobs.
 //
-// The contract lives in the core and the drivers do not, for the same reason as
-// data.Repository: Push takes a security.Grant, and the tenant comes from it.
-// Moving that into an optional package would make the guarantee optional, and an
-// optional guarantee is not one.
-//
-// A driver is a separate module under github.com/arandu-io/queue, because in Go
-// there is no optional dependency and a core that carried a Redis client would
-// put it in every project's go.sum.
-//
-// Delivery is at-least-once. A handler that cannot run twice safely is a handler
-// with a bug -- the process can die between doing the work and acknowledging it,
-// and no queue anywhere solves that.
+// The constant and the errors alias. Job, Handler and Queue stay declared here
+// and translate, for the three reasons in the package doc.
+
 package jobs
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"time"
 
-	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/security"
+	hjobs "github.com/arandu-io/hesape/queue/jobs"
 )
 
 // DefaultQueue is where a job goes when nobody said otherwise.
-const DefaultQueue = "default"
+const DefaultQueue = hjobs.DefaultQueue
 
 // Job is one unit of work waiting to run.
+//
+// It stays declared here rather than aliasing hesape/queue/jobs.Job, which
+// renamed ID to UUID, added three fields and put a driver behind the job so
+// it can settle itself. Three things outside this module read this shape:
+// github.com/arandu-io/queue writes j.ID into a column, its kv sibling marshals
+// this struct to JSON and back, and `aru make:job` generates against it. An
+// alias would rename a column and a wire field at once.
+//
+// The three fields hesape added -- DisplayName, Exceptions and Attributes --
+// and the settlement bookkeeping behind them have no counterpart here, and
+// nothing on this side ever sets them, so a job that crosses the bridge and
+// comes back is the job that went in.
 type Job struct {
 	// ID is the deduplication key. It is stable across retries, which is what
 	// makes a handler able to recognize work it already did.
+	//
+	// Renamed on the way to hesape: it is jobs.Job.UUID there, because it
+	// answers both uuid() and getJobId() of Illuminate's job contract.
 	ID string
 	// Queue separates work by urgency: a password reset email and a monthly
 	// report should not wait behind each other.
@@ -60,12 +64,49 @@ type Job struct {
 	LastError string
 }
 
-// Decode unmarshals the payload into v.
-func (j Job) Decode(v any) error {
-	if err := json.Unmarshal(j.Payload, v); err != nil {
-		return fmt.Errorf("jobs: decoding %s: %w", j.Name, err)
+// hesape is half the translation this bridge exists to do. The value it returns
+// carries no driver, so it can be pushed and cannot settle itself -- which is
+// what a Job on this side has always been.
+func (j Job) hesape() hjobs.Job {
+	return hjobs.Job{
+		UUID:         j.ID,
+		Queue:        j.Queue,
+		Name:         j.Name,
+		TenantID:     j.TenantID,
+		Payload:      j.Payload,
+		AuthorizedBy: j.AuthorizedBy,
+		Action:       j.Action,
+		RunAt:        j.RunAt,
+		Attempts:     j.Attempts,
+		LastError:    j.LastError,
 	}
-	return nil
+}
+
+// jobFrom is the other half. It takes a pointer because that is what a job off
+// a hesape queue is, and it drops the settlement bookkeeping deliberately: on
+// this side the Queue settles the job, so there is nothing here to carry it.
+func jobFrom(h *hjobs.Job) Job {
+	return Job{
+		ID:           h.UUID,
+		Queue:        h.Queue,
+		Name:         h.Name,
+		TenantID:     h.TenantID,
+		Payload:      h.Payload,
+		AuthorizedBy: h.AuthorizedBy,
+		Action:       h.Action,
+		RunAt:        h.RunAt,
+		Attempts:     h.Attempts,
+		LastError:    h.LastError,
+	}
+}
+
+// Decode unmarshals the payload into v.
+//
+// It calls through rather than unmarshalling here, so the one description of
+// what a malformed payload reads like is the one in hesape.
+func (j Job) Decode(v any) error {
+	h := j.hesape()
+	return h.Decode(v)
 }
 
 // Handler does the work.
@@ -73,6 +114,12 @@ func (j Job) Decode(v any) error {
 // The Grant is rebuilt from the job's tenant and action, so a handler reaches
 // repositories the same way a service does. There is no unauthorized path into
 // the database from a worker, which is the whole point of the Grant existing.
+//
+// It stays declared here rather than aliasing hesape/queue.Handler, which takes
+// a *jobs.Job so the handler can release or park its own job. Every handler in
+// a project is written against this signature -- `aru make:job` emits it -- and
+// an alias would ask all of them to be rewritten, which is the opposite of what
+// a bridge is for.
 type Handler interface {
 	Handle(ctx context.Context, g security.Grant, j Job) error
 }
@@ -90,6 +137,18 @@ func (f HandlerFunc) Handle(ctx context.Context, g security.Grant, j Job) error 
 // Reserve/Ack/Fail rather than a channel of jobs: the job has to stay in the
 // store, invisible to other workers, until it is acknowledged. A worker that
 // dies mid-job must not lose it, and that is not something a channel can offer.
+//
+// It stays declared here, with the old eight method names, rather than aliasing
+// hesape/queue.Queue -- which has eleven and renamed all but two: Reserve is
+// Pop, Ack is delegated to the job itself, Fail is split across Release and
+// Fail on the job, Parked is Failed, Pending is PendingSize and Oldest is
+// CreationTimeOfOldestPendingJob, answering with a time rather than a duration.
+//
+// github.com/arandu-io/queue and github.com/arandu-io/queue/kv implement this
+// interface, by these names, and they are separate modules: an alias here would
+// compile in the framework and break both drivers silently, which is the one
+// failure this bridge exists to prevent. queueAdapter, in worker.go, is what
+// carries an implementation of this across to hesape.
 type Queue interface {
 	// Push adds a job. The tenant comes from the Grant.
 	Push(ctx context.Context, g security.Grant, j Job) error
@@ -125,46 +184,33 @@ type Queue interface {
 // It is an error rather than a default, and that is RULE 14 with teeth: a job
 // with no tenant cannot be scoped, and everything the handler touches would read
 // across customers.
-var ErrNoTenant = errors.New("jobs: the Grant carries no tenant, and a job without one cannot be scoped")
+//
+// The alias is what keeps errors.Is correct across the two modules: a driver
+// that checks this value and a hesape function that returns jobs.ErrNoTenant
+// are looking at one error.
+var ErrNoTenant = hjobs.ErrNoTenant
 
 // ErrNoName is returned when a job has no name to route by.
-var ErrNoName = errors.New("jobs: a job with no name cannot be routed to a handler")
+var ErrNoName = hjobs.ErrNoName
+
+// ErrForged is returned when a job claims an action or a tenant the Grant
+// pushing it does not carry.
+var ErrForged = hjobs.ErrForged
 
 // New builds a job from a Grant and a payload.
 //
 // This is the only constructor, so every job in the system carries a tenant, an
 // id and the Grant that authorized it -- there is no shape of Job that skipped
 // any of the three.
+//
+// A wrapper and not an alias: a plain function has no alias form in Go, and the
+// job it answers with has to cross back over the rename.
 func New(g security.Grant, queue, name string, payload any) (Job, error) {
-	if name == "" {
-		return Job{}, ErrNoName
-	}
-	tenant := data.Tenant(g)
-	if tenant == "" {
-		return Job{}, ErrNoTenant
-	}
-	if queue == "" {
-		queue = DefaultQueue
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return Job{}, fmt.Errorf("jobs: serializing %s: %w", name, err)
-	}
-	id, err := data.NewID()
+	h, err := hjobs.New(g, queue, name, payload)
 	if err != nil {
 		return Job{}, err
 	}
-
-	return Job{
-		ID:           id,
-		Queue:        queue,
-		Name:         name,
-		TenantID:     tenant,
-		Payload:      body,
-		AuthorizedBy: g.Subject().ID,
-		Action:       string(g.Action()),
-	}, nil
+	return jobFrom(&h), nil
 }
 
 // GrantFor rebuilds the Grant a job runs under.
@@ -172,8 +218,12 @@ func New(g security.Grant, queue, name string, payload any) (Job, error) {
 // The action and the tenant come from the row, so the worker reissues exactly
 // what the push authorized -- not more. A worker that invented its own Grant
 // would be a way to reach the database with permissions nobody granted.
+//
+// It is load-bearing for RULE 14 and it is one line: hesape mints the Grant, so
+// there is no second definition of what a job is allowed to do.
 func GrantFor(j Job) security.Grant {
-	return security.SystemGrant(security.Action(j.Action), j.TenantID)
+	h := j.hesape()
+	return hjobs.GrantFor(&h)
 }
 
 // Authorized reports whether a job may be pushed under this Grant.
@@ -193,27 +243,8 @@ func GrantFor(j Job) security.Grant {
 // be the one way past the authorization the whole framework exists to enforce.
 // Found by audit.
 //
-// Checked here rather than in each driver, because a driver that forgets is a
-// driver that reopens it.
+// The decision is hesape's, so the two drivers in this collection and any
+// written against hesape/queue directly refuse the same job.
 func Authorized(g security.Grant, j Job) error {
-	tenant := data.Tenant(g)
-	if tenant == "" {
-		return ErrNoTenant
-	}
-	if j.Name == "" {
-		return ErrNoName
-	}
-	if j.TenantID != "" && j.TenantID != tenant {
-		return fmt.Errorf("%w: the job says %q and the Grant says %q",
-			ErrForged, j.TenantID, tenant)
-	}
-	if j.Action != "" && j.Action != string(g.Action()) {
-		return fmt.Errorf("%w: the job says %q and the Grant authorizes %q. Build it with jobs.New, which takes both from the Grant",
-			ErrForged, j.Action, g.Action())
-	}
-	return nil
+	return hjobs.Authorized(g, j.hesape())
 }
-
-// ErrForged is returned when a job claims an action or a tenant the Grant
-// pushing it does not carry.
-var ErrForged = errors.New("jobs: the job does not match the Grant pushing it")

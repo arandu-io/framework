@@ -1,17 +1,29 @@
+// The worker loop, answered by github.com/arandu-io/hesape/queue.
+//
+// Nothing here drains a queue. The loop, the batch, the backoff, the decision
+// to park a job and the instrumentation all run in hesape/queue.Worker; what is
+// written here is the three renames between the two sides, and the adapter that
+// presents a framework Queue as a hesape one.
+
 package jobs
 
 import (
 	"context"
 	"errors"
-	"fmt"
-	"math"
-	"sync"
 	"time"
 
 	"github.com/arandu-io/framework/observability"
+	"github.com/arandu-io/framework/security"
+	hqueue "github.com/arandu-io/hesape/queue"
+	hjobs "github.com/arandu-io/hesape/queue/jobs"
 )
 
 // WorkerOptions configures the loop.
+//
+// It stays declared here rather than aliasing hesape/queue.WorkerOptions, which
+// renamed Poll to Sleep and MaxAttempts to MaxTries and added nine fields this
+// contract never had. The defaults are not applied here any more: every
+// zero means the same thing on the other side, and hesape decides it once.
 type WorkerOptions struct {
 	// Queue is which queue to drain. Empty means DefaultQueue.
 	Queue string
@@ -23,9 +35,15 @@ type WorkerOptions struct {
 	Lease time.Duration
 	// Poll is how long to wait before asking again when the queue was empty.
 	// Default 1 second.
+	//
+	// Renamed on the way to hesape: it is WorkerOptions.Sleep there, after
+	// Illuminate's $sleep.
 	Poll time.Duration
 	// MaxAttempts is how many failures a job gets before it is parked.
 	// Default 5.
+	//
+	// Renamed on the way to hesape: it is WorkerOptions.MaxTries there, after
+	// Illuminate's $maxTries.
 	MaxAttempts int
 	// Recorder receives each finished job, so it shows on /_arandu/debug with
 	// its queries and its timeline -- exactly like a request.
@@ -44,60 +62,53 @@ type WorkerOptions struct {
 	Backoff func(attempt int) time.Duration
 }
 
-func (o WorkerOptions) withDefaults() WorkerOptions {
-	if o.Queue == "" {
-		o.Queue = DefaultQueue
+// hesape is the translation: two renames, and everything else by the same name.
+//
+// The zero values travel as they are. hesape/queue.WorkerOptions.withDefaults
+// fills in the same numbers this package used to fill in itself -- concurrency
+// 4, a five minute lease, a one second poll, five attempts and the exponential
+// backoff -- so a caller who set nothing gets what they always got.
+//
+// Timeout is left zero on purpose: hesape defaults it to the Lease, which is
+// the deadline this contract has always given a handler.
+func (o WorkerOptions) hesape() hqueue.WorkerOptions {
+	return hqueue.WorkerOptions{
+		Queue:       o.Queue,
+		Concurrency: o.Concurrency,
+		Lease:       o.Lease,
+		Sleep:       o.Poll,
+		MaxTries:    o.MaxAttempts,
+		Recorder:    o.Recorder,
+		Backoff:     o.Backoff,
 	}
-	if o.Concurrency <= 0 {
-		o.Concurrency = 4
-	}
-	if o.Lease <= 0 {
-		o.Lease = 5 * time.Minute
-	}
-	if o.Poll <= 0 {
-		o.Poll = time.Second
-	}
-	if o.MaxAttempts <= 0 {
-		o.MaxAttempts = 5
-	}
-	if o.Backoff == nil {
-		o.Backoff = ExponentialBackoff
-	}
-	return o
 }
 
 // ExponentialBackoff doubles the wait each attempt, capped at an hour.
 //
 // Capped, because unbounded doubling means the eleventh attempt is next year --
 // and a job nobody will ever see fail is worse than one that parks.
-func ExponentialBackoff(attempt int) time.Duration {
-	if attempt < 1 {
-		attempt = 1
-	}
-	if attempt > 12 {
-		return time.Hour
-	}
-	wait := time.Duration(math.Pow(2, float64(attempt))) * time.Second
-	if wait > time.Hour {
-		return time.Hour
-	}
-	return wait
-}
+//
+// A wrapper and not an alias: a plain function has no alias form in Go.
+func ExponentialBackoff(attempt int) time.Duration { return hqueue.ExponentialBackoff(attempt) }
 
 // Worker runs jobs off a queue.
 //
 // In the same binary as the application, started by `aru work`, which is the
 // same image with a different argument. Not a second artifact: one image is what
 // keeps the deploy story in doc 17 true.
+//
+// It is an envelope over hesape/queue.Worker because the design diverged in
+// three ways at once: the loop is called Daemon there and answers with an exit
+// status a supervisor reads, a handler takes a *jobs.Job so it can settle its
+// own job, and the queue underneath is asked eleven questions rather than eight.
+// The three translations are here and nothing else is.
 type Worker struct {
-	queue    Queue
-	handlers map[string]Handler
-	opts     WorkerOptions
+	inner *hqueue.Worker
 }
 
 // NewWorker returns the worker.
 func NewWorker(q Queue, opts WorkerOptions) *Worker {
-	return &Worker{queue: q, handlers: map[string]Handler{}, opts: opts.withDefaults()}
+	return &Worker{inner: hqueue.NewWorker(&queueAdapter{queue: q}, opts.hesape())}
 }
 
 // Handle registers the handler for a job name.
@@ -106,10 +117,7 @@ func NewWorker(q Queue, opts WorkerOptions) *Worker {
 // an import nobody meant to add, and finding out at boot beats finding out from
 // work that silently went to the wrong place.
 func (w *Worker) Handle(name string, h Handler) *Worker {
-	if _, taken := w.handlers[name]; taken {
-		panic("jobs: " + name + " already has a handler")
-	}
-	w.handlers[name] = h
+	w.inner.Handle(name, handlerAdapter{handler: h})
 	return w
 }
 
@@ -117,160 +125,177 @@ func (w *Worker) Handle(name string, h Handler) *Worker {
 func (w *Worker) HandleFunc(name string, f HandlerFunc) *Worker { return w.Handle(name, f) }
 
 // Names returns the registered job names, for `aru work` to print at start.
-func (w *Worker) Names() []string {
-	out := make([]string, 0, len(w.handlers))
-	for name := range w.handlers {
-		out = append(out, name)
-	}
-	return out
-}
+func (w *Worker) Names() []string { return w.inner.Names() }
 
 // Run drains the queue until the context is cancelled.
-func (w *Worker) Run(ctx context.Context) error {
-	log := observability.Log(ctx).With("component", "worker", "queue", w.opts.Queue)
-	log.Info("worker started", "concurrency", w.opts.Concurrency, "handlers", len(w.handlers))
-
-	for {
-		if ctx.Err() != nil {
-			return nil
-		}
-
-		reserved, err := w.queue.Reserve(ctx, w.opts.Queue, w.opts.Concurrency, w.opts.Lease)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return nil
-			}
-			// A failed reserve is not fatal: the store blinked, and the next
-			// poll tries again. Stopping the worker would turn a hiccup into a
-			// backlog nobody is draining.
-			log.Warn("reserving jobs failed", "error", err)
-			if !w.wait(ctx) {
-				return nil
-			}
-			continue
-		}
-
-		if len(reserved) == 0 {
-			if !w.wait(ctx) {
-				return nil
-			}
-			continue
-		}
-
-		// The batch runs in parallel, because the lease was taken for all of it
-		// at once.
-		//
-		// It used to run serially, which made Concurrency a lie in the one way
-		// that costs data: Reserve hid all n jobs for the same Lease, so with
-		// Concurrency 4, Lease 5m and a two-minute handler, the fourth job
-		// started at minute six -- past its own lease, already visible to
-		// another worker, and running in both. At-least-once turned into
-		// exactly-twice for the tail of every batch. Found by audit.
-		//
-		// The batch is sized by Concurrency, so running all of it at once is
-		// exactly Concurrency jobs in flight, not Concurrency squared.
-		var wg sync.WaitGroup
-		for _, j := range reserved {
-			if ctx.Err() != nil {
-				break
-			}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				w.runOne(ctx, j)
-			}()
-		}
-		wg.Wait()
-	}
-}
-
-func (w *Worker) wait(ctx context.Context) bool {
-	select {
-	case <-ctx.Done():
-		return false
-	case <-time.After(w.opts.Poll):
-		return true
-	}
-}
-
-// runOne executes a job, instrumented when there is somewhere to send it.
 //
-// That is the point of instrumenting it: "the nightly job is slow" is the same
-// investigation as "the page is slow", and it deserves the same page.
-func (w *Worker) runOne(ctx context.Context, j Job) {
-	handler, known := w.handlers[j.Name]
-	if !known {
-		// An unknown name is not a failure to retry: no amount of retrying will
-		// register the handler. It parks immediately, where it can be seen.
-		err := fmt.Errorf("no handler registered for %s", j.Name)
-		observability.Log(ctx).Error("job has no handler", "job", j.Name, "id", j.ID)
-		_ = w.queue.Fail(ctx, j, err, time.Time{}, true)
-		return
+// Renamed on the way to hesape: it is Worker.Daemon there, after Illuminate's
+// daemon(), and it answers with the exit status a process supervisor reads. This
+// contract has no place to put a status -- a cancelled context is the only way
+// it ever ended -- so the status is dropped and the error is passed through.
+func (w *Worker) Run(ctx context.Context) error {
+	_, err := w.inner.Daemon(ctx)
+	return err
+}
+
+// handlerAdapter presents a Handler as a hesape/queue.Handler.
+//
+// One rename of the argument: a job is a *jobs.Job there, because a handler on
+// that side may release or park its own job. On this side the Queue settles it,
+// so the pointer is unwrapped and the settlement is left to the worker.
+type handlerAdapter struct{ handler Handler }
+
+var _ hqueue.Handler = handlerAdapter{}
+
+func (a handlerAdapter) Handle(ctx context.Context, g security.Grant, j *hjobs.Job) error {
+	return a.handler.Handle(ctx, g, jobFrom(j))
+}
+
+// errNotInTheOldContract is what the adapter answers for the two questions
+// hesape/queue.Queue asks that this package's Queue never did.
+//
+// Neither is reachable through this bridge: the only thing holding an adapter
+// is the Worker, and a worker asks a queue to pop, release, delete and fail.
+// Answering with an error rather than a wrong number is what keeps a driver
+// from looking like it supports something it does not.
+var errNotInTheOldContract = errors.New("jobs: the framework's Queue contract has no counterpart for this; import github.com/arandu-io/hesape/queue and use a driver written against it")
+
+// queueAdapter presents a Queue as a hesape/queue.Queue, and as the driver
+// behind every job it hands out.
+//
+// It is the whole of the rename between the two contracts, and the settlement
+// half is the part worth reading: hesape's worker calls Release, Delete and Fail
+// on the job, and each one lands on exactly the call the old worker made --
+// Fail(retryAt, park=false), Ack and Fail(park=true) -- so a driver sees the
+// same three statements in the same three situations it always did.
+type queueAdapter struct{ queue Queue }
+
+var (
+	_ hqueue.Queue = (*queueAdapter)(nil)
+	_ hjobs.Driver = (*queueAdapter)(nil)
+)
+
+// Push adds a job to the queue named on it.
+func (a *queueAdapter) Push(ctx context.Context, g security.Grant, j hjobs.Job) error {
+	return a.queue.Push(ctx, g, jobFrom(&j))
+}
+
+// PushOn adds a job to a named queue, ignoring the one on the job.
+func (a *queueAdapter) PushOn(ctx context.Context, g security.Grant, queue string, j hjobs.Job) error {
+	j.Queue = queue
+	return a.Push(ctx, g, j)
+}
+
+// Later adds a job that becomes eligible after delay.
+func (a *queueAdapter) Later(ctx context.Context, g security.Grant, delay time.Duration, j hjobs.Job) error {
+	j.RunAt = time.Now().UTC().Add(delay)
+	return a.Push(ctx, g, j)
+}
+
+// Bulk adds many jobs. One push each: the old contract has no batch, and a
+// driver that can do it in one round trip is one written against hesape.
+func (a *queueAdapter) Bulk(ctx context.Context, g security.Grant, js []hjobs.Job) error {
+	for _, j := range js {
+		if err := a.Push(ctx, g, j); err != nil {
+			return err
+		}
 	}
+	return nil
+}
 
-	jobCtx, cancel := context.WithTimeout(ctx, w.opts.Lease)
-	defer cancel()
-
-	// Only when a recorder is wired. See WorkerOptions.Recorder.
-	var col *observability.Collector
-	if w.opts.Recorder != nil {
-		col = observability.NewCollector(j.ID)
-		jobCtx = observability.WithCollector(jobCtx, col)
-	}
-	log := observability.Log(jobCtx).With("job", j.Name, "job_id", j.ID, "tenant", j.TenantID)
-	jobCtx = observability.WithLogger(jobCtx, log)
-
-	start := time.Now()
-	err := handler.Handle(jobCtx, GrantFor(j), j)
-	duration := time.Since(start)
-
-	if col != nil {
-		// Method and Path name the job rather than a route, so the console list
-		// reads "job invoice.send" next to "GET /invoices".
-		w.opts.Recorder.Record(observability.Recorded{
-			RequestID: j.ID,
-			Method:    "job",
-			Path:      j.Name,
-			Duration:  duration,
-			At:        start,
-			Collector: col,
-		})
-	}
-
+// Pop takes up to n jobs off a queue and hides them for the lease.
+//
+// Renamed on the way to hesape: it is Reserve here. Each job comes back
+// attached to this adapter, which is what lets hesape's worker settle it
+// through the eight-method contract underneath.
+func (a *queueAdapter) Pop(ctx context.Context, queue string, n int, lease time.Duration) ([]*hjobs.Job, error) {
+	reserved, err := a.queue.Reserve(ctx, queue, n, lease)
 	if err != nil {
-		// Attempts already counts this delivery -- Reserve incremented it. Adding
-		// one here counted it twice, so MaxAttempts of N delivered N-1 times and
-		// MaxAttempts of 2 parked on the first failure with no retry at all.
-		// Found by audit; the in-memory queue used by the worker tests did not
-		// increment, which is why it never showed up here.
-		attempts := j.Attempts
-		if attempts < 1 {
-			attempts = 1
-		}
-		park := attempts >= w.opts.MaxAttempts
-		retryAt := time.Now().Add(w.opts.Backoff(attempts))
-
-		if failErr := w.queue.Fail(ctx, j, err, retryAt, park); failErr != nil {
-			log.Error("recording the failure failed", "error", failErr)
-		}
-		if park {
-			log.Error("job parked after repeated failures", "attempts", attempts, "error", err)
-		} else {
-			log.Warn("job failed", "attempt", attempts, "retry_in", w.opts.Backoff(attempts), "error", err)
-		}
-		return
+		return nil, err
 	}
-
-	if err := w.queue.Ack(ctx, j); err != nil {
-		// The work is done and the acknowledgement failed, so the job runs
-		// again when the lease expires. That is at-least-once behaving as
-		// documented, and why a handler has to tolerate running twice.
-		log.Error("acknowledging the job failed; it will run again", "error", err)
-		return
+	out := make([]*hjobs.Job, 0, len(reserved))
+	for _, j := range reserved {
+		out = append(out, hjobs.Popped(a, "", j.hesape()))
 	}
+	return out, nil
+}
 
-	log.Info("job done",
-		"duration_ms", duration.Milliseconds(),
-		"queries", col.QueryCount(),
-		"sql_ms", col.QueryTime().Milliseconds())
+// Size is how many jobs the queue holds, waiting or in flight.
+//
+// The old contract has no such question: Pending counts what is waiting, and a
+// reserved job is running. Answering with that number would report a drained
+// queue as empty while a worker still held work.
+func (a *queueAdapter) Size(context.Context, string) (int, error) {
+	return 0, errNotInTheOldContract
+}
+
+// PendingSize is how many jobs are waiting. Renamed on the way to hesape: it is
+// Pending here.
+func (a *queueAdapter) PendingSize(ctx context.Context, queue string) (int, error) {
+	return a.queue.Pending(ctx, queue)
+}
+
+// CreationTimeOfOldestPendingJob is when the oldest waiting job became
+// eligible, or the zero time when nothing is waiting.
+//
+// The old contract answers the same question the other way round -- Oldest is
+// how long it has been waiting -- so this subtracts. A duration of zero means
+// nothing is waiting there, including the case of a job scheduled for the
+// future, and the zero time is how that is said here.
+func (a *queueAdapter) CreationTimeOfOldestPendingJob(ctx context.Context, queue string) (time.Time, error) {
+	waited, err := a.queue.Oldest(ctx, queue)
+	if err != nil || waited <= 0 {
+		return time.Time{}, err
+	}
+	return time.Now().Add(-waited), nil
+}
+
+// Clear removes every job on a queue. The old contract has no counterpart, and
+// deleting rows one at a time through Ack is not the same operation.
+func (a *queueAdapter) Clear(context.Context, string) (int, error) {
+	return 0, errNotInTheOldContract
+}
+
+// Failed lists the jobs that gave up. Renamed on the way to hesape: it is
+// Parked here.
+func (a *queueAdapter) Failed(ctx context.Context, limit int) ([]hjobs.Job, error) {
+	parked, err := a.queue.Parked(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]hjobs.Job, 0, len(parked))
+	for _, j := range parked {
+		out = append(out, j.hesape())
+	}
+	return out, nil
+}
+
+// Retry puts a failed job back in line with its attempts reset.
+func (a *queueAdapter) Retry(ctx context.Context, uuid string) error {
+	return a.queue.Retry(ctx, uuid)
+}
+
+// ReleaseJob puts the job back on its queue, eligible again after delay.
+//
+// It is the old Fail with park false, which is the statement the old worker
+// made after a failure that had attempts left. The cause is read back off the
+// job because hesape records it there before releasing, and the old contract
+// takes it as an argument.
+func (a *queueAdapter) ReleaseJob(ctx context.Context, j *hjobs.Job, delay time.Duration) error {
+	var cause error
+	if j.LastError != "" {
+		cause = errors.New(j.LastError)
+	}
+	return a.queue.Fail(ctx, jobFrom(j), cause, time.Now().Add(delay), false)
+}
+
+// DeleteJob removes a finished job. It is the old Ack.
+func (a *queueAdapter) DeleteJob(ctx context.Context, j *hjobs.Job) error {
+	return a.queue.Ack(ctx, jobFrom(j))
+}
+
+// FailJob parks the job. It is the old Fail with park true, and a zero retryAt
+// because a parked job has no next delivery to schedule.
+func (a *queueAdapter) FailJob(ctx context.Context, j *hjobs.Job, cause error) error {
+	return a.queue.Fail(ctx, jobFrom(j), cause, time.Time{}, true)
 }
