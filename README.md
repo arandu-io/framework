@@ -27,7 +27,7 @@ to break.**
 - [Authorization that cannot be skipped](https://pkg.go.dev/github.com/arandu-io/framework/security) — every repository signature takes a `Grant`, and a `Grant` comes from a policy. Reaching the database without one does not compile
 - [Data access scoped by tenant](https://pkg.go.dev/github.com/arandu-io/framework/data) — the tenant is read from the `Grant`, never from what the caller sent, so one customer cannot name another's rows
 - [Typed views, compiled](https://pkg.go.dev/github.com/arandu-io/framework/view) — templates become Go, and a typo in a field name is a build error at the line you wrote, not a blank space in production
-- [Routing](https://pkg.go.dev/github.com/arandu-io/framework/httpx) — resources, named routes and URL generation over `net/http`
+- [Routing](https://pkg.go.dev/github.com/arandu-io/framework/http) — resources, named routes and URL generation over `net/http`
 - [Diagnosis as a feature](https://pkg.go.dev/github.com/arandu-io/framework/observability) — a console, a request timeline and an N+1 detector in the core, allocating nothing when it is off
 - [Background work](https://pkg.go.dev/github.com/arandu-io/framework/jobs) — jobs, a [scheduler](https://pkg.go.dev/github.com/arandu-io/framework/scheduler) that holds a lock per replica, and [events](https://pkg.go.dev/github.com/arandu-io/framework/events) written to an outbox in the same transaction as the row that caused them
 

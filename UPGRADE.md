@@ -19,6 +19,77 @@ here fails the build.
 
 ---
 
+## Unreleased — the components move out, and `httpx` becomes `http`
+
+Three changes, and the first two are import paths rather than behaviour. Nothing
+in this section renames an exported identifier: `Grant`, `Context`, `Router`,
+`Module`, `Migration` and the rest answer to what they always did.
+
+### `httpx` is `http`
+
+Every import of `github.com/arandu-io/framework/httpx` becomes
+`github.com/arandu-io/framework/http`, and `httpx/middleware` moves with it. The
+`x` was never a convention — it marked that `net/http` had the word first, and
+Illuminate calls the component `Http` (ADR 0047).
+
+A file that imports both aliases **ours**, so `http` goes on meaning `net/http`
+as it does in every other Go file:
+
+```go
+import (
+	"net/http"
+
+	fhttp "github.com/arandu-io/framework/http"
+)
+
+func (c *InvoiceController) Index(ctx *fhttp.Context) error
+```
+
+A file that does not import `net/http` needs no alias and reads `http.Context`,
+which is what a Laravel developer types.
+
+No shim is left behind. `framework/httpx` does not exist, and an import of it
+fails to resolve rather than compiling against something stale.
+
+### `kernel` is `foundation`, and `Kernel` is `Application`
+
+`Illuminate\Foundation` is not a published package — of the 37 `illuminate/*`
+that `laravel/framework` declares, none is Foundation, because it ships only
+inside the framework. Ours now says so: `kernel.Kernel` is
+`foundation.Application` (ADR 0049).
+
+`framework/kernel` still works. It is a bridge, and it is removed in v1.0.0 —
+every method keeps its name and signature, so the change is the import path and
+the type name:
+
+```go
+app := foundation.New(cfg)   // was kernel.New(cfg), and still is
+```
+
+Two symbols did not survive the move, and neither was reachable from an
+application: `Locker` moved down into `foundation` under the same name, and
+`FormatRoutes` now calls through to `hesape/routing`.
+
+### The components are their own module
+
+`github.com/arandu-io/hesape` is now a `require` of this one. Nothing in your
+code has to import it: every package you already use is still here, as a thin
+bridge over the one that answers for it, and every bridge names its replacement
+and the release it disappears in.
+
+Where a name changed on the way down, the bridge translates rather than exposing
+the new one — `security.SessionStore` still has `Load`, `Rotate`, `Destroy` and
+`IDFromRequest`, though `hesape/session` calls them `All`, `Regenerate`,
+`Invalidate` and `ID`.
+
+One signature could not be preserved:
+
+| was | is | what to do |
+|---|---|---|
+| `subject.PasswordConfirmedWithin(d)` | `security.PasswordConfirmedWithin(subject, d)` | It was a method on `Subject`, and `Subject` is now an alias for `auth.Subject` — Go forbids declaring a method on another package's type |
+
+---
+
 ## v0.13.3 — everything published so far
 
 The entries below were measured, not remembered: `apidiff` between `v0.1.0` and
