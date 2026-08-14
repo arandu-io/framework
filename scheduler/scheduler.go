@@ -1,16 +1,20 @@
-// Package scheduler runs the tasks modules declare.
+// The scheduler, answered by github.com/arandu-io/hesape/console/scheduling.
 //
-// A scheduler built on a system cron exists because the runtime has no resident
-// process: cron calls a command every minute and the command decides what to
-// run. That is two artifacts and a dependency on the operating system.
+// The Scheduler is an envelope and not an alias, because the two designs meet a
+// task from opposite ends. There, a schedule is declared through Schedule.Call
+// and carried as an Event with its frequency, its filters and its mutex on it;
+// here, a module declares a kernel.Task and the kernel collects it. The task
+// carries three things an Event has no field for -- a Timeout, an
+// observability.Recorder and a kernel.Locker -- and every one of the thirteen
+// repositories is written against that shape.
 //
-// Go has a resident process. The scheduler is a goroutine in the same binary,
-// which is also what keeps the deploy story of doc 17 true: one image, no
-// crontab to configure, nothing to forget when a machine is replaced.
-//
-// What it does not do is retry. A task that fails is logged and diagnosed, and
-// the next window runs it again; work that needs its own retry budget enqueues a
-// job, and the queue owns the retry. Scheduler fires, queue persists.
+// So the envelope declares one hesape CallbackEvent per kernel.Task and hands
+// the run back. What crosses over is everything that is a schedule: which events
+// are due in a minute, the expansion of a per-tenant event to one run per
+// tenant, and the Grant each run carries. What stays is what belongs to the
+// framework: the lock, the timeout, the Collector and the bookkeeping that
+// `aru schedule:list` and the error page read.
+
 package scheduler
 
 import (
@@ -25,6 +29,8 @@ import (
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/console/events"
+	"github.com/arandu-io/hesape/console/scheduling"
 )
 
 // Tenants returns the tenants a PerTenant task expands to.
@@ -32,13 +38,21 @@ import (
 // Injected, because the core does not know where the application keeps its
 // tenants -- a table, a config file, a control plane. Returning an empty list
 // is valid and means the task simply does not run.
-type Tenants func(ctx context.Context) ([]string, error)
+//
+// An alias: the hesape type has the same name and the same shape, so a resolver
+// written against either name satisfies both.
+type Tenants = scheduling.Tenants
 
 // Options configures the scheduler.
 type Options struct {
 	// Locker makes a Singleton task run on exactly one replica. Nil means a
 	// single replica, and with more than one it means every replica runs
 	// everything.
+	//
+	// It stays a kernel.Locker. hesape claims a window through a
+	// SchedulingMutex, which marks the window and never releases it, where this
+	// one wraps the run and releases at the end -- a lock that cannot be
+	// expressed as the other, and github.com/arandu-io/kv implements this one.
 	Locker kernel.Locker
 	// Tenants expands PerTenant tasks. Nil means those tasks do not run, which
 	// is reported rather than silent.
@@ -50,17 +64,18 @@ type Options struct {
 	//
 	// Nil means no instrumentation, and that is what production looks like: no
 	// Collector is built and every Record method is a no-op on a nil receiver.
-	// It used to build one on every run and throw it away, so production paid
-	// for recording and the console the doc promised never showed a task. Found
-	// by audit. Pass kernel.Recorder() to turn it on.
+	// Pass kernel.Recorder() to turn it on.
 	Recorder *observability.Recorder
 }
 
-// entry is one task with its parsed schedule.
+// entry is one task with the hesape event that fires it.
 type entry struct {
-	task     kernel.Task
-	schedule Schedule
+	task  kernel.Task
+	cron  Schedule
+	event *scheduling.Event
 	// lastRun and lastError are what Diagnose and `aru schedule:list` report.
+	// hesape reports a run through its four scheduler events, which carry no
+	// place to keep this.
 	mu        sync.Mutex
 	lastRun   time.Time
 	lastError string
@@ -68,8 +83,9 @@ type entry struct {
 
 // Scheduler fires tasks on their schedule.
 type Scheduler struct {
-	entries []*entry
-	opts    Options
+	entries  []*entry
+	schedule *scheduling.Schedule
+	opts     Options
 	// stop cancels the loop, and done closes when it has stopped.
 	stop context.CancelFunc
 	done chan struct{}
@@ -100,21 +116,46 @@ func New(tasks []kernel.Task, opts Options) (*Scheduler, error) {
 		if t.Run == nil {
 			return nil, fmt.Errorf("scheduler: %s has no Run", t.ID)
 		}
-		schedule, err := Parse(t.Spec)
+		cron, err := Parse(t.Spec)
 		if err != nil {
 			return nil, fmt.Errorf("scheduler: %s: %w", t.ID, err)
 		}
 		if t.Timeout <= 0 {
 			t.Timeout = 5 * time.Minute
 		}
-		entries = append(entries, &entry{task: t, schedule: schedule})
+		entries = append(entries, &entry{task: t, cron: cron})
 	}
 
 	sort.Slice(entries, func(i, j int) bool { return entries[i].task.ID < entries[j].task.ID })
-	return &Scheduler{entries: entries, opts: opts}, nil
+
+	s := &Scheduler{entries: entries, opts: opts}
+
+	// Both mutexes are nil. Overlap and one-server are attributes of a hesape
+	// Event and not of a kernel.Task, and nothing here sets either, so neither
+	// mutex is ever asked. The singleton lock is Options.Locker instead.
+	s.schedule = scheduling.NewSchedule(nil, nil, nil)
+	s.schedule.Tenants = opts.Tenants
+
+	for _, e := range entries {
+		event := s.schedule.Call(s.work(e))
+		event.Name(e.task.ID)
+		event.Cron(e.task.Spec)
+		event.Action(e.task.Action)
+		if e.task.Scope == kernel.PerTenant {
+			event.PerTenant()
+		}
+		e.event = event.Event
+	}
+
+	return s, nil
 }
 
 // Start runs the loop until Stop.
+//
+// The loop stays here rather than delegating to scheduling.Module, which has one
+// of its own: that loop calls the runner with a context of its own making, and
+// the window a task's lock is named after has to reach the run. It is also a
+// module answering hesape's contract, not the kernel's.
 func (s *Scheduler) Start(ctx context.Context) {
 	loop, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	s.stop = cancel
@@ -172,13 +213,15 @@ func (s *Scheduler) run(ctx context.Context) {
 // Exported because `aru schedule:run` and the tests drive the same code path
 // the loop drives. A second entry point that "runs a task manually" would be a
 // second implementation, and the manual one always ends up subtly different.
+//
+// What is due, and what a per-tenant task expands to, is decided by
+// scheduling.Runner.
 func (s *Scheduler) Tick(ctx context.Context, at time.Time) {
-	for _, e := range s.entries {
-		if !e.schedule.Matches(at) {
-			continue
-		}
-		s.fire(ctx, e, at)
-	}
+	runner := scheduling.NewRunner(s.schedule)
+	runner.Now = s.opts.Now
+	runner.Listen = s.report(ctx)
+
+	runner.Run(withWindow(ctx, at), at)
 }
 
 // RunNow runs one task by id, outside its schedule.
@@ -194,46 +237,50 @@ func (s *Scheduler) RunNow(ctx context.Context, id, tenant string) error {
 			return fmt.Errorf("%s runs per tenant: say which one with --tenant", id)
 		}
 		if e.task.Scope == kernel.PerTenant {
-			return s.runOne(ctx, e, tenant, s.opts.Now())
+			e.event.Tenant(tenant)
 		}
-		return s.runOne(ctx, e, "", s.opts.Now())
+		return e.event.Run(withWindow(ctx, s.opts.Now()))
 	}
 	return fmt.Errorf("no task with id %s. `aru schedule:list` shows the registered ones", id)
 }
 
-// fire expands the scope and runs.
-func (s *Scheduler) fire(ctx context.Context, e *entry, at time.Time) {
-	log := observability.Log(ctx).With("component", "scheduler", "task", e.task.ID)
-
-	if e.task.Scope == kernel.Global {
-		if err := s.runOne(ctx, e, "", at); err != nil {
-			log.Error("task failed", "error", err)
+// report logs what the runner refuses to run.
+//
+// It is the outer half of the two lines a failure used to produce: the one that
+// says a task failed, next to the detailed one execute writes with the duration
+// and the query count. It is also the only report of the two failures the run
+// never reaches -- a per-tenant task with no resolver, and a resolver that
+// failed -- which hesape hands over as a ScheduledTaskFailed.
+func (s *Scheduler) report(ctx context.Context) scheduling.Listener {
+	return func(event any) {
+		failed, ok := event.(events.ScheduledTaskFailed)
+		if !ok {
+			return
 		}
-		return
-	}
 
-	if s.opts.Tenants == nil {
-		// Reported rather than skipped in silence: a per-tenant task with no
-		// resolver never runs, and that is the kind of thing found months later.
-		log.Error("this task runs per tenant and no tenant resolver was wired; it will never run")
-		return
-	}
-
-	tenants, err := s.opts.Tenants(ctx)
-	if err != nil {
-		log.Error("listing the tenants failed", "error", err)
-		return
-	}
-	for _, tenant := range tenants {
-		if err := s.runOne(ctx, e, tenant, at); err != nil {
-			log.Error("task failed", "tenant", tenant, "error", err)
+		log := observability.Log(ctx).With("component", "scheduler", "task", failed.Task.GetSummaryForDisplay())
+		if task, ok := failed.Task.(*scheduling.Event); ok {
+			if tenant := task.Grant().Subject().Tenant; tenant != "" {
+				log = log.With("tenant", tenant)
+			}
 		}
+		log.Error("task failed", "error", failed.Exception)
 	}
 }
 
-// runOne executes a task under its lock, its Grant and its own Collector.
-func (s *Scheduler) runOne(ctx context.Context, e *entry, tenant string, at time.Time) error {
-	work := func(ctx context.Context) error { return s.execute(ctx, e, tenant, at) }
+// work is what the hesape event calls. The Grant is built by hesape, from the
+// event's action and the tenant it was expanded for, and it is the same value
+// security.SystemGrant returns: security.Grant is an alias for auth.Grant, so
+// the callback the framework writes is a scheduling.Callback without conversion.
+func (s *Scheduler) work(e *entry) scheduling.Callback {
+	return func(ctx context.Context, g security.Grant) error {
+		return s.runOne(ctx, e, g, s.window(ctx))
+	}
+}
+
+// runOne executes a task under its lock.
+func (s *Scheduler) runOne(ctx context.Context, e *entry, g security.Grant, at time.Time) error {
+	work := func(ctx context.Context) error { return s.execute(ctx, e, g, at) }
 
 	if !e.task.Singleton || s.opts.Locker == nil {
 		return work(ctx)
@@ -243,7 +290,7 @@ func (s *Scheduler) runOne(ctx context.Context, e *entry, tenant string, at time
 	// contend for the same lock -- and the TTL is the timeout, so a replica
 	// that dies holding it releases at the same moment the run would have been
 	// abandoned anyway.
-	name := fmt.Sprintf("sched:%s:%s:%d", tenant, e.task.ID, at.Truncate(time.Minute).Unix())
+	name := fmt.Sprintf("sched:%s:%s:%d", g.Subject().Tenant, e.task.ID, at.Truncate(time.Minute).Unix())
 
 	err := s.opts.Locker.Run(ctx, name, e.task.Timeout, work)
 	if err != nil && isLocked(err) {
@@ -262,8 +309,10 @@ func isLocked(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "lock is held")
 }
 
-// execute is the run itself: Grant, Collector, timeout, log.
-func (s *Scheduler) execute(ctx context.Context, e *entry, tenant string, at time.Time) error {
+// execute is the run itself: timeout, Collector, log.
+func (s *Scheduler) execute(ctx context.Context, e *entry, g security.Grant, at time.Time) error {
+	// The timeout is the framework's: a hesape Event has no field for one, and
+	// a scheduled run with no bound is a run that holds its lock until the TTL.
 	runCtx, cancel := context.WithTimeout(ctx, e.task.Timeout)
 	defer cancel()
 
@@ -279,13 +328,8 @@ func (s *Scheduler) execute(ctx context.Context, e *entry, tenant string, at tim
 		runCtx = observability.WithCollector(runCtx, col)
 	}
 
-	log := observability.Log(runCtx).With("component", "scheduler", "task", e.task.ID, "tenant", tenant)
+	log := observability.Log(runCtx).With("component", "scheduler", "task", e.task.ID, "tenant", g.Subject().Tenant)
 	runCtx = observability.WithLogger(runCtx, log)
-
-	// The Grant is built from the task's action and the tenant, so a task
-	// reaches repositories the same way a service does. There is no
-	// unauthorized path into the database from the scheduler either.
-	g := security.SystemGrant(e.task.Action, tenant)
 
 	start := time.Now()
 	err := e.task.Run(runCtx, g)
@@ -327,6 +371,28 @@ func (s *Scheduler) execute(ctx context.Context, e *entry, tenant string, at tim
 	return nil
 }
 
+// windowKey is how the minute being fired reaches the run.
+//
+// It travels in the context because the call between them is hesape's: the
+// runner decides what is due and expands it, and hands the callback nothing but
+// a context and a Grant. The lock is named after the window, so the window has
+// to arrive.
+type windowKey struct{}
+
+// withWindow marks the context with the minute being fired.
+func withWindow(ctx context.Context, at time.Time) context.Context {
+	return context.WithValue(ctx, windowKey{}, at)
+}
+
+// window reads the minute being fired, and falls back to the clock for a run
+// that reached the callback some other way.
+func (s *Scheduler) window(ctx context.Context) time.Time {
+	if at, ok := ctx.Value(windowKey{}).(time.Time); ok {
+		return at
+	}
+	return s.opts.Now()
+}
+
 // Registered is one task, as `aru schedule:list` prints it.
 type Registered struct {
 	ID        string
@@ -355,11 +421,11 @@ func (s *Scheduler) List() []Registered {
 		}
 		out = append(out, Registered{
 			ID:        e.task.ID,
-			Spec:      e.schedule.String(),
+			Spec:      e.cron.String(),
 			Scope:     scope,
 			Singleton: e.task.Singleton,
 			Timeout:   e.task.Timeout,
-			Next:      e.schedule.Next(now),
+			Next:      e.cron.Next(now),
 			LastRun:   lastRun,
 			LastError: lastError,
 		})
@@ -391,11 +457,11 @@ func (s *Scheduler) Diagnose(ctx context.Context) []string {
 
 		// Two windows late means something is wrong -- the loop stopped, or a
 		// lock is held by a replica that died.
-		expected := e.schedule.Next(lastRun)
+		expected := e.cron.Next(lastRun)
 		if expected.IsZero() {
 			continue
 		}
-		if second := e.schedule.Next(expected); !second.IsZero() && now.After(second) {
+		if second := e.cron.Next(expected); !second.IsZero() && now.After(second) {
 			out = append(out, fmt.Sprintf(
 				"The scheduled task %s last ran %s and was due at %s. Is the scheduler running?",
 				e.task.ID, lastRun.Format(time.RFC3339), expected.Format(time.RFC3339)))

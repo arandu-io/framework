@@ -1,3 +1,12 @@
+// What the bridge is tested for: that the old name reaches the new behaviour.
+//
+// The cron expression itself is tested in
+// github.com/arandu-io/hesape/console/scheduling, against the code that now
+// parses it, and so are the Grant a callback receives and the expansion of a
+// per-tenant event. What is here is the crossing: that a kernel.Task becomes an
+// event hesape fires, that the window reaches the lock, and that the two renamed
+// cron methods still answer.
+
 package scheduler_test
 
 import (
@@ -13,6 +22,14 @@ import (
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/scheduler"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/console/scheduling"
+)
+
+// Tenants is an alias, so a resolver written against either name satisfies both.
+// The assignment in both directions is the whole proof.
+var (
+	_ scheduler.Tenants  = scheduling.Tenants(nil)
+	_ scheduling.Tenants = scheduler.Tenants(nil)
 )
 
 func at(spec string) time.Time {
@@ -23,105 +40,52 @@ func at(spec string) time.Time {
 	return t
 }
 
-func TestParseAcceptsWhatPeopleWrite(t *testing.T) {
-	for _, c := range []struct {
-		spec    string
-		matches string
-		misses  string
-	}{
-		{"* * * * *", "2026-08-03T13:47:00Z", ""},
-		{"0 3 * * *", "2026-08-03T03:00:00Z", "2026-08-03T04:00:00Z"},
-		{"30 * * * *", "2026-08-03T13:30:00Z", "2026-08-03T13:31:00Z"},
-		{"*/15 * * * *", "2026-08-03T13:45:00Z", "2026-08-03T13:44:00Z"},
-		{"0 9-17 * * *", "2026-08-03T09:00:00Z", "2026-08-03T18:00:00Z"},
-		{"0 0 1 * *", "2026-08-01T00:00:00Z", "2026-08-02T00:00:00Z"},
-		{"0 0 * * 1", "2026-08-03T00:00:00Z", "2026-08-04T00:00:00Z"}, // a Monday
-		{"0,30 * * * *", "2026-08-03T13:30:00Z", "2026-08-03T13:15:00Z"},
-		{"@daily", "2026-08-03T00:00:00Z", "2026-08-03T01:00:00Z"},
-		{"@hourly", "2026-08-03T13:00:00Z", "2026-08-03T13:01:00Z"},
-	} {
-		s, err := scheduler.Parse(c.spec)
+// TestTheCronEnvelopeAnswersWithTheHesapeExpression: Matches is IsDue and Next
+// is GetNextRunDate, and nothing in this package decides either.
+func TestTheCronEnvelopeAnswersWithTheHesapeExpression(t *testing.T) {
+	for _, spec := range []string{"* * * * *", "0 3 * * *", "*/15 * * * *", "0 0 1 * 1", "@daily"} {
+		bridged, err := scheduler.Parse(spec)
 		if err != nil {
-			t.Errorf("%q: %v", c.spec, err)
+			t.Errorf("%q: %v", spec, err)
 			continue
 		}
-		if !s.Matches(at(c.matches)) {
-			t.Errorf("%q does not match %s", c.spec, c.matches)
-		}
-		if c.misses != "" && s.Matches(at(c.misses)) {
-			t.Errorf("%q matches %s and should not", c.spec, c.misses)
-		}
-	}
-}
+		direct := scheduling.MustParseCronExpression(spec)
 
-// TestParseRefusesWhatWouldNeverFire: an unparseable spec caught at boot beats
-// a task that silently never runs, which is the failure mode of every scheduler
-// that validates lazily.
-func TestParseRefusesWhatWouldNeverFire(t *testing.T) {
-	for _, spec := range []string{
-		"",            // nothing
-		"* * * *",     // four fields
-		"* * * * * *", // six: seconds are deliberately not supported
-		"60 * * * *",  // minute out of range
-		"* 24 * * *",  // hour out of range
-		"* * * * 7",   // weekday out of range
-		"abc * * * *", // not a number
-		"5-1 * * * *", // counts backwards
-		"*/0 * * * *", // a step of zero is an infinite set
-		"@every 30s",  // the shorthand that would be a busy loop
-	} {
-		if _, err := scheduler.Parse(spec); err == nil {
-			t.Errorf("%q was accepted", spec)
+		if bridged.String() != direct.String() {
+			t.Errorf("%q: String = %q, hesape says %q", spec, bridged.String(), direct.String())
+		}
+		for _, when := range []string{
+			"2026-08-03T00:00:00Z", "2026-08-03T03:00:00Z",
+			"2026-08-03T13:45:00Z", "2026-08-04T00:00:00Z",
+		} {
+			if bridged.Matches(at(when)) != direct.IsDue(at(when)) {
+				t.Errorf("%q at %s: Matches disagrees with IsDue", spec, when)
+			}
+		}
+		if got, want := bridged.Next(at("2026-08-03T13:00:00Z")), direct.GetNextRunDate(at("2026-08-03T13:00:00Z")); !got.Equal(want) {
+			t.Errorf("%q: Next = %s, GetNextRunDate = %s", spec, got, want)
 		}
 	}
 }
 
-// TestTheErrorNamesTheField: "invalid cron" sends people to the wrong field of
-// five.
-func TestTheErrorNamesTheField(t *testing.T) {
-	_, err := scheduler.Parse("* 99 * * *")
-	if err == nil {
-		t.Fatal("an hour of 99 was accepted")
+// TestAnUnparseableSpecIsStillRefusedByTheOldNames: the error crosses the
+// bridge, and MustParse keeps the prefix of the package the caller wrote
+// against.
+func TestAnUnparseableSpecIsStillRefusedByTheOldNames(t *testing.T) {
+	if _, err := scheduler.Parse("@every 30s"); err == nil {
+		t.Fatal("the shorthand that would be a busy loop was accepted")
 	}
-	if !strings.Contains(err.Error(), "hour") {
-		t.Errorf("the error does not name the field: %v", err)
-	}
-}
 
-func TestNextFindsTheFollowingRun(t *testing.T) {
-	s := scheduler.MustParse("0 3 * * *")
-
-	next := s.Next(at("2026-08-03T13:00:00Z"))
-	if want := at("2026-08-04T03:00:00Z"); !next.Equal(want) {
-		t.Fatalf("next = %s, want %s", next, want)
-	}
-}
-
-// TestNextGivesUpOnASpecThatNeverFires: February 30th matches nothing, and
-// returning zero is what lets `aru schedule:list` say so instead of hanging.
-func TestNextGivesUpOnASpecThatNeverFires(t *testing.T) {
-	s := scheduler.MustParse("0 0 30 2 *")
-
-	if next := s.Next(at("2026-08-03T13:00:00Z")); !next.IsZero() {
-		t.Fatalf("next = %s, want the zero time", next)
-	}
-}
-
-// TestDayAndWeekdayAreOr matches Vixie cron: "0 0 1 * 1" is the first of the
-// month AND every Monday, not their intersection. It surprises people, and
-// matching the surprise beats being the one implementation that differs.
-func TestDayAndWeekdayAreOr(t *testing.T) {
-	s := scheduler.MustParse("0 0 1 * 1")
-
-	if !s.Matches(at("2026-08-01T00:00:00Z")) { // the first, a Saturday
-		t.Error("the first of the month did not match")
-	}
-	if !s.Matches(at("2026-08-03T00:00:00Z")) { // a Monday, not the first
-		t.Error("a Monday did not match")
-	}
-	if s.Matches(at("2026-08-04T00:00:00Z")) { // a Tuesday, not the first
-		t.Error("a Tuesday matched")
-	}
+	defer func() {
+		recovered, ok := recover().(string)
+		if !ok {
+			t.Fatal("MustParse did not panic on an unparseable spec")
+		}
+		if !strings.HasPrefix(recovered, "scheduler: ") {
+			t.Errorf("the panic reads %q, and names another package", recovered)
+		}
+	}()
+	scheduler.MustParse("not a cron")
 }
 
 // --- the scheduler itself ---
@@ -133,6 +97,9 @@ func task(id string, run func(context.Context, security.Grant) error) kernel.Tas
 	}
 }
 
+// TestATaskRunsUnderItsGrant: the Grant is built by hesape now, from the event's
+// action and the tenant it was expanded for, and it has to be the same value the
+// task used to receive.
 func TestATaskRunsUnderItsGrant(t *testing.T) {
 	var got security.Grant
 	tk := task("billing.close", func(_ context.Context, g security.Grant) error {
@@ -191,7 +158,8 @@ func TestAGlobalTaskCannotReachTenantData(t *testing.T) {
 }
 
 // TestAPerTenantTaskExpands: one lock and one Grant per tenant, which is what
-// keeps a task from reading across customers.
+// keeps a task from reading across customers. The expansion is hesape's; that
+// Options.Tenants still drives it is the bridge.
 func TestAPerTenantTaskExpands(t *testing.T) {
 	var mu sync.Mutex
 	var tenants []string
@@ -237,6 +205,10 @@ func TestAPerTenantTaskWithNoResolverDoesNotRunSilently(t *testing.T) {
 
 // TestOnlyOneReplicaRunsASingleton is what the lock is for: with N replicas, a
 // task scheduled every minute runs N times unless exactly one wins.
+//
+// The lock stays on this side of the bridge -- hesape claims a window through a
+// SchedulingMutex, which marks and never releases, and kernel.Locker wraps the
+// run -- so this is the test of the thing that did not move.
 func TestOnlyOneReplicaRunsASingleton(t *testing.T) {
 	var mu sync.Mutex
 	runs := 0
@@ -298,6 +270,11 @@ func TestANonSingletonRunsEverywhere(t *testing.T) {
 
 // TestTheLockIsPerWindow: two replicas a second apart still contend for the
 // same lock, and the next minute is a new one.
+//
+// It is also what proves the window survives the crossing. The runner calls the
+// callback with a context and a Grant and nothing else, so the minute being
+// fired travels in the context; if it did not arrive, every window would share
+// one lock and this would run once.
 func TestTheLockIsPerWindow(t *testing.T) {
 	var mu sync.Mutex
 	runs := 0
@@ -366,6 +343,22 @@ func TestRunNowUsesTheSamePath(t *testing.T) {
 	}
 	if err := s.RunNow(context.Background(), "nope", ""); err == nil {
 		t.Error("an unknown id ran")
+	}
+}
+
+// TestRunNowReportsWhatTheTaskFailedWith: the error has to come back out of
+// hesape's Event.Run, or `aru schedule:run` reports success on a task that
+// failed.
+func TestRunNowReportsWhatTheTaskFailedWith(t *testing.T) {
+	tk := task("billing.close", func(context.Context, security.Grant) error {
+		return errors.New("the ledger is locked")
+	})
+
+	s, _ := scheduler.New([]kernel.Task{tk}, scheduler.Options{})
+
+	err := s.RunNow(context.Background(), "billing.close", "")
+	if err == nil || !strings.Contains(err.Error(), "the ledger is locked") {
+		t.Fatalf("RunNow reported %v", err)
 	}
 }
 

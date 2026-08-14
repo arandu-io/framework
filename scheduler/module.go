@@ -1,3 +1,11 @@
+// The module contract, which is the framework's own.
+//
+// github.com/arandu-io/hesape/console/scheduling has a Module too, and this one
+// is not it: that one takes a *scheduling.Schedule and answers Boot, Start and
+// Close, where this one takes []kernel.Task and answers the kernel's five
+// optional interfaces, Diagnostic included. The tasks come from kernel.Tasks(),
+// so this side of the contract stays here.
+
 package scheduler
 
 import (
