@@ -1,25 +1,24 @@
+// The browser and the assertions, answered by
+// github.com/arandu-io/hesape/arandutest, and -- for the subject a test acts as
+// -- by github.com/arandu-io/hesape/auth.
+//
+// This is where the design diverged, so this is where the envelopes are. Every
+// assertion on Response was renamed to the Illuminate spelling on the way to
+// hesape, and thirteen modules call the old names, so Response keeps them and
+// forwards. Client is an envelope for one reason only: its Get and Post answer
+// that Response.
+
 package arandutest
 
 import (
 	"context"
-	"io"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/arandutest"
+	"github.com/arandu-io/hesape/auth"
 )
-
-// What a feature test repeats, and why it belongs here.
-//
-// Every application writes the same six things: send a request, follow a
-// redirect or not, keep the cookie, act as somebody, and assert about the HTML
-// that came back. Laravel calls that $this->get(), ->actingAs() and
-// ->assertSee(), and it is in the framework because a project that writes its
-// own writes it slightly differently -- and the one that matters, acting as a
-// subject, is the one most easily written wrong.
 
 // Client is a browser for a test: it keeps cookies and it does not follow
 // redirects.
@@ -28,26 +27,22 @@ import (
 // redirect cannot tell a 200 from a 302 that happened to land somewhere with the
 // same words on it, and "it redirected me to the sign-in screen" is the most
 // common way a feature test passes while proving the opposite of what it says.
+//
+// The jar, the CSRF token read off the last page, and the rule that a second
+// Set-Cookie of a name replaces the first all live in
+// hesape/arandutest.Client. This type holds nothing but that one.
 type Client struct {
-	t       *testing.T
-	handler http.Handler
-	cookies []*http.Cookie
-
-	// lastBody is the page this client loaded most recently, and the CSRF token
-	// is read out of it. It is a field and not a package variable: two clients
-	// in one test would otherwise post each other's tokens, and t.Parallel would
-	// make that a race rather than a wrong answer.
-	lastBody string
+	inner *arandutest.Client
 }
 
 // NewClient returns a client over a handler.
 func NewClient(t *testing.T, h http.Handler) *Client {
 	t.Helper()
-	return &Client{t: t, handler: h}
+	return &Client{inner: arandutest.NewClient(t, h)}
 }
 
 // Get sends a GET.
-func (c *Client) Get(path string) *Response { return c.do(http.MethodGet, path, nil, "") }
+func (c *Client) Get(path string) *Response { return &Response{inner: c.inner.Get(path)} }
 
 // Post sends a form.
 //
@@ -55,114 +50,44 @@ func (c *Client) Get(path string) *Response { return c.do(http.MethodGet, path, 
 // body, because that is what a browser does -- and a test that skips it is a
 // test that proves the form works with protection disabled.
 func (c *Client) Post(path string, form map[string]string) *Response {
-	values := make([]string, 0, len(form)+1)
-	if token := c.token(); token != "" {
-		values = append(values, "_csrf="+token)
-	}
-	for k, v := range form {
-		values = append(values, k+"="+strings.ReplaceAll(v, " ", "+"))
-	}
-	return c.do(http.MethodPost, path, strings.NewReader(strings.Join(values, "&")),
-		"application/x-www-form-urlencoded")
-}
-
-func (c *Client) token() string {
-	const marker = `name="_csrf" value="`
-	at := strings.Index(c.lastBody, marker)
-	if at < 0 {
-		return ""
-	}
-	rest := c.lastBody[at+len(marker):]
-	end := strings.IndexByte(rest, '"')
-	if end < 0 {
-		return ""
-	}
-	return rest[:end]
-}
-
-func (c *Client) do(method, path string, body io.Reader, contentType string) *Response {
-	c.t.Helper()
-
-	req := httptest.NewRequest(method, path, body)
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	for _, ck := range c.cookies {
-		req.AddCookie(ck)
-	}
-
-	rec := httptest.NewRecorder()
-	c.handler.ServeHTTP(rec, req)
-
-	// Cookies the response set are kept, so a session survives the next call.
-	// Without this every request after a login is anonymous, and the test that
-	// notices is the one that fails three cases later.
-	for _, ck := range rec.Result().Cookies() {
-		c.keep(ck)
-	}
-	c.lastBody = rec.Body.String()
-
-	return &Response{t: c.t, rec: rec, path: method + " " + path}
-}
-
-// keep stores one Set-Cookie the way a browser stores it: by name and path, so
-// a second value REPLACES the first, and a cookie the server told the browser to
-// drop is dropped.
-//
-// It used to append, and a jar that only appends cannot express a sign-out.
-// http.Request.Cookie returns the first cookie of a name, so the cleared value
-// that logout sends sat behind the live one and was never read, and a second
-// sign-in in the same test put a second session behind the first -- which by
-// then the server had deleted, so the client silently went back to being
-// anonymous while the test read on. Both of those are tests that pass while
-// proving the opposite of what they say, which is the one failure this whole
-// package exists to prevent.
-func (c *Client) keep(ck *http.Cookie) {
-	kept := c.cookies[:0]
-	for _, have := range c.cookies {
-		if have.Name != ck.Name || have.Path != ck.Path {
-			kept = append(kept, have)
-		}
-	}
-	c.cookies = kept
-
-	// MaxAge below zero is "delete this now", and an Expires in the past is the
-	// older spelling of the same instruction. Either way there is nothing to
-	// store: the cookie is gone from the jar and the next request carries none.
-	if ck.MaxAge < 0 || (!ck.Expires.IsZero() && !ck.Expires.After(time.Now())) {
-		return
-	}
-	c.cookies = append(c.cookies, ck)
+	return &Response{inner: c.inner.Post(path, form)}
 }
 
 // Response is what came back, with the assertions worth having.
+//
+// Renamed on the way to hesape: every method below is spelled Assert* there,
+// after Illuminate\Testing\TestResponse. The old names are kept because
+// thirteen modules call them, and each one forwards to exactly one hesape
+// method -- the comparison, the failure message and whether it stops the test
+// are all decided by the code that runs there.
 type Response struct {
-	t    *testing.T
-	rec  *httptest.ResponseRecorder
-	path string
+	inner *arandutest.Response
 }
 
 // Status fails unless the status is the one expected.
 //
 // The body is printed on failure, because the answer to "why is this a 500" is
 // in it and finding out otherwise means running the test again with a print.
+//
+// Renamed on the way to hesape: it is Response.AssertStatus there.
 func (r *Response) Status(want int) *Response {
-	r.t.Helper()
-	if r.rec.Code != want {
-		r.t.Fatalf("%s answered %d, want %d\n%s", r.path, r.rec.Code, want, r.body())
-	}
+	r.inner.AssertStatus(want)
 	return r
 }
 
 // OK is Status(200).
-func (r *Response) OK() *Response { return r.Status(http.StatusOK) }
+//
+// Renamed on the way to hesape: it is Response.AssertOk there.
+func (r *Response) OK() *Response {
+	r.inner.AssertOk()
+	return r
+}
 
 // See fails unless the text is in the body.
+//
+// Renamed on the way to hesape: it is Response.AssertSee there.
 func (r *Response) See(text string) *Response {
-	r.t.Helper()
-	if !strings.Contains(r.rec.Body.String(), text) {
-		r.t.Errorf("%s does not show %q\n%s", r.path, text, r.body())
-	}
+	r.inner.AssertSee(text)
 	return r
 }
 
@@ -171,11 +96,10 @@ func (r *Response) See(text string) *Response {
 // It is the half people skip, and the half that catches a leak: a draft in a
 // public listing, an address in a page that should not name one, a button
 // somebody without the permission can see.
+//
+// Renamed on the way to hesape: it is Response.AssertDontSee there.
 func (r *Response) DontSee(text string) *Response {
-	r.t.Helper()
-	if strings.Contains(r.rec.Body.String(), text) {
-		r.t.Errorf("%s shows %q and should not", r.path, text)
-	}
+	r.inner.AssertDontSee(text)
 	return r
 }
 
@@ -184,32 +108,20 @@ func (r *Response) DontSee(text string) *Response {
 // It reads HX-Redirect as well as Location, because a handler answering an HTMX
 // request redirects with a header and a 204 -- and a test that only reads
 // Location says "redirected to \"\"" for a response that is correct.
+//
+// Renamed on the way to hesape: it is Response.AssertRedirect there.
 func (r *Response) RedirectsTo(want string) *Response {
-	r.t.Helper()
-
-	got := r.rec.Header().Get("Location")
-	if got == "" {
-		got = r.rec.Header().Get("HX-Redirect")
-	}
-	if got != want {
-		r.t.Errorf("%s redirected to %q, want %q", r.path, got, want)
-	}
+	r.inner.AssertRedirect(want)
 	return r
 }
 
 // Body is what came back, for an assertion this package does not have.
-func (r *Response) Body() string { return r.rec.Body.String() }
+//
+// Renamed on the way to hesape: it is Response.GetContent there.
+func (r *Response) Body() string { return r.inner.GetContent() }
 
 // Header reads one response header.
-func (r *Response) Header(name string) string { return r.rec.Header().Get(name) }
-
-func (r *Response) body() string {
-	body := r.rec.Body.String()
-	if len(body) > 2000 {
-		return body[:2000] + "\n… (truncated)"
-	}
-	return body
-}
+func (r *Response) Header(name string) string { return r.inner.Header(name) }
 
 // ActingAs is a context carrying a subject, for the code paths that take one
 // directly rather than through a session.
@@ -220,15 +132,29 @@ func (r *Response) body() string {
 //
 // It does NOT put anybody in a session: a request made with Client after this is
 // still anonymous, and it has to be, or the two ways of being somebody would
-// disagree.
+// disagree. A test that wants a client to be somebody uses
+// hesape/arandutest.Client.ActingAs, which puts the subject on the outgoing
+// request.
+//
+// Deleted on the way to hesape, and this is the one behaviour the bridge
+// changes on purpose. The old implementation wrote a context key of its own
+// that no policy, no repository and no middleware ever read: it authenticated
+// nothing, so a test written against it passed while proving the opposite of
+// what it said. It now writes auth.WithSubject, which is the key the edge
+// middleware writes and every policy reads. The signature is untouched --
+// security.Subject is an alias for auth.Subject -- so nothing recompiles
+// differently.
 func ActingAs(ctx context.Context, s security.Subject) context.Context {
-	return context.WithValue(ctx, subjectKey{}, s)
+	return auth.WithSubject(ctx, s)
 }
 
 // Subject reads back what ActingAs put in, and reports whether there was one.
-func Subject(ctx context.Context) (security.Subject, bool) {
-	s, ok := ctx.Value(subjectKey{}).(security.Subject)
-	return s, ok
-}
-
-type subjectKey struct{}
+//
+// The second result is false when nothing put one there, which is a different
+// fact from an anonymous reader: a public page has the Subject that
+// security.Guest built.
+//
+// Renamed on the way to hesape: it is auth.SubjectFrom there, and it is not in
+// hesape/arandutest at all, because reading the subject out of a context is not
+// a test-only question.
+func Subject(ctx context.Context) (security.Subject, bool) { return auth.SubjectFrom(ctx) }

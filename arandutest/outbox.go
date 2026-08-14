@@ -1,11 +1,22 @@
-// Package arandutest holds the helpers a test needs and an application must not
-// use.
+// The two outbox helpers, whose counterparts are in
+// github.com/arandu-io/hesape/arandutest and which cannot be reached from here
+// yet.
 //
-// Everything here drives the same code path production drives. There is no
-// synchronous mode, no in-memory substitute and no test double for the outbox:
-// "sync only in tests" is a second way to do one thing, and the second way
-// always leaks into production -- usually on the day someone copies a test into
-// a handler.
+// hesape/arandutest.DrainOutbox takes a *hesape/events.Outbox, and
+// framework/events.Outbox is a different type: the hesape outbox is built over
+// a DB interface that reports its own transaction, the framework one over
+// *data.DB. There is nothing to hand across, so DrainOutbox is declared here,
+// composed out of the framework's own events package -- which is itself a
+// bridge. Collected is declared for the same reason one step removed: it has to
+// satisfy framework/events.Publisher, and that interface names
+// framework/events.Stored. It becomes a one-line alias for
+// hesape/arandutest.Collected the day framework/events.Stored is an alias for
+// hesape/events.Stored.
+//
+// Neither is a second implementation of anything in hesape: the relay they
+// drive is the one that runs in production, executed inline instead of on a
+// ticker.
+
 package arandutest
 
 import (
