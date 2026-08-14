@@ -1,50 +1,47 @@
+// The resource controller, answered by github.com/arandu-io/hesape/routing.
+//
+// The seven interfaces are there under the same names and the same doc, with
+// one difference that decides the shape of this file: each of them gained a
+// type parameter for the request context, because hesape/routing must not
+// import the layer that owns one.
+
 package httpx
 
 import (
-	"net/http"
-	"strings"
+	hhttp "github.com/arandu-io/hesape/http"
+	"github.com/arandu-io/hesape/routing"
 )
 
 // The seven actions of a resource controller, one interface each.
 //
-// The usual shape of this takes one object and registers seven routes whether or
-// not the methods exist -- a request to a missing one is a runtime error. Here
-// each action is its own tiny interface, and Resource registers exactly the ones
-// the controller implements. A route that exists is a route that answers.
+// The usual shape of this takes one object and registers seven routes whether
+// or not the methods exist -- a request to a missing one is a runtime error.
+// Here each action is its own tiny interface, and Resource registers exactly
+// the ones the controller implements. A route that exists is a route that
+// answers.
 //
-// Seven interfaces rather than one with seven methods, for the same reason the
-// kernel splits Bootable, Background and Closable: a controller that only lists
-// and shows should not be forced to write five empty methods, and five empty
-// methods is how a 500 gets committed.
+// Each is an alias to an INSTANTIATED generic: hesape declares
+// routing.Indexer[C any], so `type Indexer = routing.Indexer` does not compile
+// and `type Indexer = routing.Indexer[hhttp.Context]` does. Instantiating is
+// what keeps these aliases rather than renames -- a controller declaring
+// Index(*httpx.Context) error satisfies routing.Indexer[hhttp.Context]
+// literally, because httpx.Context IS hhttp.Context, so hesape's type assertion
+// finds it.
 type (
 	// Indexer answers GET /thing -- the list.
-	Indexer interface {
-		Index(*Context) error
-	}
+	Indexer = routing.Indexer[hhttp.Context]
 	// Creator answers GET /thing/create -- the empty form.
-	Creator interface {
-		Create(*Context) error
-	}
+	Creator = routing.Creator[hhttp.Context]
 	// Storer answers POST /thing -- the form submission.
-	Storer interface {
-		Store(*Context) error
-	}
+	Storer = routing.Storer[hhttp.Context]
 	// Shower answers GET /thing/{id} -- one record.
-	Shower interface {
-		Show(*Context) error
-	}
+	Shower = routing.Shower[hhttp.Context]
 	// Editor answers GET /thing/{id}/edit -- the filled form.
-	Editor interface {
-		Edit(*Context) error
-	}
+	Editor = routing.Editor[hhttp.Context]
 	// Updater answers PUT and PATCH /thing/{id}.
-	Updater interface {
-		Update(*Context) error
-	}
+	Updater = routing.Updater[hhttp.Context]
 	// Destroyer answers DELETE /thing/{id}.
-	Destroyer interface {
-		Destroy(*Context) error
-	}
+	Destroyer = routing.Destroyer[hhttp.Context]
 )
 
 // Resource registers the REST routes a controller implements.
@@ -62,47 +59,13 @@ type (
 //	PATCH  /invoices/{id}        update   invoices.update
 //	DELETE /invoices/{id}        destroy  invoices.destroy
 //
-// The order matters: /invoices/create is registered before /invoices/{id} so a
-// GET of "create" reaches the form rather than being read as an id. Go's
-// ServeMux prefers the more specific pattern, and registering in this order
-// keeps the intent readable even where the mux would sort it out anyway.
-//
 // A controller implementing none of the seven registers nothing and returns
 // zero routes, which is a wiring mistake worth seeing in `aru routes`.
+//
+// It stays a method here and is a function there -- routing.Resource takes the
+// router first, because a Go method cannot take a type parameter and C has to
+// come from somewhere. The type parameter and the adapter are supplied by this
+// line, so no caller of Route.Resource changes.
 func (r *Router) Resource(name string, controller any) []*Route {
-	name = strings.Trim(name, "/")
-	base := "/" + name
-	one := base + "/{id}"
-
-	var out []*Route
-	add := func(method, pattern, action string, h func(*Context) error) {
-		out = append(out, r.handleCtx(method, pattern, h).Name(name+"."+action))
-	}
-
-	if c, ok := controller.(Indexer); ok {
-		add(http.MethodGet, base, "index", c.Index)
-	}
-	if c, ok := controller.(Creator); ok {
-		add(http.MethodGet, base+"/create", "create", c.Create)
-	}
-	if c, ok := controller.(Storer); ok {
-		add(http.MethodPost, base, "store", c.Store)
-	}
-	if c, ok := controller.(Shower); ok {
-		add(http.MethodGet, one, "show", c.Show)
-	}
-	if c, ok := controller.(Editor); ok {
-		add(http.MethodGet, one+"/edit", "edit", c.Edit)
-	}
-	if c, ok := controller.(Updater); ok {
-		add(http.MethodPut, one, "update", c.Update)
-		// PATCH answers the same handler and shares the name.
-		// Only the PUT row carries the name in the table, so URL generation has
-		// one answer rather than two.
-		r.handleCtx(http.MethodPatch, one, c.Update)
-	}
-	if c, ok := controller.(Destroyer); ok {
-		add(http.MethodDelete, one, "destroy", c.Destroy)
-	}
-	return out
+	return routing.Resource(r.inner, name, controller, r.adapt)
 }

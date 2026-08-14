@@ -164,7 +164,10 @@ func RequireConfirmedPassword(sessions *security.SessionStore) func(http.Handler
 				sendToSignIn(sessions, w, r)
 				return
 			}
-			if subject.PasswordConfirmedWithin(security.PasswordConfirmationWindow) {
+			// A package-level function and not a method on the subject: Subject
+			// is now an alias for hesape/auth.Subject, and Go forbids declaring
+			// a method on another package's type. See security.PasswordConfirmedWithin.
+			if security.PasswordConfirmedWithin(subject, security.PasswordConfirmationWindow) {
 				next.ServeHTTP(w, r)
 				return
 			}

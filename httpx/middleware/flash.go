@@ -1,3 +1,12 @@
+// The flash-consuming middleware. It is NOT a bridge, and the plan said it
+// would be: docs/31:187 has it dissolving into a session.Start that carries and
+// consumes. hesape/session/middleware.StartSession is Illuminate's session
+// bootstrap and does not touch the arandu flash cookie; nothing in hesape calls
+// hesape/http.WithState outside a view test. Deleting this file would leave the
+// three-step path with its middle step missing, and the symptom -- every
+// rejected form coming back blank -- is exactly the failure the path exists to
+// remove. It stays until hesape answers for it.
+
 package middleware
 
 import (
@@ -5,7 +14,6 @@ import (
 
 	"github.com/arandu-io/framework/httpx"
 	"github.com/arandu-io/framework/security"
-	"github.com/arandu-io/framework/validation"
 )
 
 // Flash consumes the one-shot flash and puts it on the request, so the page
@@ -46,7 +54,11 @@ func Flash(f *security.Flash) httpx.Middleware {
 			// filled in, with somebody else's errors on it.
 			w.Header().Set("Cache-Control", "no-store, private")
 
-			state := httpx.State{Errors: validation.Errors(errs), Old: old}
+			// errs comes back from the flash as a plain map[string][]string,
+			// which assigns straight to the field: httpx.State is now an alias
+			// for hesape/http.State and its Errors is hesape/validation.Errors,
+			// the same underlying map this has always carried.
+			state := httpx.State{Errors: errs, Old: old}
 			next.ServeHTTP(w, r.WithContext(httpx.WithState(r.Context(), state)))
 		})
 	}

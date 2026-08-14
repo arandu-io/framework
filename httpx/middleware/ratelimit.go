@@ -1,18 +1,30 @@
+// The route rate limit. The two key functions are answered by
+// github.com/arandu-io/hesape/routing/middleware; the limiter and the
+// middleware around it are NOT, and the comments below say why.
+
 package middleware
 
 import (
-	"net"
 	"net/http"
-	"net/netip"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/arandu-io/framework/httpx"
+	rmiddleware "github.com/arandu-io/hesape/routing/middleware"
 )
 
 // Limiter is the rate limit backend. The core ships the in-memory
 // implementation only; the redis adapter provides the distributed one.
+//
+// It stays declared here rather than pointing at hesape. The replacement there
+// is hesape/routing/middleware.Throttle, which takes a CONCRETE
+// *hesape/cache.RateLimiter rather than an interface, and
+// github.com/arandu-io/kv implements this interface by these method names in a
+// separate module (kv/limiter.go:29 asserts it). A separate module cannot
+// satisfy a concrete struct, so aliasing here would compile in the framework
+// and break the adapter silently -- the one failure `go build` in this module
+// cannot catch.
 type Limiter interface {
 	Allow(key string, limit int, window time.Duration) (remaining int, retryAfter time.Duration, ok bool)
 }
@@ -34,6 +46,14 @@ type Limiter interface {
 // The sentence carries the same number as Retry-After, computed once, because a
 // header and a sentence that disagree about how long to wait are worse than one
 // that says nothing.
+//
+// It is not a bridge. hesape/routing/middleware.Throttle is the same
+// middleware over a different contract -- a *cache.RateLimiter and a
+// cache.Limit instead of this interface, a budget and a window -- and it fails
+// open where this one has no failure to answer, because Allow returns no error.
+// Translating between the two would mean inventing an answer for a store that
+// cannot be reached, on behalf of every caller, which is a behaviour change
+// wearing a bridge's clothes. It stays here for as long as Limiter does.
 func RateLimit(l Limiter, limit int, window time.Duration, key func(*http.Request) string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -76,39 +96,21 @@ func RateLimit(l Limiter, limit int, window time.Duration, key func(*http.Reques
 // always a single link. A /48 would be one customer at some providers and a
 // whole building at others, and grouping two subscribers under one budget is
 // how a limit locks out somebody who did nothing.
-func KeyByIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	// An unparseable address is used as it stands rather than dropped: it is the
-	// only key left, and merging every one of them into a shared bucket would be
-	// a way to be limited by somebody else's traffic.
-	addr, err := netip.ParseAddr(host)
-	if err != nil {
-		return "ip:" + host
-	}
-	if addr.Is4() || addr.Is4In6() {
-		return "ip:" + addr.Unmap().String()
-	}
-	// WithZone("") because a link-local scope is the receiving interface's name,
-	// not the sender's, and it would key two arrivals of the same address apart.
-	block, err := addr.WithZone("").Prefix(64)
-	if err != nil {
-		return "ip:" + addr.String()
-	}
-	return "ip:" + block.String()
-}
+//
+// A wrapper and not an alias, because a plain function has no alias form. The
+// key it returns is byte-for-byte the one this package produced before the
+// move, which matters: a counter in a shared store is keyed by this string, and
+// a different prefix would hand every caller a fresh budget on deploy.
+func KeyByIP(r *http.Request) string { return rmiddleware.KeyByIP(r) }
 
 // KeyBySession keys on the session id, falling back to the address for
 // anonymous requests. Pass SessionStore.IDFromRequest as the extractor.
+//
+// The declared return type stays func(*http.Request) string rather than
+// hesape's named KeyFunc, so the signature every caller is written against is
+// unchanged; the value returned is the same function either way.
 func KeyBySession(idFrom func(*http.Request) string) func(*http.Request) string {
-	return func(r *http.Request) string {
-		if id := idFrom(r); id != "" {
-			return "session:" + id
-		}
-		return KeyByIP(r)
-	}
+	return rmiddleware.KeyBySession(idFrom)
 }
 
 // MemoryLimiter is a fixed window in process memory. It is right for

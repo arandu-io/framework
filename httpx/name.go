@@ -1,33 +1,24 @@
+// The route table, answered by github.com/arandu-io/hesape/routing.
+//
+// The table itself is hesape's and holds every route; what is declared here is
+// the one method whose name did not survive the move.
+
 package httpx
 
-import (
-	"fmt"
-	"strings"
-	"sync"
-)
+import "github.com/arandu-io/hesape/routing"
 
-// Name gives the route a name, so a URL can be generated from it instead of
-// written by hand.
+// Routes is the table of registered routes, and the index by name.
 //
-//	Route.Get("/", home).Name("home")
-//	Route.Resource("invoices", InvoiceController{})   // names them all
+// It is an envelope over hesape/routing.Routes and not an alias, for one
+// reason: the method that builds a path from a name was renamed URL -> Route
+// (docs/31:179), and Go forbids declaring a method on another package's type.
+// An alias here would drop Routes.URL from the framework's surface, and a
+// bridge that drops a method is not a bridge.
 //
-// It returns the route so the call chains, and the declaration reads as one
-// line: Route.Get("/", home).Name("home").
-//
-// The name was a field on Route from the first version and was never filled in.
-// A field that nothing writes is a promise the code does not keep -- `aru
-// routes` printed an empty column, and there was no way to generate a URL.
-func (r *Route) Name(name string) *Route {
-	if r == nil {
-		return nil
-	}
-	r.name = name
-	if r.table != nil {
-		r.table.register(name, r)
-	}
-	return r
-}
+// It forwards and holds nothing. The routes are hesape's table, shared by every
+// sub-router the way it always was, so a route registered through a group is in
+// the same table the root reads.
+type Routes struct{ inner *routing.Routes }
 
 // URL builds the path of a named route, filling the parameters in order.
 //
@@ -38,95 +29,20 @@ func (r *Route) Name(name string) *Route {
 // moves. This does not: an unknown name or a wrong number of parameters is an
 // error the caller sees, not a 404 the user sees.
 //
-// It returns an error rather than panicking, because a URL is often built from
-// data -- and a panic in a template renderer takes the whole page down to report
-// something a broken link would have said better.
+// It is hesape/routing.Routes.Route under the name this package has always used
+// for it. Only this spelling is offered here -- exposing both would be two ways
+// to ask one question (RULE 9), and the new one is reached by importing
+// hesape/routing, which the death date says to do anyway.
 func (t *Routes) URL(name string, params ...string) (string, error) {
-	t.mu.RLock()
-	route, known := t.byName[name]
-	t.mu.RUnlock()
-
-	if !known {
-		return "", fmt.Errorf("httpx: no route named %q. Name it with .Name(%q), or run `aru routes` to see what exists", name, name)
-	}
-
-	// "{$}" is not a parameter. It is the anchor that stops a pattern ending in
-	// a slash from matching everything below it, which is what "GET /{$}" means
-	// and what registering the root route does by default. Reading it as a
-	// parameter made URL("home") return an error for the one route every
-	// application has.
-	out := strings.TrimSuffix(route.Pattern, "{$}")
-	if out == "" {
-		out = "/"
-	}
-
-	var missing []string
-	for _, segment := range strings.Split(out, "/") {
-		if !strings.HasPrefix(segment, "{") || !strings.HasSuffix(segment, "}") {
-			continue
-		}
-		if len(params) == 0 {
-			missing = append(missing, segment)
-			continue
-		}
-		out = strings.Replace(out, segment, params[0], 1)
-		params = params[1:]
-	}
-
-	if len(missing) > 0 {
-		return "", fmt.Errorf("httpx: route %q needs %s and got none", name, strings.Join(missing, ", "))
-	}
-	if len(params) > 0 {
-		return "", fmt.Errorf("httpx: route %q takes fewer parameters than the %d given", name, len(params))
-	}
-	return out, nil
+	return t.inner.Route(name, params...)
 }
 
 // Must is URL for the places that cannot handle an error -- a template helper,
 // mostly. It returns the message as the href, so a broken link says what is
 // wrong instead of pointing at "/".
 func (t *Routes) Must(name string, params ...string) string {
-	out, err := t.URL(name, params...)
-	if err != nil {
-		return "#" + err.Error()
-	}
-	return out
-}
-
-// Routes is the table of registered routes, and the index by name.
-type Routes struct {
-	mu     sync.RWMutex
-	all    []*Route
-	byName map[string]*Route
-}
-
-func newRoutes() *Routes { return &Routes{byName: map[string]*Route{}} }
-
-func (t *Routes) add(r *Route) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.all = append(t.all, r)
-}
-
-// register indexes a route by name.
-//
-// Registering the same name twice panics rather than replacing. Two routes with
-// one name means every URL built from it goes to one of them, chosen by
-// registration order -- and finding that out at boot beats finding it out from a
-// link that quietly points at the wrong page.
-func (t *Routes) register(name string, r *Route) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if existing, taken := t.byName[name]; taken && existing != r {
-		panic(fmt.Sprintf("httpx: two routes named %q: %s %s and %s %s",
-			name, existing.Method, existing.Pattern, r.Method, r.Pattern))
-	}
-	t.byName[name] = r
+	return t.inner.Must(name, params...)
 }
 
 // All returns the routes in registration order, for `aru routes`.
-func (t *Routes) All() []*Route {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return append([]*Route(nil), t.all...)
-}
+func (t *Routes) All() []*Route { return t.inner.All() }
