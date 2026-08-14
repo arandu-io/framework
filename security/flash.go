@@ -30,7 +30,7 @@ func NewFlash(appKey []byte, secure bool) *Flash { return session.NewFlash(appKe
 // returns it when it does.
 //
 // It is the open-redirect defence, and it is one function in the collection
-// rather than one per caller: httpx.Reject calls it on the address a rejected
+// rather than one per caller: http.Reject calls it on the address a rejected
 // form is sent back to, which comes off the Referer header and is therefore the
 // visitor's to choose, and the intended destination calls it twice around a
 // signed cookie.

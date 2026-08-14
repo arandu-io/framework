@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arandu-io/framework/httpx"
-	"github.com/arandu-io/framework/httpx/middleware"
+	fhttp "github.com/arandu-io/framework/http"
+	"github.com/arandu-io/framework/http/middleware"
 )
 
 func TestRateLimitBlocksOverTheLimit(t *testing.T) {
 	limiter := middleware.NewMemoryLimiter()
-	h := httpx.Chain(
+	h := fhttp.Chain(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
 		middleware.RateLimit(limiter, 2, time.Minute, middleware.KeyByIP),
 	)
@@ -45,7 +45,7 @@ func TestRateLimitBlocksOverTheLimit(t *testing.T) {
 
 func TestRateLimitIsPerKey(t *testing.T) {
 	limiter := middleware.NewMemoryLimiter()
-	h := httpx.Chain(
+	h := fhttp.Chain(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
 		middleware.RateLimit(limiter, 1, time.Minute, middleware.KeyByIP),
 	)
@@ -188,7 +188,7 @@ func TestAnAddressWithAScopeIsStillOneAddress(t *testing.T) {
 // an htmx one, so this same middleware answers the same refusal and the browser
 // renders it.
 func TestSomebodyOverTheRateLimitIsToldSoInAShapeTheirScreenCanShow(t *testing.T) {
-	h := httpx.Chain(
+	h := fhttp.Chain(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
 		middleware.RateLimit(middleware.NewMemoryLimiter(), 1, time.Minute, middleware.KeyByIP),
 	)
@@ -215,7 +215,7 @@ func TestSomebodyOverTheRateLimitIsToldSoInAShapeTheirScreenCanShow(t *testing.T
 // and telling it to reload would replace the sentence with the page the person
 // was on and explain nothing.
 func TestAPlainBrowserOverTheRateLimitIsNotToldToReload(t *testing.T) {
-	h := httpx.Chain(
+	h := fhttp.Chain(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
 		middleware.RateLimit(middleware.NewMemoryLimiter(), 1, time.Minute, middleware.KeyByIP),
 	)

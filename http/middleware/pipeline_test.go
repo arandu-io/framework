@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arandu-io/framework/httpx"
-	"github.com/arandu-io/framework/httpx/middleware"
+	fhttp "github.com/arandu-io/framework/http"
+	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/observability/errorpage"
 )
@@ -16,7 +16,7 @@ import (
 // pipeline builds the mandatory pipeline the way an application does, so these
 // tests exercise the same composition a real request goes through.
 func pipeline(dev bool, h http.Handler) http.Handler {
-	return httpx.Chain(h,
+	return fhttp.Chain(h,
 		middleware.Recover(dev, errorpage.Options{Editor: "vscode"}),
 		middleware.Observe(dev, "", nil),
 		middleware.SecurityHeaders(dev),
@@ -97,7 +97,7 @@ func TestTracingSecretEnablesTheCollector(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		enabled = observability.FromContext(r.Context()) != nil
 	})
-	h := httpx.Chain(handler, middleware.Observe(false, "let-me-in", nil))
+	h := fhttp.Chain(handler, middleware.Observe(false, "let-me-in", nil))
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("X-Arandu-Trace", "let-me-in")
@@ -149,7 +149,7 @@ func TestRequestIDIsSanitized(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		r.Header.Set("X-Request-ID", id)
 
-		httpx.Chain(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+		fhttp.Chain(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
 			middleware.Observe(true, "", nil)).ServeHTTP(rec, r)
 
 		got := rec.Header().Get("X-Request-ID")
@@ -219,7 +219,7 @@ func TestStatusWriterSupportsFlush(t *testing.T) {
 		flushed = true
 	})
 
-	httpx.Chain(handler, middleware.Observe(true, "", nil)).
+	fhttp.Chain(handler, middleware.Observe(true, "", nil)).
 		ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/stream", nil))
 
 	if !flushed {

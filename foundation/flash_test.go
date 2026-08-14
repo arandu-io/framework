@@ -10,24 +10,24 @@ import (
 
 	"github.com/arandu-io/framework/config"
 	"github.com/arandu-io/framework/foundation"
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
 )
 
 // flashModule is an application that rejects a form and, on the way back,
 // reports what the framework handed it.
-type flashModule struct{ seen chan httpx.State }
+type flashModule struct{ seen chan fhttp.State }
 
 func (flashModule) Name() string { return "flash" }
 
-func (m flashModule) Routes(r *httpx.Router) {
-	r.Action(http.MethodPost, "/posts", func(ctx *httpx.Context) error {
+func (m flashModule) Routes(r *fhttp.Router) {
+	r.Action(http.MethodPost, "/posts", func(ctx *fhttp.Context) error {
 		errs := validation.Errors{}
 		errs.Add("title", "is required")
 		return errs
 	})
-	r.Action(http.MethodGet, "/posts/new", func(ctx *httpx.Context) error {
+	r.Action(http.MethodGet, "/posts/new", func(ctx *fhttp.Context) error {
 		m.seen <- ctx.State()
 		return ctx.Status(http.StatusOK)
 	})
@@ -42,7 +42,7 @@ func (m flashModule) Routes(r *httpx.Router) {
 // -- a form that comes back blank -- is indistinguishable from the bug this was
 // built to fix.
 func TestTheFlashMiddlewareIsInstalledWithoutTheApplicationWiringIt(t *testing.T) {
-	seen := make(chan httpx.State, 1)
+	seen := make(chan fhttp.State, 1)
 	k := foundation.New(testConfig(config.EnvProd)).Register(flashModule{seen: seen})
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
@@ -107,7 +107,7 @@ func TestTheConsoleDoesNotSpendTheFlash(t *testing.T) {
 		}
 	}
 
-	seen := make(chan httpx.State, 1)
+	seen := make(chan fhttp.State, 1)
 	k := foundation.New(testConfig(config.EnvDev)).Register(flashModule{seen: seen})
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)

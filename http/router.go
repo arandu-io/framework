@@ -8,7 +8,7 @@
 // action into an http.Handler is written here because hesape/routing takes it
 // as a parameter (routing.Adapter) rather than knowing what a Context is.
 
-package httpx
+package http
 
 import (
 	"errors"
@@ -183,7 +183,7 @@ func (r *Router) adapt(h func(*Context) error) http.Handler {
 				// failure this path exists to remove, produced by the path
 				// itself. It is a defect in the handler, so it is answered like
 				// one.
-				panic("httpx: a handler returned an empty validation.Errors. " +
+				panic("http: a handler returned an empty validation.Errors. " +
 					"Return nil when nothing failed: `if errs.Any() { return errs }`")
 			}
 			Reject(w, req, flash, rejected)

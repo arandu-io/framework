@@ -43,7 +43,7 @@ func TestTheVocabularyIsTheHesapeVocabulary(t *testing.T) {
 // RendererProvider makes.
 //
 // hesape/view.Module declares Renderer() returning a hesape/http.Renderer, and
-// httpx.Renderer is an alias for that -- so it satisfies this interface without
+// http.Renderer is an alias for that -- so it satisfies this interface without
 // importing this package, which is what an optional interface asked for at boot
 // has to mean. Break the alias and this fails here, rather than at the first
 // request of an application whose pages stopped rendering.

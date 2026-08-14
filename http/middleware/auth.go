@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/security"
 )
 
@@ -122,8 +122,8 @@ func RequireRole(sessions *security.SessionStore, roles ...string) func(http.Han
 				}
 			}
 			// Refuse and not http.Error, so that an HTMX request is answered in
-			// a shape that client shows somebody. See httpx.Refuse.
-			httpx.Refuse(w, r, http.StatusForbidden, "this area is not open to your account")
+			// a shape that client shows somebody. See fhttp.Refuse.
+			fhttp.Refuse(w, r, http.StatusForbidden, "this area is not open to your account")
 		})
 	}
 }
@@ -202,7 +202,7 @@ func sendToSignIn(sessions *security.SessionStore, w http.ResponseWriter, r *htt
 
 // sendTo answers the redirect a guard turns somebody away with.
 //
-// The shape of the redirect is httpx.Redirect's decision -- HX-Redirect and 204
+// The shape of the redirect is fhttp.Redirect's decision -- HX-Redirect and 204
 // for an HTMX request, which would otherwise swap the whole sign-in page into
 // the div that asked, and 303 for everything else. This wrapper exists for the
 // one thing that is the guard's and not every redirect's, which is the header
@@ -216,5 +216,5 @@ func sendToSignIn(sessions *security.SessionStore, w http.ResponseWriter, r *htt
 // for putting no-store on the moderation area, arrived at from the other side.
 func sendTo(w http.ResponseWriter, r *http.Request, to string) {
 	w.Header().Set("Cache-Control", "no-store, private")
-	httpx.Redirect(w, r, to)
+	fhttp.Redirect(w, r, to)
 }

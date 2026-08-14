@@ -5,7 +5,7 @@
 // type parameter for the request context, because hesape/routing must not
 // import the layer that owns one.
 
-package httpx
+package http
 
 import (
 	hhttp "github.com/arandu-io/hesape/http"
@@ -24,8 +24,8 @@ import (
 // routing.Indexer[C any], so `type Indexer = routing.Indexer` does not compile
 // and `type Indexer = routing.Indexer[hhttp.Context]` does. Instantiating is
 // what keeps these aliases rather than renames -- a controller declaring
-// Index(*httpx.Context) error satisfies routing.Indexer[hhttp.Context]
-// literally, because httpx.Context IS hhttp.Context, so hesape's type assertion
+// Index(*http.Context) error satisfies routing.Indexer[hhttp.Context]
+// literally, because http.Context IS hhttp.Context, so hesape's type assertion
 // finds it.
 type (
 	// Indexer answers GET /thing -- the list.

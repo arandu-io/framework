@@ -14,7 +14,7 @@ import (
 // scripts off got a successful, empty, silent page -- the session was created
 // and the person was left staring at white.
 //
-// It is the same rule httpx.Context.Redirect applies, and the reason this test
+// It is the same rule http.Context.Redirect applies, and the reason this test
 // exists is that having the rule in two places is what let one of them be wrong.
 func TestRedirectAnswersWhatTheClientCanActOn(t *testing.T) {
 	t.Run("HTMX gets the header it reads", func(t *testing.T) {

@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/kernel"
 )
 
@@ -60,7 +60,7 @@ var (
 func (*Module) Name() string { return "events" }
 
 // Routes registers nothing. The relay and the event console are phase 3.
-func (*Module) Routes(*httpx.Router) {}
+func (*Module) Routes(*http.Router) {}
 
 // Migrations returns the outbox table.
 func (*Module) Migrations() []kernel.Migration {

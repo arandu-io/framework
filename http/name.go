@@ -3,7 +3,7 @@
 // The table itself is hesape's and holds every route; what is declared here is
 // the one method whose name did not survive the move.
 
-package httpx
+package http
 
 import "github.com/arandu-io/hesape/routing"
 

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/validation"
 )
 
@@ -239,7 +239,7 @@ func (p Page) AdminLink() string { return p.AdminURL }
 // the navigation and the signed-in person are the controller's, because they are
 // decisions -- see the Layout interface on why the layout is never allowed to go
 // and fetch them.
-func New(ctx *httpx.Context, title string) Page {
+func New(ctx *http.Context, title string) Page {
 	state := ctx.State()
 	return Page{
 		Title:  title,

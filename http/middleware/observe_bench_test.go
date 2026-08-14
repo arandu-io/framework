@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arandu-io/framework/httpx"
-	"github.com/arandu-io/framework/httpx/middleware"
+	fhttp "github.com/arandu-io/framework/http"
+	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/observability"
 )
 
@@ -19,7 +19,7 @@ import (
 //
 // This is what makes "zero cost in production" a claim rather than a hope:
 //
-//	go test ./httpx/middleware -bench Observe -benchmem
+//	go test ./http/middleware -bench Observe -benchmem
 //
 // The number that matters is BenchmarkObserveProduction, which must not grow as
 // the collected surface grows. It records queries the whole time and the
@@ -56,7 +56,7 @@ func work(w http.ResponseWriter, r *http.Request) {
 // BenchmarkObserveProduction: no dev, no tracing secret, no recorder. This is
 // what a deployed binary runs on every request.
 func BenchmarkObserveProduction(b *testing.B) {
-	h := httpx.Chain(http.HandlerFunc(work), middleware.Observe(false, "", nil))
+	h := fhttp.Chain(http.HandlerFunc(work), middleware.Observe(false, "", nil))
 	benchmark(b, h)
 }
 
@@ -64,7 +64,7 @@ func BenchmarkObserveProduction(b *testing.B) {
 // comparison. It is expected to be much larger -- twenty query records with
 // their stack frames -- and that is fine, because it only happens on a laptop.
 func BenchmarkObserveDevelopment(b *testing.B) {
-	h := httpx.Chain(http.HandlerFunc(work), middleware.Observe(true, "", observability.NewRecorder(200)))
+	h := fhttp.Chain(http.HandlerFunc(work), middleware.Observe(true, "", observability.NewRecorder(200)))
 	benchmark(b, h)
 }
 
@@ -81,7 +81,7 @@ func BenchmarkObserveDevelopment(b *testing.B) {
 // log, which every environment pays and which are not what this criterion is
 // about.
 func BenchmarkObserveProductionUninstrumented(b *testing.B) {
-	h := httpx.Chain(http.HandlerFunc(bareWork), middleware.Observe(false, "", nil))
+	h := fhttp.Chain(http.HandlerFunc(bareWork), middleware.Observe(false, "", nil))
 	benchmark(b, h)
 }
 
@@ -105,7 +105,7 @@ func benchmark(b *testing.B, h http.Handler) {
 	// keeps the log formatting in the measurement, which is honest -- production
 	// pays that cost too, it just pays it into a file or a collector.
 	quiet := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	h = httpx.Chain(h, observability.RootLogger(quiet))
+	h = fhttp.Chain(h, observability.RootLogger(quiet))
 
 	r := httptest.NewRequest(http.MethodGet, "/customers", nil)
 
@@ -120,7 +120,7 @@ func benchmark(b *testing.B, h http.Handler) {
 // number is only meaningful if the thing it measures is really off.
 func TestTheCollectorIsAbsentInProduction(t *testing.T) {
 	var installed bool
-	h := httpx.Chain(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	h := fhttp.Chain(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		installed = observability.FromContext(r.Context()) != nil
 	}), middleware.Observe(false, "", nil))
 
@@ -133,7 +133,7 @@ func TestTheCollectorIsAbsentInProduction(t *testing.T) {
 // TestNothingIsRecordedWithoutARecorder: passing nil is what a production
 // pipeline does, and it must not be a special case anyone has to remember.
 func TestNothingIsRecordedWithoutARecorder(t *testing.T) {
-	h := httpx.Chain(http.HandlerFunc(work), middleware.Observe(false, "", nil))
+	h := fhttp.Chain(http.HandlerFunc(work), middleware.Observe(false, "", nil))
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 }
 
@@ -142,7 +142,7 @@ func TestNothingIsRecordedWithoutARecorder(t *testing.T) {
 // nothing.
 func TestTheTracingHeaderTurnsItOnForOneRequest(t *testing.T) {
 	recorder := observability.NewRecorder(10)
-	h := httpx.Chain(http.HandlerFunc(work), middleware.Observe(false, "s3cret", recorder))
+	h := fhttp.Chain(http.HandlerFunc(work), middleware.Observe(false, "s3cret", recorder))
 
 	plain := httptest.NewRequest(http.MethodGet, "/customers", nil)
 	h.ServeHTTP(httptest.NewRecorder(), plain)
@@ -172,7 +172,7 @@ func TestTheTracingHeaderTurnsItOnForOneRequest(t *testing.T) {
 // empty header.
 func TestAnEmptySecretDoesNotEnableTracing(t *testing.T) {
 	recorder := observability.NewRecorder(10)
-	h := httpx.Chain(http.HandlerFunc(work), middleware.Observe(false, "", recorder))
+	h := fhttp.Chain(http.HandlerFunc(work), middleware.Observe(false, "", recorder))
 
 	r := httptest.NewRequest(http.MethodGet, "/customers", nil)
 	r.Header.Set("X-Arandu-Trace", "")

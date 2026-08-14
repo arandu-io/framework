@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/arandu-io/framework/httpx/middleware"
+	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
 )
 

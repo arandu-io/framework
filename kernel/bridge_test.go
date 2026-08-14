@@ -26,7 +26,7 @@ import (
 
 	"github.com/arandu-io/framework/config"
 	"github.com/arandu-io/framework/foundation"
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/security"
 	hfoundation "github.com/arandu-io/hesape/foundation"
@@ -116,7 +116,7 @@ func TestTaskCarriesTheGrantUnchanged(t *testing.T) {
 }
 
 // TestTheThreeDeclaredNamesAreTheFoundationOnes covers what foundation declares
-// rather than forwards. Module keeps a *httpx.Router, so a module written
+// rather than forwards. Module keeps a *fhttp.Router, so a module written
 // against the old name still compiles; Locker is the interface
 // github.com/arandu-io/kv implements and events.Locker aliases.
 func TestTheThreeDeclaredNamesAreTheFoundationOnes(t *testing.T) {
@@ -173,12 +173,12 @@ func TestFormatRoutesReachesTheHesapeTable(t *testing.T) {
 }
 
 // probe is a module of the shape every project writes: a name and routes taking
-// the *httpx.Router the old contract named.
+// the *fhttp.Router the old contract named.
 type probe struct{}
 
 func (probe) Name() string { return "probe" }
 
-func (probe) Routes(r *httpx.Router) {
+func (probe) Routes(r *fhttp.Router) {
 	r.Get("/probe", func(w http.ResponseWriter, req *http.Request) { w.WriteHeader(http.StatusOK) })
 }
 

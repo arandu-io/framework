@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/arandu-io/framework/config"
-	"github.com/arandu-io/framework/httpx"
-	"github.com/arandu-io/framework/httpx/middleware"
+	fhttp "github.com/arandu-io/framework/http"
+	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/routing"
@@ -39,9 +39,9 @@ const (
 type Application struct {
 	cfg      config.Config
 	log      *slog.Logger
-	router   *httpx.Router
+	router   *fhttp.Router
 	modules  []Module
-	pipeline []httpx.Middleware
+	pipeline []fhttp.Middleware
 	srv      *http.Server
 
 	// flash carries the messages of a rejected form across the redirect that
@@ -75,7 +75,7 @@ func New(cfg config.Config) *Application {
 		cfg:    cfg,
 		log:    log,
 		flash:  flash,
-		router: httpx.NewRouter().WithFlash(flash),
+		router: fhttp.NewRouter().WithFlash(flash),
 	}
 
 	// The Application owns the recorder because it mounts the console route.
@@ -123,7 +123,7 @@ func (a *Application) Register(mods ...Module) *Application {
 
 // Use adds global middleware to the pipeline. The pipeline order is the order of
 // execution on the way in, and its reverse on the way out.
-func (a *Application) Use(mw ...httpx.Middleware) *Application {
+func (a *Application) Use(mw ...fhttp.Middleware) *Application {
 	a.pipeline = append(a.pipeline, mw...)
 	return a
 }
@@ -171,7 +171,7 @@ func (a *Application) Boot(ctx context.Context) error {
 
 // findRenderer asks the modules which one brings the view layer.
 func (a *Application) findRenderer() error {
-	var found httpx.Renderer
+	var found fhttp.Renderer
 	var by string
 
 	for _, m := range a.modules {
@@ -309,7 +309,7 @@ func (a *Application) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (a *Application) Handler() http.Handler {
 	// Live reload is outermost after the logger, so it sees the finished
 	// document rather than a handler's intention to write one.
-	outer := append([]httpx.Middleware{observability.RootLogger(a.log)}, devReload(a.cfg.IsDev())...)
+	outer := append([]fhttp.Middleware{observability.RootLogger(a.log)}, devReload(a.cfg.IsDev())...)
 
 	// The flash is consumed above the application's own pipeline and below the
 	// logger, and the Application installs it rather than bootstrap/app.go for
@@ -333,12 +333,12 @@ func (a *Application) Handler() http.Handler {
 	// because the key falls back to the address for a request with no session.
 	// Ordinary browsing with two tabs open answered "too many requests: wait 32
 	// seconds", on a page nobody had hammered.
-	app := make([]httpx.Middleware, 0, len(a.pipeline))
+	app := make([]fhttp.Middleware, 0, len(a.pipeline))
 	for _, mw := range a.pipeline {
 		app = append(app, exceptInternal(mw))
 	}
 
-	return httpx.Chain(a.router, append(outer, app...)...)
+	return fhttp.Chain(a.router, append(outer, app...)...)
 }
 
 // internalPrefix is what this framework mounts for itself: the health probe,
@@ -356,7 +356,7 @@ const internalPrefix = "/_arandu/"
 //
 // The prefix is the boundary because it already is one everywhere else -- one
 // name for what belongs to the framework, checked in one place.
-func exceptInternal(mw httpx.Middleware) httpx.Middleware {
+func exceptInternal(mw fhttp.Middleware) fhttp.Middleware {
 	return func(next http.Handler) http.Handler {
 		wrapped := mw(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -485,15 +485,15 @@ func (a *Application) Diagnose(ctx context.Context) []string {
 
 // Routes returns the registered routes. It is empty before Boot, because a
 // module only registers its routes when it boots.
-func (a *Application) Routes() []*httpx.Route { return a.router.Routes() }
+func (a *Application) Routes() []*fhttp.Route { return a.router.Routes() }
 
 // FormatRoutes renders the route table for the terminal, grouped by module and
 // sorted by pattern. It is here, and not in the CLI, so that every project
 // prints the same table.
 //
 // The table itself is hesape/routing.FormatRoutes (docs/31:192), and this is a
-// call through rather than a copy: httpx.Route is an alias for routing.Route,
+// call through rather than a copy: fhttp.Route is an alias for routing.Route,
 // so the slice needs no translation and there is one implementation of the
 // format. A wrapper and not an alias, because Go has no alias form for a
 // function.
-func FormatRoutes(routes []*httpx.Route) string { return routing.FormatRoutes(routes) }
+func FormatRoutes(routes []*fhttp.Route) string { return routing.FormatRoutes(routes) }

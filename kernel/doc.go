@@ -36,7 +36,7 @@
 // against hesape/foundation.Migratable satisfy the same interface.
 //
 // Two names foundation declares rather than forwards, and they keep their old
-// meaning here exactly: Module, whose Routes still takes a *httpx.Router, and
+// meaning here exactly: Module, whose Routes still takes a *http.Router, and
 // Locker, which docs/31:191 retires and which the events bridge kept because
 // github.com/arandu-io/kv asserts against it.
 package kernel

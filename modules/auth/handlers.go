@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/arandu-io/framework/httpx"
-	"github.com/arandu-io/framework/httpx/middleware"
+	fhttp "github.com/arandu-io/framework/http"
+	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/framework/view"
@@ -160,7 +160,7 @@ func (m *Module) doLogout(w http.ResponseWriter, r *http.Request) {
 // because the name is what says these handlers redirect the same way the rest of
 // the framework does.
 func redirect(w http.ResponseWriter, r *http.Request, to string) {
-	httpx.Redirect(w, r, to)
+	fhttp.Redirect(w, r, to)
 }
 
 // The sign-in screen the framework ships, for a project that has not published

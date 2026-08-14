@@ -7,26 +7,26 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/framework/view"
 )
 
 func TestPageCarriesTheErrorsOfTheRequestThatRedirectedHere(t *testing.T) {
-	state := httpx.State{
+	state := fhttp.State{
 		Errors: validation.Errors{"password": {"must be at least 12 characters"}},
 		Old:    url.Values{"email": {"ada@example.test"}},
 	}
 
 	var page view.Page
-	r := httpx.NewRouter()
-	r.Action(http.MethodGet, "/signup", func(ctx *httpx.Context) error {
+	r := fhttp.NewRouter()
+	r.Action(http.MethodGet, "/signup", func(ctx *fhttp.Context) error {
 		page = view.New(ctx, "Sign up").WithToken("csrf-token")
 		return nil
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/signup", nil)
-	r.ServeHTTP(httptest.NewRecorder(), req.WithContext(httpx.WithState(req.Context(), state)))
+	r.ServeHTTP(httptest.NewRecorder(), req.WithContext(fhttp.WithState(req.Context(), state)))
 
 	// Nothing in the handler mentioned errors, and the errors are on the page.
 	if got := page.FieldError("password"); got != "must be at least 12 characters" {
@@ -46,8 +46,8 @@ func TestPageCarriesTheErrorsOfTheRequestThatRedirectedHere(t *testing.T) {
 
 func TestAPageNobodyWasRejectedOnDrawsNothing(t *testing.T) {
 	var page view.Page
-	r := httpx.NewRouter()
-	r.Action(http.MethodGet, "/signup", func(ctx *httpx.Context) error {
+	r := fhttp.NewRouter()
+	r.Action(http.MethodGet, "/signup", func(ctx *fhttp.Context) error {
 		page = view.New(ctx, "Sign up")
 		return nil
 	})

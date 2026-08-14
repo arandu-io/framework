@@ -6,7 +6,7 @@
 // those have tests in hesape, against the code that now runs, and a second copy
 // here would be a second thing to keep in step.
 
-package httpx_test
+package http_test
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
 	hhttp "github.com/arandu-io/hesape/http"
@@ -28,28 +28,28 @@ import (
 // The aliases, asserted at compile time. A rename on either side stops the
 // package building, which is the whole point of writing them down.
 var (
-	_ *httpx.Context = (*hhttp.Context)(nil)
-	_ *hhttp.Context = (*httpx.Context)(nil)
-	_ *httpx.Route   = (*routing.Route)(nil)
-	_ *routing.Route = (*httpx.Route)(nil)
+	_ *fhttp.Context = (*hhttp.Context)(nil)
+	_ *hhttp.Context = (*fhttp.Context)(nil)
+	_ *fhttp.Route   = (*routing.Route)(nil)
+	_ *routing.Route = (*fhttp.Route)(nil)
 
-	_ httpx.State = hhttp.State{}
-	_ hhttp.State = httpx.State{}
+	_ fhttp.State = hhttp.State{}
+	_ hhttp.State = fhttp.State{}
 
-	_ httpx.Middleware                  = pipeline.Middleware[http.Handler](nil)
-	_ pipeline.Middleware[http.Handler] = httpx.Middleware(nil)
-	_ httpx.Middleware                  = hhttp.Middleware(nil)
-	_ func(http.Handler) http.Handler   = httpx.Middleware(nil)
-	_ httpx.Middleware                  = func(h http.Handler) http.Handler { return h }
-	_ httpx.Renderer                    = hhttp.Renderer(nil)
+	_ fhttp.Middleware                  = pipeline.Middleware[http.Handler](nil)
+	_ pipeline.Middleware[http.Handler] = fhttp.Middleware(nil)
+	_ fhttp.Middleware                  = hhttp.Middleware(nil)
+	_ func(http.Handler) http.Handler   = fhttp.Middleware(nil)
+	_ fhttp.Middleware                  = func(h http.Handler) http.Handler { return h }
+	_ fhttp.Renderer                    = hhttp.Renderer(nil)
 
 	// The adapter hesape/routing takes, and the seven interfaces it asserts
 	// against. These are what prove the aliases instantiate on the right type.
-	_ routing.Adapter[hhttp.Context]   = func(func(*httpx.Context) error) http.Handler { return nil }
-	_ httpx.Indexer                    = routing.Indexer[hhttp.Context](nil)
-	_ routing.Destroyer[hhttp.Context] = httpx.Destroyer(nil)
-	_ httpx.Indexer                    = (*controller)(nil)
-	_ httpx.Destroyer                  = (*controller)(nil)
+	_ routing.Adapter[hhttp.Context]   = func(func(*fhttp.Context) error) http.Handler { return nil }
+	_ fhttp.Indexer                    = routing.Indexer[hhttp.Context](nil)
+	_ routing.Destroyer[hhttp.Context] = fhttp.Destroyer(nil)
+	_ fhttp.Indexer                    = (*controller)(nil)
+	_ fhttp.Destroyer                  = (*controller)(nil)
 )
 
 // renderer records what a handler asked to draw.
@@ -68,20 +68,20 @@ func (r *renderer) Render(_ context.Context, w http.ResponseWriter, status int, 
 // can prove all seven aliases are the interfaces hesape asserts against.
 type controller struct{ seen []string }
 
-func (c *controller) Index(*httpx.Context) error   { c.seen = append(c.seen, "index"); return nil }
-func (c *controller) Create(*httpx.Context) error  { c.seen = append(c.seen, "create"); return nil }
-func (c *controller) Store(*httpx.Context) error   { c.seen = append(c.seen, "store"); return nil }
-func (c *controller) Show(*httpx.Context) error    { c.seen = append(c.seen, "show"); return nil }
-func (c *controller) Edit(*httpx.Context) error    { c.seen = append(c.seen, "edit"); return nil }
-func (c *controller) Update(*httpx.Context) error  { c.seen = append(c.seen, "update"); return nil }
-func (c *controller) Destroy(*httpx.Context) error { c.seen = append(c.seen, "destroy"); return nil }
+func (c *controller) Index(*fhttp.Context) error   { c.seen = append(c.seen, "index"); return nil }
+func (c *controller) Create(*fhttp.Context) error  { c.seen = append(c.seen, "create"); return nil }
+func (c *controller) Store(*fhttp.Context) error   { c.seen = append(c.seen, "store"); return nil }
+func (c *controller) Show(*fhttp.Context) error    { c.seen = append(c.seen, "show"); return nil }
+func (c *controller) Edit(*fhttp.Context) error    { c.seen = append(c.seen, "edit"); return nil }
+func (c *controller) Update(*fhttp.Context) error  { c.seen = append(c.seen, "update"); return nil }
+func (c *controller) Destroy(*fhttp.Context) error { c.seen = append(c.seen, "destroy"); return nil }
 
 // A controller written against the framework's Context is a controller
 // hesape/routing accepts, without a line changing. The seven interfaces are
 // aliases to instantiated generics, and this is what proves the instantiation
 // is the right one.
 func TestAControllerWrittenAgainstTheOldNamesStillRegistersSevenRoutes(t *testing.T) {
-	r := httpx.NewRouter()
+	r := fhttp.NewRouter()
 	routes := r.Resource("invoices", &controller{})
 
 	if len(routes) != 7 {
@@ -102,8 +102,8 @@ func TestAControllerWrittenAgainstTheOldNamesStillRegistersSevenRoutes(t *testin
 // parameter. This drives one action end to end through Action.
 func TestAnActionRegisteredByTheOldNameIsCalledWithTheHesapeContext(t *testing.T) {
 	rd := &renderer{}
-	r := httpx.NewRouter().WithRenderer(rd)
-	r.Action(http.MethodGet, "/dashboard", func(ctx *httpx.Context) error {
+	r := fhttp.NewRouter().WithRenderer(rd)
+	r.Action(http.MethodGet, "/dashboard", func(ctx *fhttp.Context) error {
 		return ctx.View("dashboard/index", struct{}{})
 	}).Name("dashboard")
 
@@ -121,7 +121,7 @@ func TestAnActionRegisteredByTheOldNameIsCalledWithTheHesapeContext(t *testing.T
 // Routes.URL is the one method whose name did not survive, and this is the
 // envelope that keeps it. It has to answer what routing.Routes.Route answers.
 func TestTheOldNameForBuildingAPathAnswersWhatTheNewOneAnswers(t *testing.T) {
-	r := httpx.NewRouter()
+	r := fhttp.NewRouter()
 	r.Get("/invoices/{id}", func(http.ResponseWriter, *http.Request) {}).Name("invoices.show")
 
 	got, err := r.Table().URL("invoices.show", "42")
@@ -143,7 +143,7 @@ func TestTheOldNameForBuildingAPathAnswersWhatTheNewOneAnswers(t *testing.T) {
 // sees. The sentence is hesape's now; what this asserts is that an error still
 // comes back rather than an empty path.
 func TestAnUnknownRouteNameIsStillAnError(t *testing.T) {
-	if _, err := httpx.NewRouter().Table().URL("nope"); err == nil {
+	if _, err := fhttp.NewRouter().Table().URL("nope"); err == nil {
 		t.Fatal("URL of an unnamed route returned no error")
 	}
 }
@@ -159,7 +159,7 @@ func TestAGroupStillAppliesItsPrefixAndItsMiddleware(t *testing.T) {
 		})
 	}
 
-	r := httpx.NewRouter()
+	r := fhttp.NewRouter()
 	admin := r.Group("/admin", mark)
 	admin.Get("/reports", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
 
@@ -177,7 +177,7 @@ func TestAGroupStillAppliesItsPrefixAndItsMiddleware(t *testing.T) {
 // ForModule tags the routes so `aru routes` can group them. The kernel calls it
 // per module and reads Route.Module back.
 func TestForModuleStillTagsTheRoutesItRegisters(t *testing.T) {
-	r := httpx.NewRouter()
+	r := fhttp.NewRouter()
 	r.ForModule("invoices").Get("/invoices", func(http.ResponseWriter, *http.Request) {})
 
 	all := r.Routes()
@@ -195,8 +195,8 @@ func TestForModuleStillTagsTheRoutesItRegisters(t *testing.T) {
 // back out of the cookie hesape/session wrote.
 func TestAHandlerThatReturnsTheFrameworksErrorsIsFlashedAndRedirected(t *testing.T) {
 	flash := security.NewFlash(make([]byte, 32), false)
-	r := httpx.NewRouter().WithFlash(flash)
-	r.Action(http.MethodPost, "/invoices", func(*httpx.Context) error {
+	r := fhttp.NewRouter().WithFlash(flash)
+	r.Action(http.MethodPost, "/invoices", func(*fhttp.Context) error {
 		return validation.Errors{"title": {"this field is required"}}
 	})
 
@@ -243,8 +243,8 @@ func TestAnEmptyErrorSetReturnedAsAnErrorIsStillRefusedLoudly(t *testing.T) {
 		}
 	}()
 
-	r := httpx.NewRouter().WithFlash(security.NewFlash(make([]byte, 32), false))
-	r.Action(http.MethodPost, "/invoices", func(*httpx.Context) error {
+	r := fhttp.NewRouter().WithFlash(security.NewFlash(make([]byte, 32), false))
+	r.Action(http.MethodPost, "/invoices", func(*fhttp.Context) error {
 		return validation.Errors{}
 	})
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/invoices", nil))
@@ -267,16 +267,16 @@ func TestTheTwoErrorTypesConvertBothWays(t *testing.T) {
 // what hesape/view reads through the new one -- the context key belongs to
 // hesape and there is only one of it.
 func TestStateWrittenThroughTheOldNameIsReadThroughTheNewOne(t *testing.T) {
-	state := httpx.State{
+	state := fhttp.State{
 		Errors: hvalidation.Errors{"email": {"we need an address"}},
 		Old:    url.Values{"email": {"typed@example.test"}},
 	}
-	ctx := httpx.WithState(context.Background(), state)
+	ctx := fhttp.WithState(context.Background(), state)
 
 	if got := hhttp.StateFrom(ctx); len(got.Errors["email"]) != 1 {
 		t.Errorf("hesape read back %v", got.Errors)
 	}
-	if got := httpx.StateFrom(ctx); got.Old.Get("email") != "typed@example.test" {
+	if got := fhttp.StateFrom(ctx); got.Old.Get("email") != "typed@example.test" {
 		t.Errorf("the old input came back as %v", got.Old)
 	}
 }
@@ -285,7 +285,7 @@ func TestStateWrittenThroughTheOldNameIsReadThroughTheNewOne(t *testing.T) {
 // first in the list has to stay the outermost.
 func TestChainStillNestsTheFirstMiddlewareOutermost(t *testing.T) {
 	var order []string
-	mark := func(name string) httpx.Middleware {
+	mark := func(name string) fhttp.Middleware {
 		return func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				order = append(order, name)
@@ -294,7 +294,7 @@ func TestChainStillNestsTheFirstMiddlewareOutermost(t *testing.T) {
 		}
 	}
 
-	h := httpx.Chain(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	h := fhttp.Chain(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		order = append(order, "handler")
 	}), mark("outer"), mark("inner"))
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
@@ -311,13 +311,13 @@ func TestTheThreeAnsweringHelpersStillReachTheirBehaviour(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/invoices", nil)
 	req.Header.Set("HX-Request", "true")
-	httpx.Redirect(rec, req, "/invoices/1")
+	fhttp.Redirect(rec, req, "/invoices/1")
 	if rec.Header().Get("HX-Redirect") != "/invoices/1" || rec.Code != http.StatusNoContent {
 		t.Errorf("Redirect answered %d with HX-Redirect %q", rec.Code, rec.Header().Get("HX-Redirect"))
 	}
 
 	rec = httptest.NewRecorder()
-	httpx.Refuse(rec, req, http.StatusForbidden, "not open to your account")
+	fhttp.Refuse(rec, req, http.StatusForbidden, "not open to your account")
 	if rec.Code != http.StatusForbidden || rec.Header().Get("HX-Refresh") != "true" {
 		t.Errorf("Refuse answered %d with HX-Refresh %q", rec.Code, rec.Header().Get("HX-Refresh"))
 	}
@@ -325,7 +325,7 @@ func TestTheThreeAnsweringHelpersStillReachTheirBehaviour(t *testing.T) {
 	away := httptest.NewRequest(http.MethodPost, "/invoices", nil)
 	away.Header.Set("Referer", "https://evil.example/login")
 	away.Host = "example.test"
-	if got := httpx.Back(away); got != "/" {
+	if got := fhttp.Back(away); got != "/" {
 		t.Errorf("Back accepted another origin: %q", got)
 	}
 }

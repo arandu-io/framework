@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arandu-io/framework/httpx"
-	"github.com/arandu-io/framework/httpx/middleware"
+	fhttp "github.com/arandu-io/framework/http"
+	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
 )
 
@@ -19,7 +19,7 @@ func csrfHandler(sessionID string) (http.Handler, *security.CSRF) {
 	reached := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("reached"))
 	})
-	h := httpx.Chain(reached, middleware.CSRFProtect(csrf, func(*http.Request) string { return sessionID }))
+	h := fhttp.Chain(reached, middleware.CSRFProtect(csrf, func(*http.Request) string { return sessionID }))
 	return h, csrf
 }
 

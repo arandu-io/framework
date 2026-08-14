@@ -12,7 +12,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/http"
 	hfoundation "github.com/arandu-io/hesape/foundation"
 )
 
@@ -30,7 +30,7 @@ import (
 // # Why this one is declared and not aliased
 //
 // hesape/foundation.Module names a *routing.Router, and this one names a
-// *httpx.Router. Those are two types: httpx.Router is the one envelope the
+// *http.Router. Those are two types: http.Router is the one envelope the
 // request bridge could not turn into an alias -- it carries the renderer and
 // the flash, and hesape/routing.Router deliberately carries neither -- so the
 // two interfaces cannot be the same interface while that envelope exists.
@@ -38,14 +38,14 @@ import (
 // Aliasing this name to the hesape one would change the signature every module
 // in every project is written against, in the two repositories this framework
 // ships and in every application built on it. A bridge that changes a signature
-// is not a bridge. It becomes an alias the day httpx.Router stops being an
+// is not a bridge. It becomes an alias the day http.Router stops being an
 // envelope, and not before.
 type Module interface {
 	// Name is the stable identifier of the module: a lowercase slug, no spaces.
 	Name() string
 
 	// Routes registers the module's HTTP routes.
-	Routes(r *httpx.Router)
+	Routes(r *http.Router)
 }
 
 // Bootable is optional: implement it when the module needs to prepare state at
@@ -84,11 +84,11 @@ type Background = hfoundation.Background
 // hesape/foundation has no counterpart: its doc says so in as many words, and
 // the reason is that declaring one from up there would be a second definition
 // of the boot sequence that looks for it. The renderer type is not the
-// divergence -- httpx.Renderer is an alias for hesape/http.Renderer, which is
+// divergence -- http.Renderer is an alias for hesape/http.Renderer, which is
 // what hesape/view.Module.Renderer already returns, so that module satisfies
 // this interface structurally and without importing this package.
 type RendererProvider interface {
-	Renderer() httpx.Renderer
+	Renderer() http.Renderer
 }
 
 // Closable is optional: implement it to release resources on shutdown.

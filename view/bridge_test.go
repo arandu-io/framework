@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/view"
 	hview "github.com/arandu-io/hesape/view"
 )
@@ -45,11 +45,11 @@ var (
 // module.go depends on and no compiler in hesape can check.
 //
 // hesape/view.Renderer is written against hesape/http.Renderer. This module's
-// Module hands it to a kernel that asks for httpx.Renderer, and the two
+// Module hands it to a kernel that asks for fhttp.Renderer, and the two
 // interfaces are declared in different modules. They agree today; if either
 // gains a parameter, this is where it is said out loud.
 func TestTheBridgedRendererStillSatisfiesTheFrameworkInterface(t *testing.T) {
-	var r httpx.Renderer = view.NewRenderer()
+	var r fhttp.Renderer = view.NewRenderer()
 	if r == nil {
 		t.Fatal("NewRenderer answered nil")
 	}
@@ -165,7 +165,7 @@ func TestTheApplicationStylesheetStillReachesTheBrowser(t *testing.T) {
 		t.Fatal("the URL did not change: it carries a content hash and is served immutable for a year")
 	}
 
-	r := httpx.NewRouter()
+	r := fhttp.NewRouter()
 	view.NewModule().Routes(r)
 	server := httptest.NewServer(r)
 	defer server.Close()
@@ -208,7 +208,7 @@ func TestTheReloadScriptIsServedThroughTheBridge(t *testing.T) {
 	src := strings.TrimPrefix(tag, `<script src="`)
 	src, _, _ = strings.Cut(src, `"`)
 
-	r := httpx.NewRouter()
+	r := fhttp.NewRouter()
 	view.NewModule().Routes(r)
 	server := httptest.NewServer(r)
 	defer server.Close()

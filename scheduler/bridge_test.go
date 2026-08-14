@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/arandu-io/framework/config"
-	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/scheduler"
 	"github.com/arandu-io/framework/security"
@@ -516,8 +516,8 @@ func TestAModuleWithNoTasksIsInert(t *testing.T) {
 // schedulingModule is a module that declares a task and nothing else.
 type schedulingModule struct{}
 
-func (*schedulingModule) Name() string         { return "billing" }
-func (*schedulingModule) Routes(*httpx.Router) {}
+func (*schedulingModule) Name() string        { return "billing" }
+func (*schedulingModule) Routes(*http.Router) {}
 func (*schedulingModule) Schedule() []kernel.Task {
 	return []kernel.Task{{
 		ID: "billing.close", Spec: "0 3 * * *", Action: "billing.close",

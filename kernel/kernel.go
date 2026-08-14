@@ -5,7 +5,7 @@ package kernel
 import (
 	"github.com/arandu-io/framework/config"
 	"github.com/arandu-io/framework/foundation"
-	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/http"
 )
 
 // Kernel holds the composed application: configuration, modules, the global
@@ -33,4 +33,4 @@ func New(cfg config.Config) *Kernel { return foundation.New(cfg) }
 //
 // A wrapper for the same reason New is. What it reaches is
 // hesape/routing.FormatRoutes, through foundation (docs/31:192).
-func FormatRoutes(routes []*httpx.Route) string { return foundation.FormatRoutes(routes) }
+func FormatRoutes(routes []*http.Route) string { return foundation.FormatRoutes(routes) }

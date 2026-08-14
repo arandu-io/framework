@@ -15,8 +15,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/arandu-io/framework/httpx"
-	"github.com/arandu-io/framework/httpx/middleware"
+	fhttp "github.com/arandu-io/framework/http"
+	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/kernel"
 )
 
@@ -79,7 +79,7 @@ func (m *Module) Name() string { return "auth" }
 // which reads to them as having been signed out. There is nothing to guard on
 // the two POSTs -- signing in again is harmless, and signing out without a
 // session is a no-op that ends where it should.
-func (m *Module) Routes(r *httpx.Router) {
+func (m *Module) Routes(r *fhttp.Router) {
 	g := r.Group("/auth")
 	g.Get("/login", m.showLogin, middleware.RedirectIfAuthenticated(m.svc.session, "/"))
 	g.Post("/login", m.doLogin)

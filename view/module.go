@@ -1,7 +1,7 @@
 package view
 
 import (
-	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/kernel"
 )
 
@@ -39,7 +39,7 @@ func (*Module) Name() string { return "view" }
 // One route, one handler. The hash in the path is what makes the response
 // cacheable forever, and what makes a deploy invalidate it without anybody
 // clearing anything.
-func (*Module) Routes(r *httpx.Router) {
+func (*Module) Routes(r *http.Router) {
 	r.Get(AssetPath+"{hash}/{name}", Handler)
 }
 
@@ -56,4 +56,4 @@ func (*Module) ReloadTag(stream string) string { return ReloadTag(stream) }
 // registered module whether it brings one, before any route is registered. That
 // is what makes ctx.View work without the application calling a wiring function
 // that somebody eventually forgets.
-func (*Module) Renderer() httpx.Renderer { return NewRenderer() }
+func (*Module) Renderer() http.Renderer { return NewRenderer() }

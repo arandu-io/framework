@@ -14,7 +14,7 @@ import (
 	"github.com/arandu-io/framework/config"
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/foundation"
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/observability"
 )
 
@@ -31,7 +31,7 @@ type stub struct {
 
 func (s *stub) Name() string { return s.name }
 
-func (s *stub) Routes(r *httpx.Router) {
+func (s *stub) Routes(r *fhttp.Router) {
 	r.Get("/"+s.name, func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -256,7 +256,7 @@ type loggerProbe struct {
 
 func (p *loggerProbe) Name() string { return "probe" }
 
-func (p *loggerProbe) Routes(r *httpx.Router) {
+func (p *loggerProbe) Routes(r *fhttp.Router) {
 	r.Get("/probe", func(w http.ResponseWriter, req *http.Request) {
 		p.seen = observability.Log(req.Context())
 	})
@@ -389,7 +389,7 @@ type backgroundSpy struct {
 }
 
 func (*backgroundSpy) Name() string         { return "spy" }
-func (*backgroundSpy) Routes(*httpx.Router) {}
+func (*backgroundSpy) Routes(*fhttp.Router) {}
 
 func (b *backgroundSpy) Boot(context.Context) error { b.booted.Store(true); return nil }
 

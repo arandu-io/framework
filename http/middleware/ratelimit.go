@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 	rmiddleware "github.com/arandu-io/hesape/routing/middleware"
 )
 
@@ -35,7 +35,7 @@ type Limiter interface {
 // limiting login attempts by IP alone does not stop distributed credential
 // stuffing, because every attempt arrives from a different address.
 //
-// The refusal goes through httpx.Refuse, like the role guard's 403 and
+// The refusal goes through fhttp.Refuse, like the role guard's 403 and
 // CSRFProtect's 419. This is the third of the three middlewares in this package
 // that turn a request away, and it was the one left on http.Error: htmx swaps no
 // 4xx, so somebody who had hit the limit pressed the button and the screen did
@@ -63,7 +63,7 @@ func RateLimit(l Limiter, limit int, window time.Duration, key func(*http.Reques
 			if !ok {
 				seconds := strconv.Itoa(int(retry.Seconds()) + 1)
 				w.Header().Set("Retry-After", seconds)
-				httpx.Refuse(w, r, http.StatusTooManyRequests,
+				fhttp.Refuse(w, r, http.StatusTooManyRequests,
 					"too many requests: wait "+seconds+" seconds and try again")
 				return
 			}

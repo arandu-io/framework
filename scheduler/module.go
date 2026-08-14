@@ -11,7 +11,7 @@ package scheduler
 import (
 	"context"
 
-	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/kernel"
 )
 
@@ -53,7 +53,7 @@ func (*Module) Name() string { return "scheduler" }
 
 // Routes registers nothing. A scheduled task is not reachable over HTTP, and
 // making it reachable would be a way to trigger billing by URL.
-func (*Module) Routes(*httpx.Router) {}
+func (*Module) Routes(*http.Router) {}
 
 // Boot parses the tasks. It does not start the loop.
 //

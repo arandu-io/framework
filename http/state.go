@@ -5,7 +5,7 @@
 // on one key across both module boundaries, so a page drawn through this
 // package sees what a page drawn through hesape/http sees.
 
-package httpx
+package http
 
 import (
 	"context"

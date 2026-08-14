@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arandu-io/framework/httpx"
-	"github.com/arandu-io/framework/httpx/middleware"
+	fhttp "github.com/arandu-io/framework/http"
+	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
 )
 
@@ -19,7 +19,7 @@ func guarded(guard func(http.Handler) http.Handler) http.Handler {
 	reached := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("reached"))
 	})
-	return httpx.Chain(reached, guard)
+	return fhttp.Chain(reached, guard)
 }
 
 func newSessions() *security.SessionStore {

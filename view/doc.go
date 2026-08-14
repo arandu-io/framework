@@ -49,13 +49,13 @@
 //	                   promoted fields are not addressable in one. hesape's New
 //	                   also takes a *hesape/http.Context and its Errors field
 //	                   is a hesape/validation.Errors, neither of which this
-//	                   module's httpx and validation reach yet.
+//	                   module's http and validation reach yet.
 //	Module             hesape/view.Module takes a *hesape/routing.Router and
 //	                   answers a hesape/http.Renderer, and it deliberately
 //	                   drops the compile-time assertion against the module
 //	                   contract while foundation is still being built. This one
-//	                   keeps kernel.Module and *httpx.Router, and hands over
-//	                   the bridged Renderer -- which satisfies httpx.Renderer
+//	                   keeps kernel.Module and *http.Router, and hands over
+//	                   the bridged Renderer -- which satisfies http.Renderer
 //	                   because the two interfaces declare the same method.
 //
 // Both are reported as gaps rather than reimplemented anywhere.

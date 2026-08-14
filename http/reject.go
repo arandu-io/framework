@@ -4,7 +4,7 @@
 // a redirect, and the whole of its correctness is that the address it redirects
 // to is proven local.
 
-package httpx
+package http
 
 import (
 	"net/http"

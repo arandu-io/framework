@@ -1,4 +1,4 @@
-// Package httpx is the request and routing layer.
+// Package http is the request and routing layer.
 //
 // It is a thin shell over net/http: Middleware is the standard
 // func(http.Handler) http.Handler, so every middleware written for the Go
@@ -33,4 +33,4 @@
 // One symbol was deleted rather than bridged: Context.Validate. It had no
 // caller outside its own test and it was the second way to validate a request
 // (RULE 9, docs/31:180).
-package httpx
+package http

@@ -5,7 +5,7 @@
 // written against this package and one written against hesape/http take the
 // same value -- which is what lets hesape/routing register either of them.
 
-package httpx
+package http
 
 import (
 	"net/http"

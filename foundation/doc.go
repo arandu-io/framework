@@ -24,8 +24,8 @@
 // Three names are declared here, each for a reason recorded on the declaration
 // in module.go:
 //
-//	Module            names a *httpx.Router, and hesape/foundation.Module names
-//	                  a *routing.Router -- httpx.Router is the one envelope the
+//	Module            names a *http.Router, and hesape/foundation.Module names
+//	                  a *routing.Router -- http.Router is the one envelope the
 //	                  request bridge could not make an alias
 //	RendererProvider  hesape/foundation has none, deliberately: it names the
 //	                  boot sequence that looks for it, and that sequence is here
@@ -34,7 +34,7 @@
 //	                  built from what github.com/arandu-io/kv implements
 //
 // [FormatRoutes] is neither: it is a call through to
-// hesape/routing.FormatRoutes (docs/31:192), which the alias on httpx.Route
+// hesape/routing.FormatRoutes (docs/31:192), which the alias on http.Route
 // makes possible without translating anything.
 //
 // # Builtins is not here, and needs a decision rather than code

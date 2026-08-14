@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 )
 
 // Live reload: the browser follows the restart, in development only.
@@ -28,9 +28,9 @@ import (
 // from. Go has no way to reach any of them from another module.
 //
 // An audit reported this as a RULE 9 failure and named the wrong cause: it read
-// the signature difference between []httpx.Middleware and
+// the signature difference between []fhttp.Middleware and
 // []pipeline.Middleware[http.Handler] as the obstacle, and those two are the
-// same type -- httpx.Middleware is an alias. The obstacle is the lower-case
+// same type -- fhttp.Middleware is an alias. The obstacle is the lower-case
 // letter, and no aliasing removes it.
 //
 // The way out is for hesape/foundation to export what a kernel above it needs,
@@ -243,9 +243,9 @@ func (h *htmlRecorder) send(body []byte) {
 }
 
 // devReload is the middleware, or nothing outside development.
-func devReload(isDev bool) []httpx.Middleware {
+func devReload(isDev bool) []fhttp.Middleware {
 	if !isDev {
 		return nil
 	}
-	return []httpx.Middleware{liveReload}
+	return []fhttp.Middleware{liveReload}
 }

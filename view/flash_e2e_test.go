@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/arandu-io/framework/config"
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
@@ -70,15 +70,15 @@ type signupModule struct{}
 
 func (signupModule) Name() string { return "flashe2e" }
 
-func (signupModule) Routes(r *httpx.Router) {
-	r.Action(http.MethodGet, "/signup", func(ctx *httpx.Context) error {
+func (signupModule) Routes(r *fhttp.Router) {
+	r.Action(http.MethodGet, "/signup", func(ctx *fhttp.Context) error {
 		// The whole of what a controller writes about errors: nothing. The
 		// constructor fills them, because the alternative is a line a handler
 		// can forget and a form that comes back blank when it does.
 		return ctx.View("flashe2e/signup", signupData{Page: view.New(ctx, "Sign up")})
 	})
 
-	r.Action(http.MethodPost, "/signup", func(ctx *httpx.Context) error {
+	r.Action(http.MethodPost, "/signup", func(ctx *fhttp.Context) error {
 		if err := ctx.Request.ParseForm(); err != nil {
 			return err
 		}

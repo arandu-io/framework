@@ -4,7 +4,7 @@
 // request layer's: hesape/session, hesape/cookie and hesape/exception all
 // produce middleware, and none of them may import the layer that calls it.
 
-package httpx
+package http
 
 import (
 	"net/http"
@@ -17,7 +17,7 @@ import (
 //
 // The "=" is load-bearing and not a shorthand. It is what lets hesape/session,
 // hesape/cookie and hesape/exception return a pipeline.Middleware[http.Handler]
-// that IS an httpx.Middleware without importing this package -- with a defined
+// that IS an http.Middleware without importing this package -- with a defined
 // type each of them would have to import the layer above, which is the cycle
 // this reorganisation exists to remove.
 //
