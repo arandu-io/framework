@@ -1,112 +1,41 @@
-// Package validation checks a submitted form against a set of rules.
-//
-// The surface is Laravel's, string rules included, so that somebody arriving
-// from it recognises the whole thing without reading anything:
-//
-//	var Register = validation.MustCompile(validation.Rules{
-//		"name":     "required|max:255",
-//		"email":    "required|email",
-//		"password": "required|min:12|confirmed",
-//	})
-//
-//	in, err := ctx.Validate(requests.Register)
-//	if err != nil {
-//		return err
-//	}
-//
-// A rule set is compiled ONCE, in a package-level variable, and every rule
-// string is parsed and checked there: an unknown rule, a missing or unparseable
-// argument, a pattern that does not compile, a cross-field reference naming a
-// field that does not exist -- each of those fails at boot, naming the field,
-// the rule and the file, and all of them are reported together. A rule set that
-// boots is a rule set whose names are all real.
-//
-// Sixty-one of Laravel's rules ship. Every one of the others is named in
-// refused.go with the reason it is not here and where the answer lives instead,
-// so a rule copied from a Laravel application gets an argument rather than
-// "unknown rule". Two of those reasons are worth knowing before writing
-// anything: `unique` and `exists` reach a repository and a rule set carries no
-// security.Grant (RULE 17), and `date_format` takes a Go layout
-// (date_format:2006-01-02), never a PHP one.
-//
-// There is no reflection and there are no struct tags. The rule set is data,
-// the request struct is written by hand or generated, and the values that
-// passed are read out of Input one at a time -- so a field nobody declared a
-// rule for cannot reach a repository through here.
+// The failures, the request contract and the one-value helpers, answered by
+// github.com/arandu-io/hesape/validation -- and Humanize, answered by
+// github.com/arandu-io/hesape/str, because naming a field the way a sentence
+// does is a string question and not a validation one.
+
 package validation
 
 import (
-	"fmt"
-	"sort"
-	"strings"
-	"time"
+	"github.com/arandu-io/hesape/str"
+	hvalidation "github.com/arandu-io/hesape/validation"
 )
 
 // Errors maps a field to its messages. It serializes straight into the HTMX
 // partial that re-renders the form with inline errors.
-type Errors map[string][]string
-
-// Add appends a message to a field. It is a no-op on a nil map, so a caller
-// that forgot to initialize the map does not panic in the middle of a request.
-func (e Errors) Add(field, msg string) {
-	if e == nil {
-		return
-	}
-	e[field] = append(e[field], msg)
-}
-
-// Any reports whether validation failed.
-func (e Errors) Any() bool { return len(e) > 0 }
-
-// Error renders the errors with fields in a stable order, so that logs and
-// golden files do not change between runs.
-func (e Errors) Error() string {
-	fields := make([]string, 0, len(e))
-	for f := range e {
-		fields = append(fields, f)
-	}
-	sort.Strings(fields)
-
-	var b strings.Builder
-	b.WriteString("validation failed: ")
-	for i, f := range fields {
-		if i > 0 {
-			b.WriteString("; ")
-		}
-		fmt.Fprintf(&b, "%s (%s)", f, strings.Join(e[f], ", "))
-	}
-	return b.String()
-}
+//
+// The alias carries the whole message bag with it: the four methods this
+// package declared -- Add, Any, Error and First -- are still there, alongside
+// the rest of Illuminate's MessageBag. First took no argument here and takes an
+// optional key there, so e.First() reads as it always did and e.First("email")
+// is new.
+type Errors = hvalidation.Errors
 
 // Validatable is implemented by every request type.
-type Validatable interface {
-	Validate() Errors
-}
+type Validatable = hvalidation.Validatable
 
 // The helper list below is short on purpose: domain rules do not belong to the
-// framework.
+// framework. Each one is a plain function, which has no alias form in Go, so
+// each is a call through.
 
 // Required rejects an empty or blank value.
-func Required(e Errors, field, value string) {
-	if strings.TrimSpace(value) == "" {
-		e.Add(field, "is required")
-	}
-}
+func Required(e Errors, field, value string) { hvalidation.Required(e, field, value) }
 
 // MinLen counts runes, not bytes: a limit measured in bytes rejects valid input
 // in any language that needs more than one byte per character.
-func MinLen(e Errors, field, value string, n int) {
-	if len([]rune(value)) < n {
-		e.Add(field, fmt.Sprintf("must be at least %d characters", n))
-	}
-}
+func MinLen(e Errors, field, value string, n int) { hvalidation.MinLen(e, field, value, n) }
 
 // MaxLen counts runes, not bytes.
-func MaxLen(e Errors, field, value string, n int) {
-	if len([]rune(value)) > n {
-		e.Add(field, fmt.Sprintf("must be at most %d characters", n))
-	}
-}
+func MaxLen(e Errors, field, value string, n int) { hvalidation.MaxLen(e, field, value, n) }
 
 // Email checks the shape only. Deliverability is proven by sending mail, never
 // by a regular expression.
@@ -114,40 +43,19 @@ func MaxLen(e Errors, field, value string, n int) {
 // Whitespace is rejected rather than trimmed: an address with a space in it is
 // almost always a paste accident, and silently trimming input hides the mistake
 // from the person who made it.
-// The shape itself is emailShape, which the `email` rule also calls: two
-// implementations of "is this an address" would drift, and the one that drifted
-// would be whichever a screen did not exercise.
-func Email(e Errors, field, value string) {
-	if !emailShape(value) {
-		e.Add(field, "is not a valid email address")
-	}
-}
+func Email(e Errors, field, value string) { hvalidation.Email(e, field, value) }
 
 // NotZero reports a value that was never filled in.
 //
-// It is Required for everything that is not text. Required takes a string and
-// the generator used to hand it a literal "" for an int, a date or an amount --
-// so every required field of those types failed validation with "is required"
-// no matter what was sent, and the generated create endpoint could not be used
-// at all. Found by audit.
+// It is Required for everything that is not text. A time.Time is asked rather
+// than compared: a parsed "0001-01-01T00:00:00Z" carries a location the zero
+// value does not, so == says they differ when they do not.
 //
-// A time.Time is asked rather than compared: a parsed "0001-01-01T00:00:00Z"
-// carries a location the zero value does not, so == says they differ when they
-// do not.
+// Bool has no meaningful zero to reject -- false is an answer, not an absence.
 //
-// Bool has no meaningful zero to reject -- false is an answer, not an absence --
-// and the specification refuses `required` on a bool for that reason.
+// A wrapper and not an alias: Go has no alias form for a generic function.
 func NotZero[T comparable](e Errors, field string, value T) {
-	if t, ok := any(value).(time.Time); ok {
-		if t.IsZero() {
-			e.Add(field, "is required")
-		}
-		return
-	}
-	var zero T
-	if value == zero {
-		e.Add(field, "is required")
-	}
+	hvalidation.NotZero(e, field, value)
 }
 
 // Confirmed rejects a value its confirmation field does not repeat.
@@ -156,38 +64,22 @@ func NotZero[T comparable](e Errors, field string, value T) {
 // confirmation rather than on the field itself: a form that reports "password
 // does not match" next to the first box tells the person to change the one they
 // meant, and they change it, and the form fails again.
-//
-// An empty confirmation is reported here rather than by Required, so the field
-// gets one message instead of two saying the same thing.
 func Confirmed(e Errors, field, value, confirmation string) {
-	if value == "" {
-		// Nothing to confirm yet. Whatever rule rejected the value itself has
-		// already said so, and a second message about the copy is noise.
-		return
-	}
-	if confirmation == "" {
-		e.Add(field, "is required")
-		return
-	}
-	if value != confirmation {
-		e.Add(field, "does not match")
-	}
+	hvalidation.Confirmed(e, field, value, confirmation)
 }
 
-// First returns one message, for a view that shows a single line.
+// Humanize turns a form field name into what a sentence calls it:
+// "password_confirmation" becomes "Password Confirmation".
 //
-// A form that lists every error next to its field uses the map directly. One
-// that shows a banner needs one sentence, and picking it at the call site means
-// every template does it slightly differently.
+// It is exported because the messages in this package are written to be drawn
+// WITHOUT a field name -- components.Field puts "must be at least 12
+// characters" under a labelled input -- and a banner needs one in front:
+// view.Page.ErrorSummary renders "Password must be at least 12 characters".
 //
-// The field order is not stable -- a map has none -- so this is for the case
-// where any of them answers the question "what is wrong". When which field
-// failed matters, read the map.
-func (e Errors) First() string {
-	for _, msgs := range e {
-		if len(msgs) > 0 {
-			return msgs[0]
-		}
-	}
-	return ""
-}
+// It answers to str.Headline, which is Str::headline, and that CHANGES what it
+// returns: "password_confirmation" was "Password confirmation" here and is
+// "Password Confirmation" there. A one-word field reads identically, which is
+// most of them. The sentence casing was an Arandu divergence from Laravel and
+// hesape closed it deliberately; this is the one behaviour the move changes,
+// and it changes the text of an error summary, never whether a form passes.
+func Humanize(field string) string { return str.Headline(field) }
