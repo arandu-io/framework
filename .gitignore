@@ -1,3 +1,6 @@
+# A library: nothing here builds a binary of its own. The only local artifact
+# a clean checkout can produce is the test binary from `go test -c`.
+*.test
 
 # Configuracao do harness. Vive na raiz do diretorio de trabalho, nao aqui:
 # um arquivo por repositorio ja divergiu, e o hook de commit-msg em .githooks/

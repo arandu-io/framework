@@ -1,0 +1,18 @@
+# What this module declares about itself.
+#
+# No framework field: this is the framework, so there is no version of it to
+# be compatible with.
+
+name = "arandu-io/framework"
+profiles = ["conventional", "performance"]
+
+[permissions]
+# config/dotenv reads ./.env off disk before the environment is consulted.
+filesystem = true
+# mail.Resend and mail.SendGrid hold an *http.Client and a set of fields, but
+# the request itself is placed by hesape/mail/transport.Send -- this package
+# never calls .Do or http.NewRequest on its own.
+network = false
+exec = false
+# modules/auth owns the users table.
+migrations = true
