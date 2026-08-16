@@ -17,17 +17,24 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	hconfig "github.com/arandu-io/hesape/config"
 )
 
 // Env is the deployment environment. It gates everything that must never run
 // outside development, starting with the debug error page.
-type Env string
+//
+// It is github.com/arandu-io/hesape/config.Env, and the alias is what keeps it
+// one type rather than two: an Env read here is the same value a function
+// written against that package takes, with the same Is and IsProduction
+// methods, and the three spellings below are the same three constants.
+type Env = hconfig.Env
 
 // Supported environments.
 const (
-	EnvDev     Env = "dev"
-	EnvStaging Env = "staging"
-	EnvProd    Env = "prod"
+	EnvDev     = hconfig.EnvDev
+	EnvStaging = hconfig.EnvStaging
+	EnvProd    = hconfig.EnvProd
 )
 
 // AppKeyLen is the required length of the application key, in bytes.
