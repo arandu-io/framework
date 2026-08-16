@@ -12,7 +12,7 @@ go 1.26
 // there is still exactly one of those: golang.org/x/crypto, where argon2 lives.
 // It is indirect now because the hashing moved to hesape/hashing -- nothing here
 // hashes a password any more. Add a fourth line to this file and the CI fails.
-// See docs/adr/0004-core-sem-dependencia.md.
+// See 10-adr/ADR-0004-dependency-free-core.md.
 //
 // The four adapter repositories this comment used to list -- database, kv, queue
 // and storage -- were folded into hesape by ADR 0048. The heavy driver still
