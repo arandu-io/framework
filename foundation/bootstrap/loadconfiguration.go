@@ -87,6 +87,11 @@ type Configuration struct {
 // framework that boots with a missing key and discovers it on the first request
 // has moved a start-up error into production traffic.
 //
+// The variable names are the ones a .env already carries -- APP_NAME, APP_KEY,
+// DB_CONNECTION and the rest keep the spelling and the meaning they have
+// elsewhere, so a file moved across works unchanged. Where a default differs,
+// the field says so.
+//
 // Where a default is not the obvious one, the field says why.
 func LoadConfiguration() (Configuration, error) {
 	// The file only fills what the environment has not already defined, and
