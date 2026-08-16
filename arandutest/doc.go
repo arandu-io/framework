@@ -13,9 +13,9 @@
 // net/http/httptest. What is left here is the old names pointing at them.
 //
 // The death date above is what keeps this from being a second way to import one
-// helper, which RULE 9 forbids. Nothing here holds an implementation of the
-// browser or of the assertions: the cookie jar, the CSRF token read off the last
-// page, and every comparison a Response makes run in hesape.
+// helper. Nothing here holds an implementation of the browser or of the
+// assertions: the cookie jar, the CSRF token read off the last page, and every
+// comparison a Response makes run in hesape.
 //
 // Two hesape packages answer for it, and which one depends on the symbol:
 //
@@ -26,11 +26,10 @@
 //
 // Nothing here is a plain alias, and the reasons are worth naming:
 //
-//	Response   every assertion was renamed to the Illuminate spelling --
-//	           Status becomes AssertStatus, OK becomes AssertOk, See becomes
-//	           AssertSee, DontSee becomes AssertDontSee, RedirectsTo becomes
-//	           AssertRedirect, Body becomes GetContent. The envelope keeps the
-//	           old names and forwards
+//	Response   every assertion was renamed -- Status becomes AssertStatus, OK
+//	           becomes AssertOk, See becomes AssertSee, DontSee becomes
+//	           AssertDontSee, RedirectsTo becomes AssertRedirect, Body becomes
+//	           GetContent. The envelope keeps the old names and forwards
 //	Client     Get and Post answer the Response above, so the client that
 //	           returns them is an envelope as well
 //	ActingAs   hesape deleted the package-level form and put the subject under

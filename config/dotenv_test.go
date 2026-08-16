@@ -204,7 +204,7 @@ func TestAMalformedLineNamesTheFileAndTheLine(t *testing.T) {
 
 // TestThereIsNoInterpolation: ${OTHER} is where a .env format stops being a
 // format and starts being a language, and a language has to be maintained
-// forever (RULE 15). The value is what the file says it is.
+// forever. The value is what the file says it is.
 func TestThereIsNoInterpolation(t *testing.T) {
 	inProject(t, `APP_KEY=`+strings.Repeat("k", config.AppKeyLen)+`
 DATABASE_URL=sqlite://database/database.sqlite

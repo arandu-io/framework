@@ -1,7 +1,6 @@
 // Package validation checks a submitted form against a set of rules.
 //
-// The surface is Laravel's, string rules included, so that somebody arriving
-// from it recognises the whole thing without reading anything:
+// The surface is string rules, so that a rule set reads without explanation:
 //
 //	var Register = validation.MustCompile(validation.Rules{
 //		"name":     "required|max:255",
@@ -23,21 +22,21 @@
 //
 // This package is a bridge. It is removed in v1.0.0; import github.com/arandu-io/hesape/validation directly.
 //
-// The component moved to github.com/arandu-io/hesape under the Illuminate
-// names, and this package is now the old names pointing at it. Every symbol
-// here answers to hesape/validation, with one exception: Humanize answers to
+// The component moved to github.com/arandu-io/hesape under new names, and this
+// package is now the old names pointing at it. Every symbol here answers to
+// hesape/validation, with one exception: Humanize answers to
 // hesape/str.Headline, because naming a field the way a sentence does is a
 // string question and not a validation one.
 //
 // The death date above is what keeps this from being a second way to import one
-// type, which RULE 9 forbids. Nothing here holds an implementation: where the
-// name and the signature survived the move it is a Go alias, and where the
-// design diverged it is a call through and nothing more.
+// type. Nothing here holds an implementation: where the name and the signature
+// survived the move it is a Go alias, and where the design diverged it is a call
+// through and nothing more.
 //
 // The three divergences, and what each one is:
 //
-//	WithMessages   is WithMessageOverrides there, because the name
-//	               WithMessages belongs to ValidationException::withMessages
+//	WithMessages   is WithMessageOverrides there, because hesape spends the
+//	               name WithMessages on another symbol
 //	Compile        is a function VALUE rather than a wrapper, and so is
 //	               MustCompile: both read runtime.Caller to name the source of
 //	               a boot failure, and a wrapper would name this file

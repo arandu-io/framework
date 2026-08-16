@@ -1,15 +1,14 @@
 // Package mail sends what an application has to say to somebody.
 //
-// The shape is Laravel's, because a developer coming from there should
-// recognise it: a Mailable declares an Envelope and a Content, a Mailer sends
-// it, and the transport behind the Mailer is configuration rather than a
-// decision the calling code makes.
+// A Mailable declares an Envelope and a Content, a Mailer sends it, and the
+// transport behind the Mailer is configuration rather than a decision the
+// calling code makes.
 //
 // This package is a bridge. It is removed in v1.0.0; import github.com/arandu-io/hesape/mail directly.
 //
-// The components moved to github.com/arandu-io/hesape, under the Illuminate
-// names, and this package is now the old names pointing at them. It answers to
-// two hesape packages:
+// The components moved to github.com/arandu-io/hesape, under new names, and
+// this package is now the old names pointing at them. It answers to two hesape
+// packages:
 //
 //	hesape/mail            the vocabulary and the Mailer: Mailable, Envelope,
 //	                       Content, Message, Render, ErrNoRecipient, ErrRetryable
@@ -17,20 +16,19 @@
 //	                       Array, Resend, SendGrid
 //
 // The death date above is what keeps this from being a second way to import one
-// type, which RULE 9 forbids. Nothing here holds an implementation: no message
-// is rendered, no address is parsed and no byte is written by a line in this
-// package. Where a name survived the move it is a Go alias, and where the design
-// diverged it is an envelope that translates and nothing more.
+// type. Nothing here holds an implementation: no message is rendered, no address
+// is parsed and no byte is written by a line in this package. Where a name
+// survived the move it is a Go alias, and where the design diverged it is an
+// envelope that translates and nothing more.
 //
 // # The envelopes, and what diverged
 //
 // The split runs deeper here than in most of the collection, because the type at
-// the bottom changed shape: hesape spells a mailbox
-// Address{Address, Name}, after Illuminate\Mail\Mailables\Address, and this
-// package has always spelled it Address{Email, Name}. Every type that carries an
-// address therefore had to stay declared here rather than become an alias --
-// Address, Envelope, Message -- and with them the two interfaces that mention
-// those types, Mailable and Transport.
+// the bottom changed shape: hesape spells a mailbox Address{Address, Name}, and
+// this package has always spelled it Address{Email, Name}. Every type that
+// carries an address therefore had to stay declared here rather than become an
+// alias -- Address, Envelope, Message -- and with them the two interfaces that
+// mention those types, Mailable and Transport.
 //
 //	Address     Email is Address there
 //	Envelope    carries this package's Address, and has no Using field
@@ -42,7 +40,7 @@
 //	Mailable    answers this package's Envelope and Content
 //	Mailer      hesape's takes a name and an event dispatcher, and its To takes
 //	            one polymorphic argument where this one takes strings
-//	Pending     PendingMail there, with Illuminate's whole fluent surface
+//	Pending     PendingMail there, with a whole fluent surface
 //	Array       Sent and Reset are Messages and Flush there
 //
 // # Three differences a caller can observe

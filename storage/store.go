@@ -51,8 +51,8 @@ type File struct {
 // Every method takes a Grant. That is not ceremony: it is the only thing
 // standing between "the application stores files" and "any handler can read any
 // customer's files by building a string". Reads are not exempt -- List, Get and
-// Exists take one for the same reason Put does (RULE 17), and a listing is the
-// one call where forgetting it hands over the names of every file in the system.
+// Exists take one for the same reason Put does, and a listing is the one call
+// where forgetting it hands over the names of every file in the system.
 //
 // It stays declared here rather than aliasing filesystem.Adapter, which took the
 // Grant off every method and added a sixth. The Grant did not disappear there:

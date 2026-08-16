@@ -1,11 +1,10 @@
-// The flash-consuming middleware. It is NOT a bridge, and the plan said it
-// would be: docs/31:187 has it dissolving into a session.Start that carries and
-// consumes. hesape/session/middleware.StartSession is Illuminate's session
-// bootstrap and does not touch the arandu flash cookie; nothing in hesape calls
-// hesape/http.WithState outside a view test. Deleting this file would leave the
-// three-step path with its middle step missing, and the symptom -- every
-// rejected form coming back blank -- is exactly the failure the path exists to
-// remove. It stays until hesape answers for it.
+// The flash-consuming middleware. It is NOT a bridge:
+// hesape/session/middleware.StartSession starts a session and does not touch the
+// arandu flash cookie, and nothing in hesape calls hesape/http.WithState outside
+// a view test. Deleting this file would leave the three-step path with its
+// middle step missing, and the symptom -- every rejected form coming back blank
+// -- is exactly the failure the path exists to remove. It stays until hesape
+// answers for it.
 
 package middleware
 

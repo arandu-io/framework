@@ -293,16 +293,15 @@ func TestFormatRoutesWithoutRoutes(t *testing.T) {
 	}
 }
 
-// TestTheConsoleIsClosedInProduction is a hole an audit found and reproduced
-// over a real socket, and it is the worst kind: the code read as if it were
-// closed, and four comments said so.
+// TestTheConsoleIsClosedInProduction guards a hole of the worst kind: one where
+// the code reads as if it were closed.
 //
 // The recorder exists whenever a tracing secret is configured -- that is what
-// makes production tracing possible at all. The routes were mounted from the
-// same condition, and the secret was checked only by the middleware that
-// decides whether to RECORD. So anyone could GET /_arandu/debug with no
-// session, no cookie and no header, and read the buffer: SQL with its bound
-// arguments, dumps, event payloads, across every tenant.
+// makes production tracing possible at all. Mounting the routes from the same
+// condition, with the secret checked only by the middleware that decides whether
+// to RECORD, lets anyone GET /_arandu/debug with no session, no cookie and no
+// header, and read the buffer: SQL with its bound arguments, dumps, event
+// payloads, across every tenant.
 func TestTheConsoleIsClosedInProduction(t *testing.T) {
 	cfg := config.Config{
 		Env:           config.EnvProd,
@@ -395,13 +394,14 @@ func (b *backgroundSpy) Boot(context.Context) error { b.booted.Store(true); retu
 
 func (b *backgroundSpy) Start(context.Context) error { b.started.Store(true); return nil }
 
-// TestBootDoesNotStartBackgroundLoops is a bug an audit found.
+// TestBootDoesNotStartBackgroundLoops keeps Boot free of the loops.
 //
 // Every command boots -- `aru work`, `aru routes`, `aru schedule:list`,
-// `aru schedule:run`. When the scheduler and the relay started their loops in
-// Boot, every worker replica ran a scheduler of its own, and `aru schedule:run`
-// -- the command for running exactly one task by hand -- started the loop that
-// runs all of them. The lock made it harmless, not correct.
+// `aru schedule:run`. If the scheduler and the relay started their loops in
+// Boot, every worker replica would run a scheduler of its own, and
+// `aru schedule:run` -- the command for running exactly one task by hand --
+// would start the loop that runs all of them. The lock makes that harmless, not
+// correct.
 func TestBootDoesNotStartBackgroundLoops(t *testing.T) {
 	spy := &backgroundSpy{}
 	k := foundation.New(testConfig(config.EnvProd)).Register(spy)

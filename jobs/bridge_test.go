@@ -62,8 +62,8 @@ func TestAliasesAreTheHesapeSymbols(t *testing.T) {
 	}
 }
 
-// TestNewReachesHesape covers the constructor, which is where RULE 14 is
-// enforced: the tenant comes off the Grant and a job that has none is refused.
+// TestNewReachesHesape covers the constructor, which is where the tenant is
+// enforced: it comes off the Grant, and a job that has none is refused.
 func TestNewReachesHesape(t *testing.T) {
 	j, err := jobs.New(grant(), "", "invoice.send", map[string]string{"id": "i-1"})
 	if err != nil {
@@ -103,8 +103,7 @@ func TestNewReachesHesape(t *testing.T) {
 }
 
 // TestGrantForReachesHesape covers the Grant constructor a worker reissues work
-// under. It is load-bearing for RULE 14: the tenant and the action come off the
-// row and nowhere else.
+// under: the tenant and the action come off the row and nowhere else.
 func TestGrantForReachesHesape(t *testing.T) {
 	g := jobs.GrantFor(jobs.Job{Action: "invoice.send", TenantID: tenant})
 
@@ -294,7 +293,7 @@ func TestTheWorkerRoundTripsAJobAndAcknowledges(t *testing.T) {
 	}
 
 	// The handler receives a Grant for the tenant that pushed it, which is what
-	// lets it reach a repository at all (RULE 14).
+	// lets it reach a repository at all.
 	if gotGrant.Subject().Tenant != tenant {
 		t.Errorf("the handler got a Grant for %q, want %q", gotGrant.Subject().Tenant, tenant)
 	}

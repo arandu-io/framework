@@ -6,8 +6,8 @@
 // to something that did not happen.
 //
 // So an event is stored in the same transaction as the write that produced it,
-// and a relay publishes it afterwards. One way to do it (RULE 9), and the one
-// that cannot lose an event.
+// and a relay publishes it afterwards. One way to do it, and the one that
+// cannot lose an event.
 //
 // This package is a bridge. It is removed in v1.0.0; import github.com/arandu-io/hesape/events directly.
 //
@@ -16,8 +16,7 @@
 // package never had. Nothing here holds an implementation of them: where the
 // name and the signature survived the move it is a Go alias, and where the
 // design diverged it is an envelope that translates and nothing more. The death
-// date above is what keeps this from being a second way to import one type,
-// which RULE 9 forbids.
+// date above is what keeps this from being a second way to import one type.
 //
 // The three envelopes, and what diverged:
 //

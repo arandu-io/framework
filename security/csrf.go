@@ -1,5 +1,5 @@
-// The CSRF token, answered by github.com/arandu-io/hesape/session -- the token
-// is Session\Store::token() in Laravel, and what binds it is the session id.
+// The CSRF token, answered by github.com/arandu-io/hesape/session. What binds
+// the token is the session id.
 
 package security
 
@@ -11,8 +11,7 @@ import (
 
 // ErrCSRF means the token is invalid, expired, or bound to another session.
 //
-// Renamed on the way to hesape: it is session.ErrTokenMismatch there, after
-// Illuminate's TokenMismatchException.
+// Renamed on the way to hesape: it is session.ErrTokenMismatch there.
 var ErrCSRF = session.ErrTokenMismatch
 
 // CSRF issues double-submit tokens signed with HMAC and bound to the session.

@@ -1,33 +1,24 @@
 // Package bootstrap is the boot sequence: what runs once, in order, before the
 // application answers anything.
 //
-// It is Illuminate\Foundation\Bootstrap, and it is here rather than in the
-// collection for the reason ADR 0049 gives: of the 37 illuminate/* packages
-// laravel/framework publishes, none is Foundation. The boot composes the
-// components; it is not one of them.
+// It composes the components; it is not one of them, which is why it lives here
+// rather than with them.
 //
-// Laravel runs six bootstrappers. Two have an equivalent here, and the other
-// four do not -- each for a reason already decided, none of them pending:
+// Two bootstrappers run, and they are the whole of it:
 //
-//	LoadConfiguration        -> LoadConfiguration
-//	HandleExceptions         -> HandleExceptions
-//	LoadEnvironmentVariables -> folded into LoadConfiguration
-//	RegisterFacades          -> nothing (ADR 0002)
-//	RegisterProviders        -> nothing; it is Application.Register
-//	BootProviders            -> nothing; it is Application.Boot
+//	LoadConfiguration  reads the environment, .env included, and answers every
+//	                   component's settings
+//	HandleExceptions   builds the handler that answers when something fails
 //
-// LoadEnvironmentVariables is separate in Laravel because it has to be: the
-// config/*.php files call env() while they are being evaluated, so the .env has
-// to be in place before any of them runs. Nothing is evaluated here -- the
-// reading is direct, in LoadConfiguration -- so a second bootstrapper would be
-// a second way to load one file (RULE 9).
+// Loading the environment is not a bootstrapper of its own. Nothing here is
+// evaluated -- the reading is direct, in LoadConfiguration -- so a second one
+// would be a second way to load one file.
 //
-// RegisterProviders and BootProviders walk the container registering and then
-// booting service providers. There is no container (ADR 0001) and no provider:
-// what an application composes is modules, explicitly, and the two halves of
-// that are Application.Register and Application.Boot. They are methods rather
-// than bootstrappers because the list of modules is written by hand in
-// bootstrap/app.go, where it can be read.
+// Registering and booting modules are not bootstrappers either. There is no
+// container and no provider: what an application composes is modules,
+// explicitly, and the two halves of that are Application.Register and
+// Application.Boot. They are methods rather than bootstrappers because the list
+// of modules is written by hand in bootstrap/app.go, where it can be read.
 package bootstrap
 
 import (
@@ -47,11 +38,11 @@ import (
 
 // Configuration is every component's settings, typed, built once at boot.
 //
-// It is not a config file and it is not a registry. ADR 0051 settled the shape:
-// each component declares its own Config in its own package, because without a
-// container nothing looks a value up by key -- the component is handed what it
-// needs and the compiler checks the field. This struct is the one place that
-// reads the environment and fills them in.
+// It is not a config file and it is not a registry. Each component declares its
+// own Config in its own package, because without a container nothing looks a
+// value up by key -- the component is handed what it needs and the compiler
+// checks the field. This struct is the one place that reads the environment and
+// fills them in.
 //
 // The difference from a Repository of dotted keys is where a mistake surfaces.
 // A wrong field here does not compile. A wrong key in a map compiles, returns
@@ -63,7 +54,7 @@ import (
 // one Load per component reading the same environment at different moments.
 // Boot order would stop being visible, a variable read twice could answer twice,
 // and the failure of any of them would arrive whenever that component was first
-// touched rather than at start. One reader, one moment, one error (RULE 9).
+// touched rather than at start. One reader, one moment, one error.
 type Configuration struct {
 	// App is the application itself: name, environment, key, URL, locale.
 	// It is the only one with a loader of its own, because hesape/config.Load
@@ -89,22 +80,18 @@ type Configuration struct {
 	Repository *config.Repository
 }
 
-// LoadConfiguration is Illuminate\Foundation\Bootstrap\LoadConfiguration: it
-// reads the environment once and answers every component's settings.
+// LoadConfiguration reads the environment once and answers every component's
+// settings.
 //
 // It fails the process rather than returning a half-built Configuration. A
 // framework that boots with a missing key and discovers it on the first request
 // has moved a start-up error into production traffic.
 //
-// The defaults are Laravel's, from laravel/framework/config/*.php, and the
-// environment variable names are Laravel's too -- somebody moving a .env across
-// should find the same names doing the same thing. Where a default differs, the
-// field says so.
+// Where a default is not the obvious one, the field says why.
 func LoadConfiguration() (Configuration, error) {
 	// The file only fills what the environment has not already defined, and
-	// never the other way round. hesape/config/dotenv.go documents the
-	// precedence and calls inverting it the thing never to do: a deploy sets a
-	// variable, and a stale .env in the image must not win over it.
+	// never the other way round: a deploy sets a variable, and a stale .env in
+	// the image must not win over it.
 	if err := config.LoadDotenv(); err != nil {
 		return Configuration{}, fmt.Errorf("loading .env: %w", err)
 	}
@@ -137,22 +124,21 @@ func LoadConfiguration() (Configuration, error) {
 // minutes reads a variable written as a count of minutes.
 //
 // It exists for exactly one variable, SESSION_LIFETIME, and the reason is at
-// its call site: Laravel spells it that way, and a name carried over has to
-// carry its unit with it. Nothing else here is in minutes, and nothing else
-// should be -- config.Seconds is the form, because "3600" survives a Helm chart
-// and "1h" does not.
+// its call site. Nothing else here is in minutes, and nothing else should be --
+// config.Seconds is the form, because "3600" survives a Helm chart and "1h"
+// does not.
 func minutes(key string, fallback int) time.Duration {
 	return time.Duration(config.Int(key, fallback)) * time.Minute
 }
 
-// loadSession answers config/session.php.
+// loadSession answers the session settings.
 func loadSession(app config.App) session.Config {
-	// The cookie name is derived from the application name, as Laravel derives
-	// it from APP_NAME, and it is NOT configurable on its own.
+	// The cookie name is derived from the application name, and it is NOT
+	// configurable on its own.
 	//
-	// hesape/session documents why: the CSRF token is bound to the session, and
-	// a cookie name set independently breaks that binding in a way nothing
-	// reports -- the token stops matching and every form starts answering 419.
+	// The CSRF token is bound to the session, and a cookie name set
+	// independently breaks that binding in a way nothing reports -- the token
+	// stops matching and every form starts answering 419.
 	cookie := strings.ToLower(strings.NewReplacer(" ", "_", ".", "_").Replace(app.Name)) + "_session"
 
 	return session.Config{
@@ -161,17 +147,16 @@ func loadSession(app config.App) session.Config {
 		// SESSION_LIFETIME is read in MINUTES, and it is the one duration here
 		// that is not seconds.
 		//
-		// Laravel's config/session.php reads it as minutes and defaults to 120.
-		// Every other duration in this file goes through config.Seconds, and the
-		// consistent thing would be to read this one the same way -- which would
-		// turn a .env carried over from Laravel, saying SESSION_LIFETIME=120,
-		// into a two-minute session instead of a two-hour one.
+		// The unit comes with the name: wherever SESSION_LIFETIME is already
+		// written it means minutes, so reading it through config.Seconds like
+		// every other duration in this file would turn an existing
+		// SESSION_LIFETIME=120 into a two-minute session instead of a two-hour
+		// one.
 		//
 		// That failure is silent and it is the worst shape available: everybody
 		// stays signed in long enough for the change to look like it worked, and
-		// then gets thrown out mid-form. Keeping Laravel's name obliges keeping
-		// Laravel's unit; a variable that means something else under the same
-		// spelling is worse than a variable with a different name.
+		// then gets thrown out mid-form. A variable that means something else
+		// under the same spelling is worse than a variable with a different name.
 		Lifetime:      minutes("SESSION_LIFETIME", 120),
 		ExpireOnClose: config.Bool("SESSION_EXPIRE_ON_CLOSE", false),
 		Encrypt:       config.Bool("SESSION_ENCRYPT", false),
@@ -188,14 +173,13 @@ func loadSession(app config.App) session.Config {
 	}
 }
 
-// loadCache answers config/cache.php.
+// loadCache answers the cache settings.
 func loadCache() cache.Config {
 	def := config.String("CACHE_STORE", "database")
 	return cache.Config{
 		Default: def,
-		// Laravel derives the prefix from the application name. Here it is the
-		// tenant that separates one customer's keys from another's (RULE 14),
-		// and the prefix separates one deployment from another sharing a store.
+		// The tenant is what separates one customer's keys from another's. The
+		// prefix separates one deployment from another sharing a store.
 		Prefix: config.String("CACHE_PREFIX", ""),
 		Stores: map[string]cache.StoreConfig{
 			"array":    {Driver: "array", Name: "array"},
@@ -206,7 +190,7 @@ func loadCache() cache.Config {
 	}
 }
 
-// loadLog answers config/logging.php.
+// loadLog answers the logging settings.
 func loadLog(app config.App) log.Config {
 	level := config.String("LOG_LEVEL", "info")
 	return log.Config{
@@ -221,18 +205,18 @@ func loadLog(app config.App) log.Config {
 	}
 }
 
-// loadFilesystem answers config/filesystems.php.
+// loadFilesystem answers the filesystem settings.
 func loadFilesystem() filesystem.Config {
 	return filesystem.Config{
 		Driver: config.String("FILESYSTEM_DISK", "local"),
 		Root:   config.String("FILESYSTEM_ROOT", "storage/app"),
 		URL:    config.String("FILESYSTEM_URL", ""),
-		// Private, and not Laravel's public.
+		// Private, and never public by default.
 		//
 		// A file is customer data, and a disk that serves anything to anybody
-		// who guesses a path is a leak with a directory name (RULE 14). Reaching
-		// a file goes through the Grant; what is deliberately shared is shared
-		// by a signed URL, which is why ServeSigned exists.
+		// who guesses a path is a leak with a directory name. Reaching a file
+		// goes through the Grant; what is deliberately shared is shared by a
+		// signed URL, which is why ServeSigned exists.
 		Visibility:  config.String("FILESYSTEM_VISIBILITY", "private"),
 		Disk:        config.String("FILESYSTEM_DISK", "local"),
 		Prefix:      config.String("FILESYSTEM_PREFIX", ""),
@@ -240,11 +224,11 @@ func loadFilesystem() filesystem.Config {
 	}
 }
 
-// loadDatabase answers config/database.php.
+// loadDatabase answers the database settings.
 //
-// One variable, not six. ADR 0035 decided the connection is a URL, because six
-// variables have thirty-two states of which one is right, and a URL either
-// parses or says where it stopped.
+// One variable, not six: the connection is a URL, because six variables have
+// thirty-two states of which one is right, and a URL either parses or says
+// where it stopped.
 func loadDatabase() (database.Config, error) {
 	raw := config.String("DATABASE_URL", database.DefaultURL)
 	cfg, err := database.ParseURL(raw)
@@ -274,9 +258,8 @@ func (c Configuration) asMap() map[string]any {
 		"hashing": map[string]any{
 			// argon2id, and not bcrypt.
 			//
-			// Laravel defaults to bcrypt for compatibility with hashes written
-			// by every previous version of it. There are no previous Arandu
-			// hashes to be compatible with, and argon2id is what
+			// bcrypt is a compatibility default, and there are no previous
+			// hashes to stay compatible with. argon2id is what
 			// golang.org/x/crypto carries -- the one third-party dependency the
 			// core takes, and it takes it for this.
 			"driver": config.String("HASH_DRIVER", "argon2id"),
@@ -295,7 +278,7 @@ func (c Configuration) asMap() map[string]any {
 	}
 }
 
-// loadQueue answers config/queue.php.
+// loadQueue answers the queue settings.
 func loadQueue() queue.Config {
 	retry := config.Seconds("QUEUE_RETRY_AFTER", 90*time.Second)
 	return queue.Config{
@@ -324,7 +307,7 @@ func loadQueue() queue.Config {
 	}
 }
 
-// loadView answers config/view.php.
+// loadView answers the view settings.
 //
 // Two fields, because kyse compiles views into the binary: there is no path to
 // search and no compiled cache to place. See view.Config.

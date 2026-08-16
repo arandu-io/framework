@@ -1,12 +1,11 @@
 // The served assets, answered by github.com/arandu-io/hesape/view.
 //
 // The go:embed moved with them: the bytes a browser receives are hesape's, and
-// they are byte-identical to the ones this module used to embed. The copy under
-// assets/ in this repository is no longer compiled into anything. It is left in
-// place deliberately -- THIRD_PARTY.md at the root of this module is the
-// copyright notice for exactly those file names, third_party_test.go is what
-// keeps that notice from rotting, and neither is inside this package to fix.
-// See the report that came with this bridge.
+// they are byte-identical to the ones embedded here. The copy under assets/ in
+// this repository is no longer compiled into anything. It is left in place
+// deliberately -- THIRD_PARTY.md at the root of this module is the copyright
+// notice for exactly those file names, third_party_test.go is what keeps that
+// notice from rotting, and neither is inside this package to fix.
 //
 // Like the view registry, the asset table is package-level state, and the same
 // argument applies: a framework that kept its own would have kyse/fonts
@@ -29,7 +28,7 @@ const AssetPath = hview.AssetPath
 //
 // The collection embeds a default under this name and RegisterStylesheet
 // replaces it. Not a second file, not a second URL, not a cascade order: one
-// name, one URL, one set of bytes (RULE 9).
+// name, one URL, one set of bytes.
 const Stylesheet = hview.Stylesheet
 
 // AssetHash is the path segment an asset is served under: the first twelve hex

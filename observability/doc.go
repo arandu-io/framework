@@ -10,9 +10,9 @@
 //
 // This package is a bridge. It is removed in v1.0.0; import github.com/arandu-io/hesape/log directly.
 //
-// The components moved to github.com/arandu-io/hesape, under the Illuminate
-// names, and this package is now the old names pointing at them. Everything
-// here is answered by one package:
+// The components moved to github.com/arandu-io/hesape, under new names, and
+// this package is now the old names pointing at them. Everything here is
+// answered by one package:
 //
 //	hesape/log  the logger, the Collector, the Recorder, the Console, the
 //	            outbound transport, Dump and the editor links
@@ -22,9 +22,9 @@
 // it is the errorpage subpackage.
 //
 // The death date above is what keeps this from being a second way to import one
-// type, which RULE 9 forbids. Nothing here holds an implementation: where the
-// name and the signature survived the move it is a Go alias, and where the
-// design diverged it is a call through that translates and nothing more.
+// type. Nothing here holds an implementation: where the name and the signature
+// survived the move it is a Go alias, and where the design diverged it is a call
+// through that translates and nothing more.
 //
 // The four renames, which are the whole of the divergence:
 //

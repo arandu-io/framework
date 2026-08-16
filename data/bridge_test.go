@@ -1,11 +1,11 @@
 // Tests of the bridge, and of nothing else.
 //
 // What each symbol DOES is tested in github.com/arandu-io/hesape, against the
-// code that now runs; the unit tests that used to live here -- the rebinder,
-// the statement splitter, the batch numbering, the transaction, the recording
-// into the Collector -- were tests of an implementation this package no longer
-// holds, and keeping a second copy of them would be a second place for the
-// behaviour to be described.
+// code that now runs. The unit tests of the rebinder, the statement splitter,
+// the batch numbering, the transaction and the recording into the Collector
+// belong there: they test an implementation this package no longer holds, and a
+// second copy of them here would be a second place for the behaviour to be
+// described.
 //
 // What is left to prove is the only thing this package still claims: that the
 // old name reaches the new behaviour. That is one assertion per alias -- the
@@ -14,8 +14,8 @@
 // wrong function and still compile.
 //
 // The other half of the proof is in grant_required_test.go, which is not a
-// bridge test: it is RULE 14 itself, and it has to keep failing to compile
-// after the move exactly as it did before it.
+// bridge test: it is the mandatory Grant itself, and it has to keep failing to
+// compile after the move exactly as it did before it.
 
 package data_test
 
@@ -117,7 +117,7 @@ func TestWrappersKeepTheHesapeSignature(t *testing.T) {
 // auth.Tenant have the same shape, and a bridge pointed at the wrong field
 // would still build.
 //
-// It is also RULE 14 in one line: the value comes off the Grant.
+// It is also the tenant rule in one line: the value comes off the Grant.
 func TestTenantReachesAuthTenant(t *testing.T) {
 	g := security.SystemGrant("invoice.list", "acme")
 

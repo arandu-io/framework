@@ -13,8 +13,7 @@ import hvalidation "github.com/arandu-io/hesape/validation"
 // Rules is the rule set of one request, keyed by the name of the form input --
 // the same name components.FieldProps.Name carries.
 //
-// The spelling is Laravel's, so somebody arriving from it recognises the whole
-// thing without reading anything:
+// A whole set reads at once, without explanation:
 //
 //	var Register = validation.MustCompile(validation.Rules{
 //		"name":     "required|max:255",

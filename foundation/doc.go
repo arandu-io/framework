@@ -4,14 +4,11 @@
 // matters: the Application is built ONCE, at process start, not per request, so
 // nothing here may assume request scope.
 //
-// # What it answers to in Laravel
+// # Where Application came from
 //
-// Illuminate\Foundation, which is the one part of laravel/framework that ships
-// nowhere else: there is no illuminate/foundation on Packagist, and there is no
-// hesape/foundation counterpart for what is in this file either. [Application]
-// is Illuminate\Foundation\Application, under the name a Laravel developer
-// types. It was kernel.Kernel until this package landed, and
+// [Application] was kernel.Kernel until this package landed, and
 // github.com/arandu-io/framework/kernel is now the old name pointing here.
+// Nothing in this file has a hesape/foundation counterpart.
 //
 // # What is aliased and what is declared
 //
@@ -29,29 +26,23 @@
 //	                  request bridge could not make an alias
 //	RendererProvider  hesape/foundation has none, deliberately: it names the
 //	                  boot sequence that looks for it, and that sequence is here
-//	Locker            docs/31:191 retires it, and the events bridge reached that
-//	                  line first and kept it -- hesape/cache.Locks cannot be
-//	                  built from what github.com/arandu-io/kv implements
+//	Locker            it is retired, and the events bridge kept it --
+//	                  hesape/cache.Locks cannot be built from what
+//	                  github.com/arandu-io/kv implements
 //
 // [FormatRoutes] is neither: it is a call through to
-// hesape/routing.FormatRoutes (docs/31:192), which the alias on http.Route
-// makes possible without translating anything.
+// hesape/routing.FormatRoutes, which the alias on http.Route makes possible
+// without translating anything.
 //
-// # Builtins does not exist, and that is decided
+// # There is no list of built-in commands
 //
-// docs/31:190 gave this package a Builtins() []console.Command -- what a
-// project's own binary answers without the aru CLI. ADR 0050 refused it, and
-// the shortest of its three reasons is that the name is not Illuminate's: ADR
-// 0044 requires the Laravel name, and Builtins was invented by the
-// specification.
-//
-// What Laravel has in that place is ArtisanServiceProvider, which registers 110
-// commands into the container -- the mechanism ADR 0001 and ADR 0002 rejected.
-// Of the eleven commands a project dispatches today, only serve, routes and
-// Version are answerable from an Application at all; the rest need a *data.DB
-// it does not hold, project code it does not know, or a queue store from a
-// module that imports this one. Letting them register themselves would be a
-// container under another name.
+// This package answers no Builtins() []console.Command -- the set a project's
+// own binary would dispatch without the aru CLI. Of the eleven commands a
+// project dispatches today, only serve, routes and Version are answerable from
+// an Application at all; the rest need a *data.DB it does not hold, project code
+// it does not know, or a queue store from a module that imports this one.
+// Letting them register themselves would be a container under another name, and
+// there is no container.
 //
 // What is written instead is the switch in the skeleton's bootstrap/console.go.
 // It is in the project's own repository, the whole set reads at once, and

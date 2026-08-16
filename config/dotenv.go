@@ -12,7 +12,7 @@ import (
 //
 // One name, and it is not configurable. There is no --env-file flag and no
 // variable that moves it: a second place to put configuration is a second place
-// to look for it when the wrong value is in effect (RULE 9).
+// to look for it when the wrong value is in effect.
 const envFile = ".env"
 
 // loadEnvFile fills the gaps in the process environment from ./.env.
@@ -42,7 +42,7 @@ const envFile = ".env"
 // That is all of it. No ${INTERPOLATION}, no multi-line values, no include, no
 // inline comment after a value -- a # in a password is a # in a password. A
 // line the format does not cover is an error naming the file and the line
-// rather than a variable that silently did not arrive (RULE 15).
+// rather than a variable that silently did not arrive.
 //
 // A missing file is not an error. That is production: the environment is
 // already populated and there is no file at all.

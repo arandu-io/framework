@@ -11,7 +11,7 @@ package data
 import "github.com/arandu-io/hesape/auth"
 
 // Tenant returns the tenant from the Grant. Every multi-tenant statement must
-// take this value, never a tenant that came in with the request (RULE 14).
+// take this value, never a tenant that came in with the request.
 //
 // Renamed on the way to hesape only in address: it is auth.Tenant there, with
 // the same signature and the same one line of body.

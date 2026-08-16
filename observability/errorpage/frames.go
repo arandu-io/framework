@@ -12,18 +12,18 @@ import (
 type StackFrame = exception.StackFrame
 
 // Capture collects the stack from skip onwards, marking which frames belong to
-// the application. Same decision as Ignition: application frames are expanded
-// by default and everything else is collapsed.
+// the application: application frames are expanded by default and everything
+// else is collapsed.
 //
 // appModule is the caller's module path.
 //
 // It is hesape/exception.Capture, and that is the point of it rather than an
-// implementation detail. The rule this package used to apply was "collapse
-// github.com/arandu-io/framework", which stopped being true the moment the
-// implementation moved: a hesape frame matched no branch, so it was called
-// application code, expanded, and its source read off disk on every page. The
-// rule hesape applies is its own import path, the standard library, and package
-// main -- and, for everything else, the module path the application declared.
+// implementation detail. Collapsing by a hard-coded
+// github.com/arandu-io/framework would match no hesape frame, so every one of
+// them would be called application code, expanded, and its source read off disk
+// on every page. The rule hesape applies is its own import path, the standard
+// library, and package main -- and, for everything else, the module path the
+// application declared.
 //
 // What that leaves: with appModule empty there is nothing left to tell the
 // application from what it imported, and hesape is generous on purpose -- a page
@@ -32,8 +32,8 @@ type StackFrame = exception.StackFrame
 // this bridge along with everybody else's. Both skeletons set it, and it is the
 // field Options exists for.
 //
-// The snippet is five lines each side of the failing one rather than six: the
-// page is laid out for the eleven lines the PHP renders.
+// The snippet is five lines each side of the failing one: the page is laid out
+// for eleven lines.
 func Capture(skip int, appModule string) []StackFrame {
 	return exception.Capture(skip, appModule)
 }

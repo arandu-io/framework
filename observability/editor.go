@@ -15,12 +15,12 @@ import hlog "github.com/arandu-io/hesape/log"
 // one and gives no hint why.
 //
 // Two things changed with the move, and both are visible from here. The table
-// is hesape's, which knows the fourteen names the PHP one does rather than
-// four, and an unset or unknown editor now gets "" instead of a vscode:// link
-// that opens nothing for somebody who configured emacs. And hesape takes an
-// optional path rewrite, for a link built inside a container that has to open a
-// file outside it; this signature has no room for one, so it is the case that
-// needs hesape/log.EditorLink directly.
+// is hesape's, which knows fourteen editor names rather than four, and an unset
+// or unknown editor now gets "" instead of a vscode:// link that opens nothing
+// for somebody who configured emacs. And hesape takes an optional path rewrite,
+// for a link built inside a container that has to open a file outside it; this
+// signature has no room for one, so it is the case that needs
+// hesape/log.EditorLink directly.
 func EditorLink(editor, file string, line int) string {
 	return hlog.EditorLink(editor, file, line)
 }

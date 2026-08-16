@@ -59,7 +59,7 @@ var (
 // Name is the module identifier.
 func (*Module) Name() string { return "events" }
 
-// Routes registers nothing. The relay and the event console are phase 3.
+// Routes registers nothing: this module has no HTTP surface.
 func (*Module) Routes(*http.Router) {}
 
 // Migrations returns the outbox table.
@@ -101,9 +101,9 @@ CREATE INDEX idx_outbox_tenant ON outbox (tenant_id, occurred_at);
 		},
 		{
 			// A separate migration rather than an edit to the one above,
-			// because the first one has already run somewhere. RULE 16: the
-			// column is nullable, so the previous binary keeps working during a
-			// rollout -- it simply never writes it.
+			// because the first one has already run somewhere. The column is
+			// nullable, so the previous binary keeps working during a rollout --
+			// it simply never writes it.
 			ID: "2026_07_31_000002_add_outbox_dead_letter",
 			Up: `
 ALTER TABLE outbox ADD COLUMN failed_at TIMESTAMP;

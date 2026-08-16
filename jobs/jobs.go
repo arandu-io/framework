@@ -34,8 +34,7 @@ type Job struct {
 	// ID is the deduplication key. It is stable across retries, which is what
 	// makes a handler able to recognize work it already did.
 	//
-	// Renamed on the way to hesape: it is jobs.Job.UUID there, because it
-	// answers both uuid() and getJobId() of Illuminate's job contract.
+	// Renamed on the way to hesape: it is jobs.Job.UUID there.
 	ID string
 	// Queue separates work by urgency: a password reset email and a monthly
 	// report should not wait behind each other.
@@ -181,9 +180,8 @@ type Queue interface {
 
 // ErrNoTenant is returned when a Grant carries no tenant.
 //
-// It is an error rather than a default, and that is RULE 14 with teeth: a job
-// with no tenant cannot be scoped, and everything the handler touches would read
-// across customers.
+// It is an error rather than a default: a job with no tenant cannot be scoped,
+// and everything the handler touches would read across customers.
 //
 // The alias is what keeps errors.Is correct across the two modules: a driver
 // that checks this value and a hesape function that returns jobs.ErrNoTenant
@@ -219,8 +217,8 @@ func New(g security.Grant, queue, name string, payload any) (Job, error) {
 // what the push authorized -- not more. A worker that invented its own Grant
 // would be a way to reach the database with permissions nobody granted.
 //
-// It is load-bearing for RULE 14 and it is one line: hesape mints the Grant, so
-// there is no second definition of what a job is allowed to do.
+// It is one line: hesape mints the Grant, so there is no second definition of
+// what a job is allowed to do.
 func GrantFor(j Job) security.Grant {
 	h := j.hesape()
 	return hjobs.GrantFor(&h)
@@ -241,7 +239,6 @@ func GrantFor(j Job) security.Grant {
 // nobody authorized, in a tenant nobody authorized, and every Policy
 // downstream would say yes because the Grant looks legitimate. The queue would
 // be the one way past the authorization the whole framework exists to enforce.
-// Found by audit.
 //
 // The decision is hesape's, so the two drivers in this collection and any
 // written against hesape/queue directly refuse the same job.

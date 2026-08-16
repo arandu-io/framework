@@ -36,14 +36,12 @@ type WorkerOptions struct {
 	// Poll is how long to wait before asking again when the queue was empty.
 	// Default 1 second.
 	//
-	// Renamed on the way to hesape: it is WorkerOptions.Sleep there, after
-	// Illuminate's $sleep.
+	// Renamed on the way to hesape: it is WorkerOptions.Sleep there.
 	Poll time.Duration
 	// MaxAttempts is how many failures a job gets before it is parked.
 	// Default 5.
 	//
-	// Renamed on the way to hesape: it is WorkerOptions.MaxTries there, after
-	// Illuminate's $maxTries.
+	// Renamed on the way to hesape: it is WorkerOptions.MaxTries there.
 	MaxAttempts int
 	// Recorder receives each finished job, so it shows on /_arandu/debug with
 	// its queries and its timeline -- exactly like a request.
@@ -52,10 +50,10 @@ type WorkerOptions struct {
 	// Collector is built, FromContext returns nil, and every Record method is a
 	// no-op on a nil receiver. Zero cost, not low cost.
 	//
-	// It used to build a Collector on every job unconditionally and then throw
-	// it away -- so production paid for recording every query with its bound
-	// arguments and its caller frames, and nobody could read any of it. Found by
-	// audit. Pass kernel.Recorder() to turn it on.
+	// Building a Collector on every job unconditionally and then throwing it
+	// away would make production pay for recording every query with its bound
+	// arguments and its caller frames, with nobody able to read any of it. Pass
+	// kernel.Recorder() to turn it on.
 	Recorder *observability.Recorder
 	// Backoff returns how long to wait before attempt n. Default is
 	// exponential, capped at an hour.
@@ -65,9 +63,9 @@ type WorkerOptions struct {
 // hesape is the translation: two renames, and everything else by the same name.
 //
 // The zero values travel as they are. hesape/queue.WorkerOptions.withDefaults
-// fills in the same numbers this package used to fill in itself -- concurrency
-// 4, a five minute lease, a one second poll, five attempts and the exponential
-// backoff -- so a caller who set nothing gets what they always got.
+// fills in the same numbers this package documents -- concurrency 4, a five
+// minute lease, a one second poll, five attempts and the exponential backoff --
+// so a caller who set nothing gets what they always got.
 //
 // Timeout is left zero on purpose: hesape defaults it to the Lease, which is
 // the deadline this contract has always given a handler.
@@ -129,10 +127,10 @@ func (w *Worker) Names() []string { return w.inner.Names() }
 
 // Run drains the queue until the context is cancelled.
 //
-// Renamed on the way to hesape: it is Worker.Daemon there, after Illuminate's
-// daemon(), and it answers with the exit status a process supervisor reads. This
-// contract has no place to put a status -- a cancelled context is the only way
-// it ever ended -- so the status is dropped and the error is passed through.
+// Renamed on the way to hesape: it is Worker.Daemon there, and it answers with
+// the exit status a process supervisor reads. This contract has no place to put
+// a status -- a cancelled context is the only way it ever ended -- so the status
+// is dropped and the error is passed through.
 func (w *Worker) Run(ctx context.Context) error {
 	_, err := w.inner.Daemon(ctx)
 	return err

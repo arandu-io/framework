@@ -4,22 +4,21 @@
 // It is not an optional package: a file is customer data, and a path without a
 // tenant is a leak with a directory name. Every operation takes a
 // security.Grant, and the stored path is prefixed by the tenant that Grant
-// carries (RULE 14).
+// carries.
 //
 // This package is a bridge. It is removed in v1.0.0; import github.com/arandu-io/hesape/filesystem directly.
 //
-// The components moved to github.com/arandu-io/hesape, under the Illuminate
-// names, and this package is now the old names pointing at them. One hesape
-// package answers for all of it:
+// The components moved to github.com/arandu-io/hesape, under new names, and
+// this package is now the old names pointing at them. One hesape package
+// answers for all of it:
 //
 //	hesape/filesystem  Key, CleanKey, ErrNotFound, ErrNoTenant, ErrBadKey,
 //	                   and the Adapter/Disk pair that replaced Store
 //
 // The death date above is what keeps this from being a second way to import one
-// type, which RULE 9 forbids. Nothing here holds an implementation: the errors
-// are Go aliases, Path and CleanKey are one-line calls through, and the two
-// shapes that could not follow the rename are declared with their old form and
-// nothing else.
+// type. Nothing here holds an implementation: the errors are Go aliases, Path
+// and CleanKey are one-line calls through, and the two shapes that could not
+// follow the rename are declared with their old form and nothing else.
 //
 // # What the rename reshaped
 //

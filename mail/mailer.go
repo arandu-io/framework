@@ -17,20 +17,19 @@ import (
 	hmail "github.com/arandu-io/hesape/mail"
 )
 
-// mailerName is what hesape calls a Mailer that was built without a name. It is
-// Illuminate's default connection name, and it reaches nothing this package
-// exposes: only an event listener and the manager read it, and neither is
-// wired here.
+// mailerName is what hesape calls a Mailer that was built without a name. It
+// reaches nothing this package exposes: only an event listener and the manager
+// read it, and neither is wired here.
 const mailerName = "default"
 
 // errNoSubject is what a message with no subject has always failed with.
 //
 // It is checked in the bridge rather than left to hesape, and that is the one
 // judgement in this file. hesape does not refuse a subjectless message: it
-// derives one from the mailable's type name, the way Illuminate does, so
-// OrderShipped goes out as "Order Shipped". The type it would see here is the
-// adapter that carries a Mailable across, so the derived subject would be the
-// name of a bridge -- a worse outcome than either design intends.
+// derives one from the mailable's type name, so OrderShipped goes out as "Order
+// Shipped". The type it would see here is the adapter that carries a Mailable
+// across, so the derived subject would be the name of a bridge -- a worse
+// outcome than either design intends.
 var errNoSubject = errors.New("mail: the envelope has no subject")
 
 // Mailer sends a Mailable through a Transport.

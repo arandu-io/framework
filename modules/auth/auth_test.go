@@ -266,9 +266,9 @@ func TestModuleRegistersItsRoutes(t *testing.T) {
 		t.Error("roles must be jsonb: a Postgres array needs a driver specific type to scan")
 	}
 
-	// Every later migration is nullable or has a default, which is RULE 16: a
-	// rollout runs the migration while the previous binary is still inserting
-	// rows that do not know about the column.
+	// Every later migration is nullable or has a default: a rollout runs the
+	// migration while the previous binary is still inserting rows that do not
+	// know about the column.
 	for _, m := range migrations[1:] {
 		if strings.Contains(m.Up, "ADD COLUMN") &&
 			strings.Contains(m.Up, "NOT NULL") && !strings.Contains(m.Up, "DEFAULT") {

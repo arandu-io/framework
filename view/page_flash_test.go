@@ -129,8 +129,7 @@ func TestErrorSummaryNamesTheFieldAndTheBareMessageDoesNot(t *testing.T) {
 	}
 
 	// The same message drawn under its own labelled box says only what to
-	// change. The name is prepended for the banner and baked into nothing --
-	// the one deliberate divergence from Laravel's ":attribute must be...".
+	// change. The name is prepended for the banner and baked into nothing.
 	if got := page.FieldError("email"); got != "is not a valid email address" {
 		t.Errorf("FieldError = %q, want the bare sentence", got)
 	}

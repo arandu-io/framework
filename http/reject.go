@@ -18,8 +18,7 @@ import (
 // Reject answers a request whose input failed the rules: back where it came
 // from, with the messages and with what was typed still in the boxes.
 //
-// It is Laravel's Handler::invalid, and the shape is deliberately the same one:
-// the answer to a rejected form is a redirect, not a body. A 422 carrying the
+// The answer to a rejected form is a redirect, not a body. A 422 carrying the
 // messages in the markup is thrown away by htmx unless the layout has
 // reconfigured its response handling, and even where it was swapped in a reload
 // re-posted the form.
@@ -39,10 +38,10 @@ func Reject(w http.ResponseWriter, r *http.Request, f *security.Flash, errs vali
 
 // Back is the address a rejected request is sent to: where it came from, or "/".
 //
-// It is Laravel's url()->previous(). Exported because a handler that answers a
-// rejection itself -- one that has a domain reason rather than a rule failure --
-// needs the same address, and a second reading of the Referer header is a
-// second place for the open-redirect check to be missing.
+// It is exported because a handler that answers a rejection itself -- one that
+// has a domain reason rather than a rule failure -- needs the same address, and
+// a second reading of the Referer header is a second place for the
+// open-redirect check to be missing.
 //
 // It answers "/" for everything it cannot prove is ours: no Referer, an
 // unparseable one, one on another host, or a path LocalPath refuses.

@@ -5,8 +5,8 @@
 // run. That is two artifacts and a dependency on the operating system.
 //
 // Go has a resident process. The scheduler is a goroutine in the same binary,
-// which is also what keeps the deploy story of doc 17 true: one image, no
-// crontab to configure, nothing to forget when a machine is replaced.
+// which is also what keeps the deploy story true: one image, no crontab to
+// configure, nothing to forget when a machine is replaced.
 //
 // What it does not do is retry. A task that fails is logged and diagnosed, and
 // the next window runs it again; work that needs its own retry budget enqueues a
@@ -14,16 +14,16 @@
 //
 // This package is a bridge. It is removed in v1.0.0; import github.com/arandu-io/hesape/console/scheduling directly.
 //
-// The components moved to github.com/arandu-io/hesape, under the Illuminate
-// names, and this package is now the old names pointing at them. The target is
+// The components moved to github.com/arandu-io/hesape, under new names, and
+// this package is now the old names pointing at them. The target is
 // hesape/console/scheduling and not hesape/scheduler: that one is a doc-only
-// refusal saying the scheduler folded into Console\Scheduling, because two
-// schedulers is two ways to say one thing (RULE 9).
+// refusal saying the scheduler folded into console/scheduling, because two
+// schedulers is two ways to say one thing.
 //
 // The death date above is what keeps this from being a second way to import one
-// type, which RULE 9 forbids. What it holds is the framework's side of the
-// contract and nothing else: the cron expression, the due selection, the
-// per-tenant expansion and the Grant a task runs under are all hesape's.
+// type. What it holds is the framework's side of the contract and nothing else:
+// the cron expression, the due selection, the per-tenant expansion and the Grant
+// a task runs under are all hesape's.
 //
 // Nothing here aliases, and the reason is the same in every case: the two
 // designs name the same things differently.

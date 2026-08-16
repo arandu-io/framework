@@ -13,9 +13,9 @@ import (
 	"github.com/arandu-io/framework/observability"
 )
 
-// Exit criterion 2 of phase 3: the overhead of the Collector with tracing off
-// has to be measurable and zero -- not low. Same binary, same middleware, the
-// difference being only whether the Collector was installed.
+// The overhead of the Collector with tracing off has to be measurable and zero
+// -- not low. Same binary, same middleware, the difference being only whether
+// the Collector was installed.
 //
 // This is what makes "zero cost in production" a claim rather than a hope:
 //

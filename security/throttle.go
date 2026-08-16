@@ -32,7 +32,7 @@ type SignInThrottle interface {
 	// nothing, so hammering a locked-out account does not extend the lockout.
 	//
 	// The tenant is part of the key: a rate limit shared across tenants is one
-	// customer's traffic locking another customer's users out (RULE 14).
+	// customer's traffic locking another customer's users out.
 	Attempt(tenant, identity, client string) (retryAfter time.Duration, ok bool)
 
 	// Refund gives back the unit Attempt took, for an attempt that never

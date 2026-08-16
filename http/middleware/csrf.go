@@ -41,19 +41,18 @@ func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) fun
 				token = r.PostFormValue("_csrf")
 			}
 
-			// A missing token and an expired one are different mistakes, and
-			// they used to produce the same sentence. "Session expired" sends
-			// the developer to look at session lifetimes, when the form simply
-			// never carried the field -- which is the first thing that happens
-			// to anybody wiring a form or an HTMX request by hand. Found by
-			// audit.
+			// A missing token and an expired one are different mistakes and get
+			// different sentences. "Session expired" sends the developer to
+			// look at session lifetimes, when the form simply never carried the
+			// field -- which is the first thing that happens to anybody wiring a
+			// form or an HTMX request by hand.
 			//
 			// Both answers go through fhttp.Refuse rather than http.Error, and
-			// the role guard's 403 does too: htmx swaps neither status, so this
-			// message used to reach a person as nothing at all -- they pressed
-			// the button, and the screen did not change. Changing only one of
-			// the two would have left the framework refusing an HTMX request in
-			// two different ways.
+			// the role guard's 403 does too: htmx swaps neither status, so on
+			// http.Error the message reaches a person as nothing at all -- they
+			// press the button, and the screen does not change. Doing it in only
+			// one of the two would leave the framework refusing an HTMX request
+			// in two different ways.
 			if token == "" {
 				fhttp.Refuse(w, r, StatusCSRFExpired, "this request carried no CSRF token: add the hidden _csrf field to the form, or send it as the X-CSRF-Token header")
 				return

@@ -270,8 +270,7 @@ func (p Page) WithToken(token string) Page {
 //
 // Empty for a field that was accepted, and empty for every field on a page
 // nobody was rejected on -- so a screen asks unconditionally and draws nothing
-// when there is nothing. There is no @error directive and none is needed
-// (RULE 15).
+// when there is nothing. There is no @error directive and none is needed.
 func (p Page) FieldError(name string) string {
 	msgs := p.Errors[name]
 	if len(msgs) == 0 {
@@ -320,12 +319,11 @@ func (p Page) OldOr(name, fallback string) string {
 //
 //	Password must be at least 12 characters
 //
-// The field name is prepended HERE and not baked into the message, which is the
-// one deliberate divergence from Laravel: its messages are written ":attribute
-// must be at least :min characters" and carry the name everywhere, including
-// under the labelled box where the label has just said it. So a message reads
-// bare where it is drawn in context, and named where it is drawn out of context,
-// and there is one message either way.
+// The field name is prepended HERE and not baked into the message. A message
+// written as ":attribute must be at least :min characters" carries the name
+// everywhere, including under the labelled box where the label has just said it.
+// So a message reads bare where it is drawn in context, and named where it is
+// drawn out of context, and there is one message either way.
 //
 // Sorted rather than in map order, so the banner does not reshuffle between two
 // renders of the same failure.

@@ -114,11 +114,11 @@ type Diagnostic = hfoundation.Diagnostic
 //
 // # Why it is still here
 //
-// docs/31:191 retires it: one kind of lock in the collection, cache.Lock. The
-// events bridge reached that line first and did not delete it, because
-// hesape/cache.Locks is a concrete issuer over a store that acquires and
-// releases by owner, and a Locker -- which only knows how to run a function
-// under a lock it takes and gives back itself -- cannot be turned into one.
+// It is retired in favour of one kind of lock in the collection, cache.Lock.
+// The events bridge did not delete it, because hesape/cache.Locks is a concrete
+// issuer over a store that acquires and releases by owner, and a Locker -- which
+// only knows how to run a function under a lock it takes and gives back itself
+// -- cannot be turned into one.
 // events.Locker is an alias to this name and kv asserts against it, so deleting
 // the declaration deletes the wiring rather than the duplication.
 //
@@ -133,12 +133,11 @@ type Scope = hfoundation.Scope
 const (
 	// Global runs the task once for the whole instance.
 	//
-	// It gets the zero Grant, because SystemGrant refuses an empty tenant
-	// (RULE 14) -- so a global task cannot pass any Check and cannot reach a
-	// repository. That is a constraint rather than an oversight: global work is
-	// cleaning temporary files, warming a cache, checking a certificate. Work
-	// that reads a customer's rows is PerTenant, and having to say so is the
-	// point.
+	// It gets the zero Grant, because SystemGrant refuses an empty tenant -- so
+	// a global task cannot pass any Check and cannot reach a repository. That
+	// is a constraint rather than an oversight: global work is cleaning
+	// temporary files, warming a cache, checking a certificate. Work that reads
+	// a customer's rows is PerTenant, and having to say so is the point.
 	Global = hfoundation.Global
 	// PerTenant expands the task to every active tenant, each with its own
 	// Grant and its own lock.

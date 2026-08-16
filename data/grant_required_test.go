@@ -6,7 +6,8 @@ import (
 	"testing"
 )
 
-// TestRepositoryWithoutGrantDoesNotCompile is exit criterion 2 of phase 1.
+// TestRepositoryWithoutGrantDoesNotCompile proves the claim in the only way it
+// can be proven.
 //
 // The claim of this framework is not "remember to authorize". It is that the
 // path from a handler to the database cannot be written without a Grant. A claim

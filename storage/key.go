@@ -4,8 +4,8 @@
 // Path was renamed to Key on the way there, because the package now has two
 // kinds of path and only one of them is a key; CleanKey kept its name. Both are
 // plain functions, which have no alias form, so both are one-line calls
-// through -- and the code that builds the prefix is hesape's, which is what
-// makes RULE 14 one implementation rather than two that have to agree.
+// through -- and the code that builds the prefix is hesape's, so the tenant
+// prefix is one implementation rather than two that have to agree.
 
 package storage
 
@@ -26,7 +26,7 @@ var ErrBadKey = filesystem.ErrBadKey
 // Every driver calls it, which is what makes tenant isolation a property of the
 // contract rather than of each implementation remembering. The tenant comes from
 // the Grant and never from the key, so naming another tenant in the key reaches
-// nothing (RULE 14).
+// nothing.
 //
 // Renamed on the way to hesape: it is filesystem.Key there.
 func Path(g security.Grant, key string) (string, error) { return filesystem.Key(g, key) }

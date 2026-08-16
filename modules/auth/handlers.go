@@ -20,11 +20,10 @@ import (
 
 // loginPage is what the sign-in screen renders from.
 //
-// A struct rather than the map this used to be, for the reason `aru doctor`
-// refuses a map behind ctx.View: a misspelled key in a template renders as
-// nothing, so the screen comes up with the error box missing and nobody finds
-// out. Here that would be the refusal disappearing, which is the failure this
-// whole file was just audited for.
+// A struct rather than a map, for the reason `aru doctor` refuses a map behind
+// ctx.View: a misspelled key in a template renders as nothing, so the screen
+// comes up with the error box missing and nobody finds out. Here that would be
+// the refusal disappearing.
 type loginPage struct {
 	CSRFToken string
 	// Email is what the person typed, put back in the field. A sign-in screen
@@ -47,14 +46,13 @@ func (m *Module) showLogin(w http.ResponseWriter, r *http.Request) {
 
 // renderLogin draws the sign-in screen, with whatever went wrong on it.
 //
-// One function for the first visit and for every refusal, because the refusal
-// used to be a different thing entirely: a bare <div class="alert"> with no
-// document around it. To a browser that is what the whole page becomes -- an
-// error message on a blank background, with no form to type into and no way
-// back except the back button -- and to htmx it is nothing at all, because htmx
-// swaps no 4xx and the sentence went into a body it discarded. A wrong password
-// is the most common refusal this framework answers, and it was the one that
-// reached nobody.
+// One function for the first visit and for every refusal, because answering a
+// refusal with a bare <div class="alert"> and no document around it reaches
+// nobody. To a browser that fragment is the whole page -- an error message on a
+// blank background, with no form to type into and no way back except the back
+// button -- and to htmx it is nothing at all, because htmx swaps no 4xx and the
+// sentence goes into a body it discards. A wrong password is the most common
+// refusal this framework answers.
 //
 // The status is the caller's and is unchanged: 401 for wrong credentials, 422
 // for a form that did not validate, 429 for the lockout, all of them with the
@@ -90,7 +88,7 @@ func (m *Module) doLogin(w http.ResponseWriter, r *http.Request) {
 
 	// The tenant comes from the application, never from the request: a header or
 	// a form field here would let anyone pick which tenant to authenticate
-	// against. Phase 2 adds a resolver that reads the host name.
+	// against.
 	tenant := m.tenant(r)
 
 	// The address the attempt came from, read from the socket and never from a
@@ -149,12 +147,11 @@ func (m *Module) doLogout(w http.ResponseWriter, r *http.Request) {
 
 // redirect answers the way the client can act on.
 //
-// This used to be its own copy of the branch, and that copy set HX-Redirect and
-// 200 unconditionally: fine for HTMX and broken for everything else, because a
-// form posted without JavaScript -- a browser with scripts off, a crawler, curl
-// -- got 200 with an empty body and stayed on a blank page, signed in, with no
-// way to know where to go. Having the rule in two shapes is what let one of them
-// be wrong, so there is now one shape and this calls it (RULE 9).
+// Setting HX-Redirect and 200 unconditionally is fine for HTMX and broken for
+// everything else: a form posted without JavaScript -- a browser with scripts
+// off, a crawler, curl -- gets 200 with an empty body and stays on a blank page,
+// signed in, with no way to know where to go. The rule lives in one shape, and
+// this calls it.
 //
 // It stays a function rather than the call being inlined at nine call sites,
 // because the name is what says these handlers redirect the same way the rest of
@@ -167,12 +164,12 @@ func redirect(w http.ResponseWriter, r *http.Request, to string) {
 // the starter kit yet.
 //
 // It is one screen and it stays one: `go run github.com/arandu-io/ui@latest auth`
-// replaces it with nine, in kyse, that the project then owns (ADR 0026). What
-// this one has to be is not impressive -- it has to be indistinguishable from
-// the rest of the application, because the alternative is what it used to be: a
-// person builds a styled landing page, clicks Sign in, and lands on unstyled
-// black-on-white with no navigation. That reads as a broken deploy, and it was
-// the first thing anybody saw.
+// replaces it with nine, in kyse, that the project then owns. What this one has
+// to be is not impressive -- it has to be indistinguishable from the rest of the
+// application, because the alternative is a person building a styled landing
+// page, clicking Sign in, and landing on unstyled black-on-white with no
+// navigation. That reads as a broken deploy, and it is the first thing anybody
+// sees.
 //
 // So it loads the application's own stylesheet and carries the same two body
 // attributes every other page carries:
@@ -205,13 +202,12 @@ func redirect(w http.ResponseWriter, r *http.Request, to string) {
 // It cannot use a Tailwind utility class. Not "should not" -- cannot.
 //
 // The stylesheet is compiled with `@import "tailwindcss" source(none)` and an
-// explicit `@source` list (ADR 0025), and that list names the project's views.
-// This markup lives in the framework, in the module cache, and is never scanned.
-// A utility written here is a class that exists in the HTML and in no stylesheet
-// on earth.
+// explicit `@source` list naming the project's views. This markup lives in the
+// framework, in the module cache, and is never scanned. A utility written here
+// is a class that exists in the HTML and in no stylesheet on earth.
 //
-// It went out that way once: `max-w-sm` and `justify-center` did nothing, so the
-// form ran the full width of the window while the button beside it looked
+// The shape of that failure: `max-w-sm` and `justify-center` do nothing, so the
+// form runs the full width of the window while the button beside it looks
 // correct -- because `.btn` is `@layer components`, which Tailwind emits whether
 // anything scanned uses it or not. Half-styled reads worse than unstyled: it
 // looks like the CSS half-loaded.
@@ -240,7 +236,7 @@ func redirect(w http.ResponseWriter, r *http.Request, to string) {
 // A <style> inside <body> is not conformant HTML and every browser has honoured
 // it for twenty years. The conformant alternatives are worse: an inline style
 // attribute on each of the eight elements, or a second stylesheet at a second
-// URL, which is the thing RULE 9 exists to refuse.
+// URL.
 var loginForm = template.Must(template.New("login").Parse(`<!doctype html>
 <html lang="en">
 <head>

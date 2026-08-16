@@ -308,9 +308,9 @@ func TestNobodyIsSentBackToTheSignInScreenTheyJustCameFrom(t *testing.T) {
 }
 
 // htmx swaps neither a 403 nor a 419 -- its response handling is
-// `{code:"[45]..", swap:false, error:true}` -- so a refusal used to reach a
-// person as nothing at all: they pressed the button and the screen did not
-// change, with the sentence explaining why in a body that was thrown away.
+// `{code:"[45]..", swap:false, error:true}` -- so a refusal reaches a person as
+// nothing at all: they press the button and the screen does not change, with the
+// sentence explaining why in a body that was thrown away.
 //
 // HX-Refresh makes the browser reload the page as an ordinary navigation, where
 // the same middleware answers the same refusal to a request htmx is not
@@ -354,9 +354,9 @@ func TestAPlainBrowserIsNotToldToReloadOverARefusal(t *testing.T) {
 	}
 }
 
-// RULE 9, made a compile-and-boot problem rather than a review comment:
-// RequireRole with nothing to require is RequireAuth under a second name, and a
-// route wired that way guards nothing at all.
+// A second name for one behaviour, made a compile-and-boot problem rather than a
+// review comment: RequireRole with nothing to require is RequireAuth under a
+// second name, and a route wired that way guards nothing at all.
 func TestARoleGuardWithNoRoleIsRefusedAtWiringTime(t *testing.T) {
 	defer func() {
 		got, ok := recover().(string)

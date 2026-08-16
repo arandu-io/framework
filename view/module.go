@@ -7,21 +7,13 @@ import (
 
 // Module serves the embedded assets and wires the renderer.
 //
-// It is a kernel.Module for one reason: it was not, and every application
-// shipped a page that asked for its own stylesheet and got 404.
+// It is a kernel.Module and not a plain Mount function an application calls: a
+// function has to be remembered, and a screen that emits three tags against a
+// server nobody mounted gets three 404s -- no stylesheet, no HTMX, no Alpine.
 //
-// The route used to be exported as Mount, a plain function, with a comment
-// arguing that "a module that exists only to serve two files is a module people
-// have to remember to register". That reasoning was backwards, and the code
-// proved it: Mount had zero call sites across every repository -- the kernel did
-// not call it, the generated main.go did not call it, and neither did the sign-in
-// screen that `aru make:auth` writes. That screen emits three tags, and against a
-// real server all three answered 404: no stylesheet, no HTMX, no Alpine. Found by
-// audit, reproduced end to end.
-//
-// A function has to be remembered. A module appears in the Register call next to
-// events, jobs and the scheduler, which is where somebody reading main.go
-// already looks to learn what an application is made of.
+// A module appears in the Register call next to events, jobs and the scheduler,
+// which is where somebody reading main.go already looks to learn what an
+// application is made of.
 type Module struct{}
 
 // NewModule returns the module.

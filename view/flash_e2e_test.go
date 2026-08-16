@@ -87,10 +87,10 @@ func (signupModule) Routes(r *fhttp.Router) {
 			// The whole of the failure path. It writes nothing and renders
 			// nothing: the router recognises the error and answers it.
 			//
-			// It used to be `ctx.Validate(storeSignup)`, which read the form and
-			// applied the set in one call. That method was removed as the second
-			// way to validate (RULE 9), so the set is asked directly -- which is
-			// the one way, and the way `aru make:module` generates.
+			// The set is asked directly rather than through a Context.Validate
+			// that read the form and applied the set in one call: that method
+			// was removed as the second way to validate. This is the one way,
+			// and the way `aru make:module` generates.
 			return errs
 		}
 		// Only what the set declares is readable, and it is read by name.

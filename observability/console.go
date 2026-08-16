@@ -21,10 +21,10 @@ const TracingHeader = hlog.TracingHeader
 
 // Console serves the request inspector at /_arandu/debug.
 //
-// This is the Telescope equivalent, and it is core rather than a package you
-// install. The reason is the thesis of the product: a framework whose selling
-// point is "the debugger names the probable cause" cannot ship the debugger as
-// an optional dependency that half the projects never add.
+// It is core rather than a package you install. The reason is the thesis of the
+// product: a framework whose selling point is "the debugger names the probable
+// cause" cannot ship the debugger as an optional dependency that half the
+// projects never add.
 //
 // It renders with html/template and no assets, like the error page and for the
 // same reason: it has to work when the rest is broken, including when the view

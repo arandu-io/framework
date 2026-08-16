@@ -79,9 +79,10 @@ func TestCleanKeyReachesFilesystemCleanKey(t *testing.T) {
 	}
 }
 
-// TestThePathIsStillPrefixedByTheTenant is RULE 14 through the old name. The
-// enforcement moved, and this is what proves the move did not lose it: the
-// prefix comes from the Grant and there is no key that reaches another tenant.
+// TestThePathIsStillPrefixedByTheTenant checks the tenant prefix through the old
+// name. The enforcement moved, and this is what proves the move did not lose it:
+// the prefix comes from the Grant and there is no key that reaches another
+// tenant.
 func TestThePathIsStillPrefixedByTheTenant(t *testing.T) {
 	got, err := storage.Path(grant(tenant), "invoices/2026-08.pdf")
 	if err != nil {

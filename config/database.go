@@ -18,12 +18,12 @@ import (
 //	DATABASE_URL=mysql://arandu:arandu@127.0.0.1:3306/arandu
 //	DATABASE_URL=sqlite://database/database.sqlite
 //
-// It used to come from seven -- DB_CONNECTION, DB_HOST, DB_PORT, DB_USERNAME,
-// DB_PASSWORD, DB_DATABASE -- with DATABASE_URL winning over all of them when
-// set. That is two ways to say where the database is, which RULE 9 refuses, and
-// the failure it produces is the worst kind: half the parts overridden and half
-// not, an application pointing at a host from one variable and a database from
-// another, with every value individually correct.
+// The parts spelled out separately -- DB_CONNECTION, DB_HOST, DB_PORT,
+// DB_USERNAME, DB_PASSWORD, DB_DATABASE -- with DATABASE_URL winning over all of
+// them when set, are two ways to say where the database is, and the failure that
+// produces is the worst kind: half the parts overridden and half not, an
+// application pointing at a host from one variable and a database from another,
+// with every value individually correct.
 //
 // One string also travels. Every managed platform hands out exactly this, a
 // compose file passes it as one line, and a person moving between them copies
@@ -56,12 +56,12 @@ const DefaultSQLitePath = "database/database.sqlite"
 // no server, nothing installed.
 const DefaultDatabaseURL = "sqlite://" + DefaultSQLitePath
 
-// The variables that used to carry the connection, refused now rather than
+// The variables that carry the connection in parts, refused rather than
 // ignored.
 //
-// Ignoring them would be the quiet failure this change exists to remove: an
-// .env full of DB_HOST and DB_PASSWORD, an application connecting to something
-// else entirely, and every value in the file individually correct.
+// Ignoring them would be a quiet failure: an .env full of DB_HOST and
+// DB_PASSWORD, an application connecting to something else entirely, and every
+// value in the file individually correct.
 var retiredDatabaseVars = []string{
 	"DB_CONNECTION", "DB_HOST", "DB_PORT", "DB_USERNAME", "DB_PASSWORD", "DB_DATABASE",
 }

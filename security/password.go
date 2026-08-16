@@ -1,6 +1,6 @@
 // Password hashing, answered by github.com/arandu-io/hesape/hashing.
 //
-// The three functions were renamed to the Illuminate names -- Make, Check and
+// The three functions were renamed on the way there -- Make, Check and
 // NeedsRehash -- so these three are one-line calls through. The argon2id
 // parameters are the same numbers on both sides, so a hash written by the old
 // code verifies against the new one.
@@ -26,8 +26,7 @@ func HashPassword(plain string) (string, error) { return hashing.Make(plain) }
 // VerifyPassword compares in constant time.
 //
 // Renamed on the way to hesape: it is hashing.Check there, which also reads
-// back argon2i and bcrypt -- what a users table imported from a PHP
-// application holds.
+// back argon2i and bcrypt -- what an imported users table holds.
 func VerifyPassword(plain, encoded string) error { return hashing.Check(plain, encoded) }
 
 // NeedsRehash reports that the hash was produced with older parameters, so the

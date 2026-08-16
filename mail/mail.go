@@ -31,9 +31,8 @@ type ErrRetryable = hmail.ErrRetryable
 
 // Address is one mailbox, with the display name that goes in front of it.
 //
-// Declared here rather than aliased: hesape carries Illuminate's property name,
-// so the first field is called Address there, and every call site in the
-// collection writes mail.Address{Email: ...}.
+// Declared here rather than aliased: the first field is called Address in
+// hesape, and every call site in the collection writes mail.Address{Email: ...}.
 type Address struct {
 	// Email is the address itself, and the only required half.
 	Email string

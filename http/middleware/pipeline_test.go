@@ -23,10 +23,9 @@ func pipeline(dev bool, h http.Handler) http.Handler {
 	)
 }
 
-// TestPanicInDevelopmentShowsQueriesAndDumps is exit criterion 4 of phase 1: a
-// deliberate panic in development shows the request's queries and dumps on the
-// page. It is the whole product claim about debugging, so it is a test and not a
-// manual step.
+// TestPanicInDevelopmentShowsQueriesAndDumps checks that a deliberate panic in
+// development shows the request's queries and dumps on the page. It is the whole
+// product claim about debugging, so it is a test and not a manual step.
 func TestPanicInDevelopmentShowsQueriesAndDumps(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()

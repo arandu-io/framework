@@ -10,9 +10,9 @@ import (
 
 // deletedDirectories are paths an Arandu project no longer has.
 //
-// cmd/app/ was the wiring directory before ADR 0019 moved the tree to Laravel's
-// shape: the binary is main.go at the root and the composition is
-// bootstrap/app.go. Nothing lives under cmd/ anymore.
+// cmd/app/ was the wiring directory before the tree took its current shape: the
+// binary is main.go at the root and the composition is bootstrap/app.go.
+// Nothing lives under cmd/ anymore.
 var deletedDirectories = []string{"cmd/app"}
 
 // TestNoDocCommentPointsAtADeletedDirectory guards the instructions that reach

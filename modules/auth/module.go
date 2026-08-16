@@ -27,9 +27,6 @@ import (
 // from the session. That asymmetry is the point -- a tenant taken from the
 // request body or from a header after login would defeat the isolation the whole
 // policy layer is built on.
-//
-// Phase 2 adds the resolver that reads the host name, which is the default for
-// a real multi-tenant deployment.
 type TenantResolver func(r *http.Request) string
 
 // FixedTenant is the resolver for a single-tenant application: every login
@@ -126,9 +123,9 @@ func (m *Module) Migrations() []kernel.Migration {
 		// identified by its id: changing what an applied id means leaves the
 		// column missing everywhere it already ran, and nothing says so.
 		//
-		// Both columns are nullable, which is RULE 16: during a rollout the
-		// previous binary is still inserting rows without them, and a NOT NULL
-		// column with no default fails every one of those inserts.
+		// Both columns are nullable: during a rollout the previous binary is
+		// still inserting rows without them, and a NOT NULL column with no
+		// default fails every one of those inserts.
 		ID: "20260809_0002_add_name_and_verification_to_users",
 		Up: `ALTER TABLE users ADD COLUMN name VARCHAR(255);
 		ALTER TABLE users ADD COLUMN verified_at TIMESTAMP NULL;`,

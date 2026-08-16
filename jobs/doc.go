@@ -15,22 +15,22 @@
 //
 // This package is a bridge. It is removed in v1.0.0; import github.com/arandu-io/hesape/queue directly.
 //
-// The components moved to github.com/arandu-io/hesape, under the Illuminate
-// names, and this package is now the old names pointing at them. It answers to
-// two hesape packages:
+// The components moved to github.com/arandu-io/hesape, under new names, and
+// this package is now the old names pointing at them. It answers to two hesape
+// packages:
 //
 //	hesape/queue       the Worker, its options and the backoff
 //	hesape/queue/jobs  the Job, its constructor, GrantFor and Authorized
 //
 // The death date above is what keeps this from being a second way to import one
-// type, which RULE 9 forbids. Nothing here holds an implementation: the loop
-// that drains a queue, the decision to park a job and the hash of a payload all
-// run in hesape, and what is left here translates.
+// type. Nothing here holds an implementation: the loop that drains a queue, the
+// decision to park a job and the hash of a payload all run in hesape, and what
+// is left here translates.
 //
-// This bridge is more envelope than alias, and the reason is one measurement:
-// hesape/queue is Illuminate\Queue, so a Job settles itself -- Release, Delete,
-// Fail -- where here the Queue settled it, and a job is a *jobs.Job there where
-// it is a value here. Four names diverged that way:
+// This bridge is more envelope than alias, and the reason is one difference: in
+// hesape a Job settles itself -- Release, Delete, Fail -- where here the Queue
+// settled it, and a job is a *jobs.Job there where it is a value here. Four
+// names diverged that way:
 //
 //	Job              UUID rather than ID, and a pointer with a driver behind it
 //	Queue            eleven methods rather than eight, and all but one renamed

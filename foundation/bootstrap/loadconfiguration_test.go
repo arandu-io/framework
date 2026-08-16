@@ -28,9 +28,9 @@ func TestLoadConfigurationRefusesToBootWithoutAKey(t *testing.T) {
 
 // SESSION_LIFETIME is minutes, and this is the test that says so.
 //
-// Reading it as seconds compiles, boots, and turns a .env carried over from
-// Laravel into a two-minute session. Everybody stays signed in long enough for
-// it to look like it worked and is then thrown out mid-form.
+// Reading it as seconds compiles, boots, and turns an existing
+// SESSION_LIFETIME=120 into a two-minute session. Everybody stays signed in long
+// enough for it to look like it worked and is then thrown out mid-form.
 func TestSessionLifetimeIsReadAsMinutesLikeLaravel(t *testing.T) {
 	env(t, "APP_KEY", testKey, "SESSION_LIFETIME", "120")
 
@@ -46,9 +46,9 @@ func TestSessionLifetimeIsReadAsMinutesLikeLaravel(t *testing.T) {
 
 // The cookie is not configurable on its own, and this pins it.
 //
-// hesape/session documents the reason: the CSRF token is bound to the session,
-// and a cookie name set independently breaks the binding with no error anywhere
-// -- forms start answering 419 and nothing says why.
+// The CSRF token is bound to the session, and a cookie name set independently
+// breaks the binding with no error anywhere -- forms start answering 419 and
+// nothing says why.
 func TestTheSessionCookieFollowsTheApplicationNameAndNothingElse(t *testing.T) {
 	env(t, "APP_KEY", testKey, "APP_NAME", "Loja Grande", "SESSION_COOKIE", "somethingelse")
 
@@ -85,7 +85,7 @@ func TestTheSessionCookieIsSecureWhenTheApplicationIsHTTPS(t *testing.T) {
 	}
 }
 
-// A file is customer data. Laravel defaults a disk to public; this does not.
+// A file is customer data, so a disk defaults to private and never to public.
 func TestTheDefaultDiskIsPrivate(t *testing.T) {
 	env(t, "APP_KEY", testKey)
 
@@ -120,8 +120,8 @@ func TestTheEnvironmentWinsOverTheDotenvFile(t *testing.T) {
 }
 
 // The Repository is a reader over the same settings, so what it answers has to
-// be what the struct holds. Two sources that can disagree is the thing ADR 0051
-// exists to prevent.
+// be what the struct holds. Two sources that can disagree is what the typed
+// struct exists to prevent.
 func TestTheRepositoryAnswersWhatTheStructsHold(t *testing.T) {
 	env(t, "APP_KEY", testKey, "APP_NAME", "loja", "CACHE_STORE", "array")
 
@@ -167,12 +167,12 @@ func chdir(t *testing.T, dir string) {
 	t.Cleanup(func() { _ = os.Chdir(old) })
 }
 
-// AfterCommit stays false, and the reason is not compatibility with Laravel.
+// AfterCommit stays false, and the reason is the outbox.
 //
 // The outbox writes the event in the same transaction as the change that
 // produced it, so the window AfterCommit narrows is one the events path does
 // not have at all. Turning it on here would be a second, weaker answer to a
-// problem already solved (RULE 9).
+// problem already solved.
 func TestTheDatabaseQueueDoesNotDispatchAfterCommit(t *testing.T) {
 	env(t, "APP_KEY", testKey)
 

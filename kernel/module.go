@@ -78,12 +78,11 @@ type Scope = foundation.Scope
 const (
 	// Global runs the task once for the whole instance.
 	//
-	// It gets the zero Grant, because SystemGrant refuses an empty tenant
-	// (RULE 14) -- so a global task cannot pass any Check and cannot reach a
-	// repository. That is a constraint rather than an oversight: global work is
-	// cleaning temporary files, warming a cache, checking a certificate. Work
-	// that reads a customer's rows is PerTenant, and having to say so is the
-	// point.
+	// It gets the zero Grant, because SystemGrant refuses an empty tenant -- so
+	// a global task cannot pass any Check and cannot reach a repository. That
+	// is a constraint rather than an oversight: global work is cleaning
+	// temporary files, warming a cache, checking a certificate. Work that reads
+	// a customer's rows is PerTenant, and having to say so is the point.
 	Global = foundation.Global
 	// PerTenant expands the task to every active tenant, each with its own
 	// Grant and its own lock.

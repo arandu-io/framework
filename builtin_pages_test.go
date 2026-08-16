@@ -12,10 +12,10 @@ import (
 // like a broken deploy and is invisible in review.
 //
 // The application stylesheet is compiled with `@import "tailwindcss"
-// source(none)` and an explicit `@source` list naming the project's views
-// (ADR 0025). Markup written inside this module is never on that list -- it
-// lives in the module cache of whoever imported the framework -- so a utility
-// class written here resolves to nothing at all.
+// source(none)` and an explicit `@source` list naming the project's views.
+// Markup written inside this module is never on that list -- it lives in the
+// module cache of whoever imported the framework -- so a utility class written
+// here resolves to nothing at all.
 //
 // It is worse than unstyled. The component layer (`.btn`, `.field`, `.input`)
 // IS emitted unconditionally, so a page mixing the two gets its button styled

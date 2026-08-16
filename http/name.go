@@ -10,10 +10,10 @@ import "github.com/arandu-io/hesape/routing"
 // Routes is the table of registered routes, and the index by name.
 //
 // It is an envelope over hesape/routing.Routes and not an alias, for one
-// reason: the method that builds a path from a name was renamed URL -> Route
-// (docs/31:179), and Go forbids declaring a method on another package's type.
-// An alias here would drop Routes.URL from the framework's surface, and a
-// bridge that drops a method is not a bridge.
+// reason: the method that builds a path from a name was renamed URL -> Route,
+// and Go forbids declaring a method on another package's type. An alias here
+// would drop Routes.URL from the framework's surface, and a bridge that drops a
+// method is not a bridge.
 //
 // It forwards and holds nothing. The routes are hesape's table, shared by every
 // sub-router the way it always was, so a route registered through a group is in
@@ -31,8 +31,8 @@ type Routes struct{ inner *routing.Routes }
 //
 // It is hesape/routing.Routes.Route under the name this package has always used
 // for it. Only this spelling is offered here -- exposing both would be two ways
-// to ask one question (RULE 9), and the new one is reached by importing
-// hesape/routing, which the death date says to do anyway.
+// to ask one question, and the new one is reached by importing hesape/routing,
+// which the death date says to do anyway.
 func (t *Routes) URL(name string, params ...string) (string, error) {
 	return t.inner.Route(name, params...)
 }

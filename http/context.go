@@ -26,8 +26,8 @@ import (
 // and not a change to any signature that already existed.
 //
 // Context.Validate is the one name that did not survive: it had no caller
-// outside its own test and it was the second way to validate (RULE 9). See the
-// package comment.
+// outside its own test and it was the second way to validate. See the package
+// comment.
 type Context = hhttp.Context
 
 // Renderer draws a named view with typed data.

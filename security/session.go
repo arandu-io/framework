@@ -109,8 +109,8 @@ type SessionBackend interface {
 	// DeleteSubject removes every session belonging to one subject of one
 	// tenant, except keepID. An empty keepID keeps none of them.
 	//
-	// The tenant is part of the question, not a filter applied afterwards
-	// (RULE 14). An empty tenant or an empty subject id is an error.
+	// The tenant is part of the question, not a filter applied afterwards.
+	// An empty tenant or an empty subject id is an error.
 	DeleteSubject(ctx context.Context, tenant, subjectID, keepID string) error
 }
 
@@ -245,8 +245,7 @@ func (s *SessionStore) Start(ctx context.Context, w http.ResponseWriter, sub Sub
 // Rotate issues a new session id for the same subject and destroys the old one.
 //
 // It MUST be called on login: keeping the pre-login id is session fixation.
-// Renamed on the way to hesape: it is RecordStore.Regenerate there, which is
-// Illuminate's Store::regenerate.
+// Renamed on the way to hesape: it is RecordStore.Regenerate there.
 func (s *SessionStore) Rotate(ctx context.Context, w http.ResponseWriter, oldID string, sub Subject, opts ...SessionOption) (string, error) {
 	return s.store.Regenerate(ctx, w, oldID, recordFor(sub), opts...)
 }
@@ -277,7 +276,7 @@ func (s *SessionStore) Confirm(ctx context.Context, w http.ResponseWriter, r *ht
 // DestroyOthers signs the subject out of every session except keepID.
 //
 // The tenant comes from the subject, which came from the Grant or the session,
-// never from the request (RULE 14). A subject with no tenant is refused.
+// never from the request. A subject with no tenant is refused.
 func (s *SessionStore) DestroyOthers(ctx context.Context, sub Subject, keepID string) error {
 	return s.store.DestroyOthers(ctx, recordFor(sub), keepID)
 }

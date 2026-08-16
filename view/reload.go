@@ -19,8 +19,8 @@ import hview "github.com/arandu-io/hesape/view"
 // panicking on a duplicate asset, so a test that boots two kernels is not a
 // crash.
 //
-// Why it is a file rather than an inline <script>: the CSP is script-src 'self'
-// (RULE 13). An inline tag is refused by it -- silently, which would read as the
+// Why it is a file rather than an inline <script>: the CSP is script-src 'self',
+// and an inline tag is refused by it -- silently, which would read as the
 // feature simply not working -- so this is registered like every other asset and
 // referenced by its content-addressed URL.
 func ReloadTag(stream string) string { return hview.ReloadTag(stream) }

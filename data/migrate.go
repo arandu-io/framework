@@ -44,7 +44,7 @@ type AppliedMigration = database.AppliedMigration
 // so a failure halfway cannot leave the schema ahead of the record.
 //
 // It is a pipeline step and never a call on the way up: with N replicas, N
-// migrations race (RULE 16).
+// migrations race.
 func Migrate(ctx context.Context, db *DB, migrations []Migration) ([]string, error) {
 	return database.Migrate(ctx, db, migrations)
 }

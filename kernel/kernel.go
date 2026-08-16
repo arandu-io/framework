@@ -32,5 +32,5 @@ func New(cfg config.Config) *Kernel { return foundation.New(cfg) }
 // prints the same table.
 //
 // A wrapper for the same reason New is. What it reaches is
-// hesape/routing.FormatRoutes, through foundation (docs/31:192).
+// hesape/routing.FormatRoutes, through foundation.
 func FormatRoutes(routes []*http.Route) string { return foundation.FormatRoutes(routes) }

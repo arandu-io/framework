@@ -129,9 +129,9 @@ func TestATaskRunsUnderItsGrant(t *testing.T) {
 	}
 }
 
-// TestAGlobalTaskCannotReachTenantData is RULE 14 meeting the scheduler, and
-// the answer is the strict one: SystemGrant refuses an empty tenant, so a
-// Global task holds the zero Grant and cannot pass any Check.
+// TestAGlobalTaskCannotReachTenantData is the tenant rule meeting the
+// scheduler, and the answer is the strict one: SystemGrant refuses an empty
+// tenant, so a Global task holds the zero Grant and cannot pass any Check.
 //
 // That is a constraint, not an oversight. Global work is cleaning temporary
 // files, warming a cache, checking a certificate -- none of which reads a

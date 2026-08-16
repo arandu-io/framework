@@ -72,9 +72,9 @@ func TestTheOlderLinksDieWithTheOneThatWasUsed(t *testing.T) {
 	}
 }
 
-// RULE 14 on the one request in the application that arrives with no session to
-// take a tenant from. The link names its own, signed, so the host it is opened
-// at decides nothing.
+// The tenant rule on the one request in the application that arrives with no
+// session to take a tenant from. The link names its own, signed, so the host it
+// is opened at decides nothing.
 func TestALinkFromOneTenantDoesNotResetTheAccountWithThatAddressInAnother(t *testing.T) {
 	svc, db := serviceOverFakeDB(t)
 	ctx := context.Background()

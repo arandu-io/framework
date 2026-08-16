@@ -15,7 +15,7 @@ import (
 //
 // The alias carries the whole message bag with it: the four methods this
 // package declared -- Add, Any, Error and First -- are still there, alongside
-// the rest of Illuminate's MessageBag. First took no argument here and takes an
+// the rest of what hesape added. First took no argument here and takes an
 // optional key there, so e.First() reads as it always did and e.First("email")
 // is new.
 type Errors = hvalidation.Errors
@@ -76,10 +76,9 @@ func Confirmed(e Errors, field, value, confirmation string) {
 // characters" under a labelled input -- and a banner needs one in front:
 // view.Page.ErrorSummary renders "Password must be at least 12 characters".
 //
-// It answers to str.Headline, which is Str::headline, and that CHANGES what it
-// returns: "password_confirmation" was "Password confirmation" here and is
-// "Password Confirmation" there. A one-word field reads identically, which is
-// most of them. The sentence casing was an Arandu divergence from Laravel and
-// hesape closed it deliberately; this is the one behaviour the move changes,
-// and it changes the text of an error summary, never whether a form passes.
+// It answers to str.Headline, and that CHANGES what it returns:
+// "password_confirmation" was "Password confirmation" here and is "Password
+// Confirmation" there. A one-word field reads identically, which is most of
+// them. This is the one behaviour the move changes, and it changes the text of
+// an error summary, never whether a form passes.
 func Humanize(field string) string { return str.Headline(field) }

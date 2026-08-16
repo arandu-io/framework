@@ -1,7 +1,6 @@
 // Package errorpage renders the development error page.
 //
-// It is the functional equivalent of Ignition, with one difference in scope:
-// here the data comes from the Collector, which is part of the core, so the page
+// The data comes from the Collector, which is part of the core, so the page
 // knows the queries, the dumps, the events and the routes without any extra
 // package installed.
 //
@@ -24,15 +23,11 @@
 //     them without changing what the thirteen repositories construct, so
 //     Options stays declared here and is translated.
 //
-// StackFrame and Capture came across whole, and Capture is the fix for the one
-// thing this package had wrong after the move: it used to decide "framework or
-// application" against a hard-coded github.com/arandu-io/framework, which after
-// the move matched nothing that runs, so every hesape frame was expanded as
-// application code and its source read off disk. hesape asks about its own
-// import path and about the standard library, and collapses everything that is
-// neither only when Options.AppModule says which module the application is. See
-// Capture for what that leaves.
+// StackFrame and Capture came across whole. Capture decides "framework or
+// application" by asking about hesape's own import path and about the standard
+// library, and collapses everything that is neither only when Options.AppModule
+// says which module the application is. See Capture for what that leaves.
 //
 // The death date above is what keeps this from being a second way to import one
-// type, which RULE 9 forbids.
+// type.
 package errorpage

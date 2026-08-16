@@ -3,10 +3,9 @@
 // -- by github.com/arandu-io/hesape/auth.
 //
 // This is where the design diverged, so this is where the envelopes are. Every
-// assertion on Response was renamed to the Illuminate spelling on the way to
-// hesape, and thirteen modules call the old names, so Response keeps them and
-// forwards. Client is an envelope for one reason only: its Get and Post answer
-// that Response.
+// assertion on Response was renamed on the way to hesape, and thirteen modules
+// call the old names, so Response keeps them and forwards. Client is an envelope
+// for one reason only: its Get and Post answer that Response.
 
 package arandutest
 
@@ -55,11 +54,10 @@ func (c *Client) Post(path string, form map[string]string) *Response {
 
 // Response is what came back, with the assertions worth having.
 //
-// Renamed on the way to hesape: every method below is spelled Assert* there,
-// after Illuminate\Testing\TestResponse. The old names are kept because
-// thirteen modules call them, and each one forwards to exactly one hesape
-// method -- the comparison, the failure message and whether it stops the test
-// are all decided by the code that runs there.
+// Renamed on the way to hesape: every method below is spelled Assert* there.
+// The old names are kept because thirteen modules call them, and each one
+// forwards to exactly one hesape method -- the comparison, the failure message
+// and whether it stops the test are all decided by the code that runs there.
 type Response struct {
 	inner *arandutest.Response
 }

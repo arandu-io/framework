@@ -105,8 +105,8 @@ func TestTaskCarriesTheGrantUnchanged(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	// Grant holds only unexported fields and is not comparable, so what is
-	// asserted is what it carries: the action it authorizes and the tenant
-	// RULE 14 takes from it.
+	// asserted is what it carries: the action it authorizes and the tenant a
+	// statement takes from it.
 	if got.Action() != security.Action("invoice.close") {
 		t.Errorf("the action did not survive the alias: %q", got.Action())
 	}

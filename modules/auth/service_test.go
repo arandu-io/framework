@@ -42,8 +42,8 @@ func TestCreateUserWalksTheCanonicalPath(t *testing.T) {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	// The tenant comes from the Grant the policy issued, never from the request
-	// (RULE 14). The request has no field for it, and this is why.
+	// The tenant comes from the Grant the policy issued, never from the request.
+	// The request has no field for it, and this is why.
 	if created.TenantID != "t1" {
 		t.Errorf("TenantID = %q, want the actor's tenant", created.TenantID)
 	}
@@ -111,9 +111,10 @@ func TestCreateUserRefusesBeforeAuthorizing(t *testing.T) {
 	}
 }
 
-// TestCreateUserRequiresThePolicy is RULE 17 at the write end: no repository is
-// reachable without a Grant, and the Grant only exists because the policy issued
-// one. A member creating a user is the denial that must cost nothing.
+// TestCreateUserRequiresThePolicy is the mandatory policy at the write end: no
+// repository is reachable without a Grant, and the Grant only exists because the
+// policy issued one. A member creating a user is the denial that must cost
+// nothing.
 func TestCreateUserRequiresThePolicy(t *testing.T) {
 	service, db := serviceOverFakeDB(t)
 	member := security.Subject{ID: "u-1", Tenant: "t1"}

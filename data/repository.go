@@ -20,7 +20,7 @@ import (
 // Look at the signature: the Grant is mandatory and comes before the id.
 // Because a Grant cannot be constructed outside the authorization package,
 // there is no path from a handler to the database that skips a Policy -- on the
-// way out as much as on the way in (RULE 17).
+// way out as much as on the way in.
 //
 // It stays declared here rather than aliasing hesape/database.Repository, which
 // changed the return of List from ([]T, error) to (Page[T], error) so that a

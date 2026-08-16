@@ -125,7 +125,7 @@ type Service struct {
 	//
 	// When the kv-backed implementation lands it replaces what this constructor
 	// builds, here, for every application at once. Same interface, so it is an
-	// adapter and not a mode (RULE 11).
+	// adapter and not a mode.
 	throttle security.SignInThrottle
 }
 
@@ -164,10 +164,9 @@ func (s *Service) record(ctx context.Context, g security.Grant, name string, u U
 //
 // # The identifier is the e-mail address, and there is no hook to change it
 //
-// This is the paragraph for whoever came looking for Laravel's username(). There
-// is no equivalent, deliberately: an account is named by its address, in the
-// form field, in LoginRequest.Email, in this parameter and in
-// UserRepo.FindByEmail, and all four say so.
+// There is no hook that changes which field names an account. An account is
+// named by its address, in the form field, in LoginRequest.Email, in this
+// parameter and in UserRepo.FindByEmail, and all four say so.
 //
 // What a hook would cost is not one method. The address is normalised on the way
 // in and on the way out, and a plain UNIQUE (tenant_id, email) is what makes the
@@ -176,9 +175,9 @@ func (s *Service) record(ctx context.Context, g security.Grant, name string, u U
 // identifier with different rules is a second budget for the same account and
 // twice the guesses. Registration, verification and the reset link are all built
 // on proving control of an address -- a person who signed in by handle would
-// have no proven address to reset through. And the hook itself is the second way
-// to name an account, which is what RULE 9 refuses: two applications on this
-// framework would disagree about what a login is.
+// have no proven address to reset through. And the hook itself is a second way
+// to name an account: two applications on this framework would disagree about
+// what a login is.
 //
 // Signing in by handle is therefore an application-level feature -- resolve the
 // handle to an address and call this -- and never a switch inside the framework.
@@ -388,9 +387,9 @@ var ErrVerificationAddressChanged = errors.New("auth: the verification link was 
 // address the account has at the moment it is clicked, not the one somebody
 // proved control of. Change the address after the mail is out and the old link
 // still stamps the new one as verified, which is verification proving nothing.
-// It was latent here only because no method changed an address yet, and whoever
-// writes that method has no reason to open this file. Laravel binds the same two
-// things, by hashing the address into the signed route.
+// Nothing changes an address yet, and whoever writes the method that does has no
+// reason to open this file -- so the binding is in the payload rather than left
+// to that caller.
 //
 // The id is written with its length in front of it, for the reason
 // security.Signer writes the purpose that way: without it an id of "a" with an
@@ -437,10 +436,10 @@ func decodeVerificationPayload(payload string) (id, address string, ok bool) {
 // The flip itself is UserRepo.Confirm, which changes the column only while it is
 // still null. The check above cannot stand in for it: a link is opened by the
 // person and prefetched by whatever scans their mail within the same second, and
-// two reads that both saw an unverified row both used to write, and both used to
-// store the event -- which is the welcome mail sent twice by a consumer behaving
-// correctly. The boolean now comes from the database rather than from a read
-// that had already gone stale.
+// two reads that both saw an unverified row would both write and both store the
+// event -- which is the welcome mail sent twice by a consumer behaving
+// correctly. The boolean comes from the database rather than from a read that
+// has already gone stale.
 func (s *Service) MarkVerified(ctx context.Context, tenant, payload string) (User, bool, error) {
 	id, address, ok := decodeVerificationPayload(payload)
 	if !ok {
@@ -558,9 +557,9 @@ var ErrResetLinkSpent = errors.New("auth: the password reset link is no longer v
 // # Why the tenant is in it
 //
 // The link is consumed with no session, so there is no Grant to read the tenant
-// from. Resolving it from the host at that moment is what RULE 14 forbids, and
-// concretely: a link minted for one customer, posted at another customer's host,
-// changed the password of whichever account had that address there. Read from
+// from. Resolving it from the host at that moment is taking a tenant from the
+// request: a link minted for one customer, posted at another customer's host,
+// changes the password of whichever account has that address there. Read from
 // the payload the tenant is not request data -- it is a value this application
 // signed, which is the provenance a session cookie has.
 //
@@ -778,8 +777,8 @@ func confirmIdentity(subjectID string) string { return "confirm:" + subjectID }
 // It is not Authenticate. That one is the sign-in path: it takes an address,
 // decides a tenant and hands back a user to open a session for. Widening it to
 // also accept a subject would give one function two meanings and two failure
-// modes, and the caller would pick between them with a nil (RULE 9). This one
-// takes the subject the session already carries and answers a yes or no.
+// modes, and the caller would pick between them with a nil. This one takes the
+// subject the session already carries and answers a yes or no.
 //
 // It is throttled, and that is not optional: without it a screen behind
 // RequireAuth is a password oracle for anybody holding a stolen session cookie
@@ -830,7 +829,7 @@ func (s *Service) ConfirmPassword(ctx context.Context, sub security.Subject, pla
 // administrator and there is nobody to ask -- and a seeder. A second method for
 // the screen would be a second place the hash is computed and a second place the
 // event is published from, and one of the two would eventually stop publishing
-// it (RULE 9).
+// it.
 //
 // It proves nothing itself, and that is deliberate rather than missing. Who is
 // allowed to do this is the caller's: the screen proves control of the address
@@ -847,13 +846,13 @@ func (s *Service) ConfirmPassword(ctx context.Context, sub security.Subject, pla
 //
 // # It writes one column
 //
-// This used to read the row, set the field, and write the whole row back with
-// UserRepo.Update -- with the read outside the transaction. Anything that
-// changed in between was reverted from a stale snapshot: a role granted while
-// somebody was resetting their password disappeared again, and a verification
-// clicked in the same minute was undone. Nothing failed and nothing was logged.
-// UserRepo.SetPassword writes the one column, which is what MarkVerified was
-// given in UserRepo.Confirm and for the same reason.
+// Reading the row, setting the field and writing the whole row back with
+// UserRepo.Update -- with the read outside the transaction -- reverts anything
+// that changed in between from a stale snapshot: a role granted while somebody
+// was resetting their password disappears again, and a verification clicked in
+// the same minute is undone, with nothing failing and nothing logged.
+// UserRepo.SetPassword writes the one column, which is what MarkVerified gets
+// from UserRepo.Confirm and for the same reason.
 //
 // The row is read back inside the transaction rather than reported from the
 // snapshot, so what is returned and what is published describe the account as it
@@ -894,12 +893,12 @@ func (s *Service) SetPassword(ctx context.Context, tenant, email, plain string) 
 	// account owner, raise the flag on a fraud review.
 	//
 	// The message says what happened and not who did it, which it cannot know.
-	// It used to say "from the command line", and the published reset screen is a
-	// caller: every ordinary person recovering their password wrote a line into
-	// the log that read as an operator changing somebody's credentials by hand --
-	// which is exactly the line somebody greps for during an incident, and it was
-	// never true. Which caller it was is in the context: a request has an id on
-	// every line it emits and a command has none.
+	// Naming a caller -- "from the command line" -- would be wrong for the
+	// published reset screen, which is also a caller: every ordinary person
+	// recovering their password would write a line reading as an operator
+	// changing somebody's credentials by hand, which is exactly the line somebody
+	// greps for during an incident. Which caller it was is in the context: a
+	// request has an id on every line it emits and a command has none.
 	observability.Log(ctx).Warn("password replaced", "user", updated)
 	return updated, nil
 }

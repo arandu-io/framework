@@ -131,14 +131,13 @@ func RequireRole(sessions *security.SessionStore, roles ...string) func(http.Han
 // RequireConfirmedPassword admits a request only when the password was typed
 // again on this session less than security.PasswordConfirmationWindow ago.
 //
-// It is Laravel's `password.confirm` middleware. Mount it on the handful of
-// routes where holding the cookie is not proof enough that the person is there:
-// changing the address the account is recovered through, revealing an API key,
-// closing the account, moving money. The cost of not having it is concrete -- a
-// session cookie lifted from a shared machine is a full account takeover with no
-// step where the attacker has to know anything.
+// Mount it on the handful of routes where holding the cookie is not proof
+// enough that the person is there: changing the address the account is recovered
+// through, revealing an API key, closing the account, moving money. The cost of
+// not having it is concrete -- a session cookie lifted from a shared machine is a
+// full account takeover with no step where the attacker has to know anything.
 //
-// # Where the line is against RULE 9
+// # Where the line is against a second authorization path
 //
 // It asks one question: was the password confirmed recently. It never asks may
 // this subject touch this record -- that is the Policy's answer, on every service

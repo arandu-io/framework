@@ -7,25 +7,24 @@ import (
 	"testing"
 )
 
-// TestNoNodeAnywhere is RULE 13, checked rather than promised.
+// TestNoNodeAnywhere checks the no-Node promise rather than stating it.
 //
 // A project runs with `git clone && aru dev`. No node_modules, no package.json,
-// no JS lockfile, and no Node installed. In Laravel, Node entered through the
-// error page -- Illuminate/Foundation/resources/exceptions/renderer/ carries a
-// package.json and a vite.config.js. Ours is html/template, inline.
+// no JS lockfile, and no Node installed. The error page is html/template inline,
+// so no asset build enters through it either.
 //
-// It is here and not with the rest of what used to be assets_test.go because it
-// is not a test of this package: it walks THIS REPOSITORY, and the repository
-// still has a tree of its own after the view runtime moved to hesape. The
-// identical guard in hesape/view walks hesape, which is a different tree.
+// It is here and not with the asset tests because it is not a test of this
+// package: it walks THIS REPOSITORY, and the repository still has a tree of its
+// own after the view runtime moved to hesape. The identical guard in
+// hesape/view walks hesape, which is a different tree.
 func TestNoNodeAnywhere(t *testing.T) {
 	forbidden := []string{"package.json", "package-lock.json", "yarn.lock",
 		"pnpm-lock.yaml", "bun.lockb", "node_modules", "vite.config.js", "vite.config.ts"}
 
 	// ".." and not ".": the whole repository, because the promise is about the
-	// repository. The reference projects cloned next to it are full of
-	// package.json and are read-only material rather than code that ships
-	// (RULE 7), which is why the walk starts here and not one level higher.
+	// repository. The projects cloned next to it are full of package.json and
+	// are read-only material rather than code that ships, which is why the walk
+	// starts here and not one level higher.
 	root := ".."
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

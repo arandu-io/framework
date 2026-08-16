@@ -37,11 +37,11 @@ type Limiter interface {
 //
 // The refusal goes through fhttp.Refuse, like the role guard's 403 and
 // CSRFProtect's 419. This is the third of the three middlewares in this package
-// that turn a request away, and it was the one left on http.Error: htmx swaps no
-// 4xx, so somebody who had hit the limit pressed the button and the screen did
-// not change at all -- the same failure the other two were fixed for, on the one
-// refusal that arrives when a person is already pressing repeatedly. Refusing in
-// two shapes is the inconsistency rather than the fix (RULE 9).
+// that turn a request away, and http.Error is not enough for it: htmx swaps no
+// 4xx, so somebody who has hit the limit presses the button and the screen does
+// not change at all -- on the one refusal that arrives when a person is already
+// pressing repeatedly. Refusing in two shapes is the inconsistency rather than
+// the fix.
 //
 // The sentence carries the same number as Retry-After, computed once, because a
 // header and a sentence that disagree about how long to wait are worse than one

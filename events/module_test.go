@@ -10,7 +10,7 @@ import (
 
 // tenant is who the events in these tests belong to. Every outbox row carries
 // one, because a relay reading a row without one would not know who to deliver
-// it to (RULE 14).
+// it to.
 const tenant = "tenant-1"
 
 // TestTheOutboxMigrationIsPortable: the table has to exist on SQLite, Postgres

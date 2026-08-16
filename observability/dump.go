@@ -25,14 +25,13 @@ func Dump(ctx context.Context, label string, value any) {
 // DumpDie records the value and aborts the request with the dump page. It
 // panics with a sentinel the Recover middleware recognizes.
 //
-// The die half is no longer conditional, and that is a behaviour change a
-// caller can see. It used to return without panicking when there was no
-// Collector -- which is every request outside development -- so a forgotten
-// call answered 200 with the dump written into the middle of the body, a page
-// broken in a way nothing reported. It now aborts wherever it is called, as
-// PHP's dd() does, and outside development Recover logs it by name before
-// answering the error page. The recording half still needs a Collector and
-// still does nothing without one.
+// The die half is not conditional, and that is a behaviour change a caller can
+// see. Returning without panicking when there is no Collector -- which is every
+// request outside development -- makes a forgotten call answer 200 with the dump
+// written into the middle of the body, a page broken in a way nothing reports.
+// It aborts wherever it is called, and outside development Recover logs it by
+// name before answering the error page. The recording half still needs a
+// Collector and still does nothing without one.
 func DumpDie(ctx context.Context, label string, value any) {
 	hlog.DumpDie(ctx, label, value)
 }

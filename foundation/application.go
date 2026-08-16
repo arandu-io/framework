@@ -1,5 +1,4 @@
-// The Application: what Illuminate\Foundation\Application is, under the name a
-// Laravel developer types. It was kernel.Kernel until this package landed, and
+// The Application. It was kernel.Kernel until this package landed, and
 // github.com/arandu-io/framework/kernel is the old name pointing here.
 
 package foundation
@@ -99,7 +98,7 @@ func New(cfg config.Config) *Application {
 //
 // The nil is the point. Outside development, without a tracing secret, there is
 // no recorder -- so those loops build no Collector, record nothing, and cost
-// nothing. They used to build one unconditionally and throw it away.
+// nothing.
 //
 // It is not wired automatically because the pipeline is assembled in the
 // project, in the open, and a middleware that reached back into the Application
@@ -218,11 +217,11 @@ func (a *Application) startBackground(ctx context.Context) error {
 // outside it only to a request carrying the tracing secret -- which is not the
 // same as "only when a tracing secret is configured".
 //
-// That distinction was a hole. The recorder exists whenever the secret is set,
-// so the routes were mounted in production, and the secret was checked only by
-// the middleware that decides whether to RECORD. Anyone could then read the
-// buffer: SQL with bound arguments, dumps, event payloads, across every tenant,
-// with no session and no header. Found by audit, reproduced over a real socket.
+// The distinction is a hole if it is missed. The recorder exists whenever the
+// secret is set, so mounting the routes on that condition alone puts them in
+// production with the secret checked only by the middleware that decides whether
+// to RECORD -- and anyone can then read the buffer: SQL with bound arguments,
+// dumps, event payloads, across every tenant, with no session and no header.
 func (a *Application) mountInternalRoutes() {
 	internal := a.router.ForModule("arandu")
 	internal.Get(internalPrefix+"health", a.handleHealth)
@@ -491,9 +490,8 @@ func (a *Application) Routes() []*fhttp.Route { return a.router.Routes() }
 // sorted by pattern. It is here, and not in the CLI, so that every project
 // prints the same table.
 //
-// The table itself is hesape/routing.FormatRoutes (docs/31:192), and this is a
-// call through rather than a copy: fhttp.Route is an alias for routing.Route,
-// so the slice needs no translation and there is one implementation of the
-// format. A wrapper and not an alias, because Go has no alias form for a
-// function.
+// The table itself is hesape/routing.FormatRoutes, and this is a call through
+// rather than a copy: fhttp.Route is an alias for routing.Route, so the slice
+// needs no translation and there is one implementation of the format. A wrapper
+// and not an alias, because Go has no alias form for a function.
 func FormatRoutes(routes []*fhttp.Route) string { return routing.FormatRoutes(routes) }

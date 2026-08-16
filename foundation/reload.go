@@ -17,8 +17,8 @@ import (
 // # This file is a copy, and the reason is visibility
 //
 // hesape/foundation/reload.go holds the same code, and this is not a second way
-// to do one thing that RULE 9 would refuse -- it is the same way, written twice,
-// because the first copy is out of reach.
+// to do one thing -- it is the same way, written twice, because the first copy
+// is out of reach.
 //
 // That package exports exactly one symbol from the file, ReloadTagger, and this
 // package aliases it. Everything the reload actually needs -- devReload,
@@ -27,11 +27,10 @@ import (
 // internalPrefix, exceptInternal and requireTracingSecret restated below come
 // from. Go has no way to reach any of them from another module.
 //
-// An audit reported this as a RULE 9 failure and named the wrong cause: it read
-// the signature difference between []fhttp.Middleware and
-// []pipeline.Middleware[http.Handler] as the obstacle, and those two are the
-// same type -- fhttp.Middleware is an alias. The obstacle is the lower-case
-// letter, and no aliasing removes it.
+// The signature difference between []fhttp.Middleware and
+// []pipeline.Middleware[http.Handler] is not the obstacle: those two are the
+// same type, because fhttp.Middleware is an alias. The obstacle is the
+// lower-case letter, and no aliasing removes it.
 //
 // The way out is for hesape/foundation to export what a kernel above it needs,
 // and that is a change to a published module rather than a rewrite here. Until
@@ -86,17 +85,17 @@ import (
 //
 // # Why the script is a file and not inline
 //
-// The CSP is script-src 'self' (RULE 13), and an inline <script> is refused by
-// it -- the browser would drop the tag silently and the feature would appear
-// simply not to work. So the script is registered as an ordinary asset and
-// referenced by src, content-addressed like every other one. It costs one
-// request, on a development server, once per page.
+// The CSP is script-src 'self', and an inline <script> is refused by it -- the
+// browser would drop the tag silently and the feature would appear simply not
+// to work. So the script is registered as an ordinary asset and referenced by
+// src, content-addressed like every other one. It costs one request, on a
+// development server, once per page.
 //
 // # What is deliberately not here
 //
 // No CSS hot-swap, no state preservation, no module replacement. Those need a
-// client-side runtime and a module graph, which is the JavaScript build RULE 13
-// exists to refuse. A full reload against a Go server that restarts in under a
+// client-side runtime and a module graph, which is the JavaScript build this
+// framework refuses. A full reload against a Go server that restarts in under a
 // second is a fair trade, and it is one behaviour rather than two.
 
 // reloadPath is where the browser listens. Under _arandu with health and the

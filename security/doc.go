@@ -6,9 +6,9 @@
 //
 // This package is a bridge. It is removed in v1.0.0; import github.com/arandu-io/hesape/auth directly.
 //
-// The components moved to github.com/arandu-io/hesape, under the Illuminate
-// names, and this package is now the old names pointing at them. It answers to
-// five hesape packages, and which one a symbol went to depends on the symbol:
+// The components moved to github.com/arandu-io/hesape, under new names, and
+// this package is now the old names pointing at them. It answers to five hesape
+// packages, and which one a symbol went to depends on the symbol:
 //
 //	hesape/auth        Grant, Policy, Subject, Action, Authorize, SystemGrant, the sign-in throttle
 //	hesape/session     the session store, the flash, the CSRF token, the cookie name
@@ -17,9 +17,9 @@
 //	hesape/http        LocalPath and the intended destination
 //
 // The death date above is what keeps this from being a second way to import one
-// type, which RULE 9 forbids. Nothing here holds an implementation: where the
-// name and the signature survived the move it is a Go alias, and where the
-// design diverged it is an envelope that translates and nothing more.
+// type. Nothing here holds an implementation: where the name and the signature
+// survived the move it is a Go alias, and where the design diverged it is an
+// envelope that translates and nothing more.
 //
 // The three envelopes, and what diverged:
 //
