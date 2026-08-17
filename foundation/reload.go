@@ -209,6 +209,12 @@ func (h *htmlRecorder) Flush() {
 	}
 }
 
+// Unwrap lets http.ResponseController reach the connection through this
+// wrapper, which is how a handler that holds a response open lifts the server's
+// write deadline. Without it the deadline is liftable in production, where this
+// middleware is not mounted, and not in development, where it is.
+func (h *htmlRecorder) Unwrap() http.ResponseWriter { return h.ResponseWriter }
+
 func (h *htmlRecorder) finish() {
 	if h.passing {
 		return

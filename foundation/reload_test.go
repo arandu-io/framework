@@ -153,6 +153,34 @@ func TestEveryProcessHasItsOwnIdentity(t *testing.T) {
 	}
 }
 
+// A handler that holds a response open lifts the server's write deadline with
+// http.ResponseController, and the controller finds the connection by unwrapping
+// the writers it was handed. This middleware is mounted in development and
+// absent from production, so a wrapper without Unwrap is a deadline that can be
+// lifted in production and not on the machine of the person writing the handler
+// -- the one place the difference is invisible until it is deployed.
+//
+// It goes over a real connection because httptest.ResponseRecorder implements no
+// deadline at all, so a recorder would refuse the call whether the wrapper
+// unwraps or not.
+func TestAStreamingHandlerCanLiftTheWriteDeadlineThroughTheWrapper(t *testing.T) {
+	errc := make(chan error, 1)
+	srv := httptest.NewServer(liveReload(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		errc <- http.NewResponseController(w).SetWriteDeadline(time.Time{})
+	})))
+	defer srv.Close()
+
+	res, err := srv.Client().Get(srv.URL)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	_ = res.Body.Close()
+
+	if err := <-errc; err != nil {
+		t.Fatalf("SetWriteDeadline: %v -- a streaming handler cannot lift the server's write timeout in development", err)
+	}
+}
+
 // Nothing is mounted or injected outside development.
 func TestProductionHasNoneOfThis(t *testing.T) {
 	if devReload(false) != nil {
