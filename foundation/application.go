@@ -25,13 +25,43 @@ import (
 	"github.com/arandu-io/hesape/routing"
 )
 
-// Timeouts of the HTTP server. They are set rather than left at zero because a
-// server without timeouts is one slow client away from running out of file
-// descriptors.
+// Limits of the HTTP server. They are set rather than left at the zero value
+// because a server without timeouts is one slow client away from running out of
+// file descriptors.
+//
+// readHeaderTimeout ends the header and readTimeout ends the body. Without the
+// second one a request whose headers arrive promptly can be followed by a body
+// delivered one byte at a time, and the handler waits for as long as the client
+// cares to keep sending: the header deadline has already passed by then, and
+// nothing replaces it.
+//
+// writeTimeout is a deadline on the whole response, counted from the moment the
+// headers finished arriving, so it covers reading the body and running the
+// handler as well as writing. That is why it is larger than readTimeout -- a
+// value below it would make a slow upload fail on a write it had not reached
+// yet, which reads as a broken handler rather than as a slow client.
+//
+// Being a deadline on the whole response makes it a ceiling on a streaming one
+// too. A handler that means to hold the connection open lifts it for its own
+// request:
+//
+//	http.NewResponseController(w).SetWriteDeadline(time.Time{})
+//
+// which reaches the connection through the Unwrap methods the response writers
+// of this framework carry.
+//
+// maxHeaderBytes is a sixteenth of the net/http default of 1 MB, which nothing a
+// browser sends approaches: cookies are capped at 4 KB each, and a handful of
+// them beside an authorization header fit in a fraction of this. Naming it is
+// the point -- how much memory an unauthenticated request can make the server
+// buffer is a decision, and left unset it is net/http's rather than this one's.
 const (
 	readHeaderTimeout = 10 * time.Second
+	readTimeout       = 30 * time.Second
+	writeTimeout      = 60 * time.Second
 	idleTimeout       = 60 * time.Second
 	shutdownTimeout   = 20 * time.Second
+	maxHeaderBytes    = 64 << 10
 )
 
 // Application holds the composed application: configuration, modules, the global
@@ -375,6 +405,22 @@ func exceptInternal(mw fhttp.Middleware) fhttp.Middleware {
 	}
 }
 
+// newServer builds the server Run listens with. It is separate from Run so that
+// the limits above can be asserted without binding a port: a field left off this
+// literal is a limit the process silently does not have.
+func (a *Application) newServer() *http.Server {
+	return &http.Server{
+		Addr:              a.cfg.App.HTTPAddr,
+		Handler:           a.Handler(),
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+		MaxHeaderBytes:    maxHeaderBytes,
+		ErrorLog:          slog.NewLogLogger(a.log.Handler(), slog.LevelError),
+	}
+}
+
 // Run starts the server and blocks until SIGINT or SIGTERM, then shuts down
 // gracefully.
 func (a *Application) Run(ctx context.Context) error {
@@ -388,13 +434,7 @@ func (a *Application) Run(ctx context.Context) error {
 		return err
 	}
 
-	a.srv = &http.Server{
-		Addr:              a.cfg.App.HTTPAddr,
-		Handler:           a.Handler(),
-		ReadHeaderTimeout: readHeaderTimeout,
-		IdleTimeout:       idleTimeout,
-		ErrorLog:          slog.NewLogLogger(a.log.Handler(), slog.LevelError),
-	}
+	a.srv = a.newServer()
 
 	errc := make(chan error, 1)
 	go func() {
