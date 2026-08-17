@@ -16,11 +16,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/arandu-io/framework/config"
+	"github.com/arandu-io/framework/foundation/bootstrap"
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/config"
 	"github.com/arandu-io/hesape/routing"
 )
 
@@ -36,7 +37,7 @@ const (
 // Application holds the composed application: configuration, modules, the global
 // middleware pipeline and the router.
 type Application struct {
-	cfg      config.Config
+	cfg      bootstrap.Configuration
 	log      *slog.Logger
 	router   *fhttp.Router
 	modules  []Module
@@ -60,31 +61,37 @@ type Application struct {
 
 // New assembles the Application. It opens no connection and listens on no port
 // -- that is Boot and Run.
-func New(cfg config.Config) *Application {
-	log := observability.NewLogger(string(cfg.Env), cfg.LogLevel)
+func New(cfg bootstrap.Configuration) *Application {
+	log := observability.NewLogger(string(cfg.App.Env), cfg.Observability.LogLevel)
+
+	a := &Application{
+		cfg: cfg,
+		log: log,
+	}
 
 	// The flash is built here, before any route exists, because the router is
 	// wired with it and a route is wired with the router it was registered on.
 	// Secure outside development, for the reason the session cookie is: it
 	// carries what somebody typed into a form, and without the attribute it
 	// travels over plain HTTP.
-	flash := security.NewFlash(cfg.AppKey, !cfg.IsDev())
-
-	a := &Application{
-		cfg:    cfg,
-		log:    log,
-		flash:  flash,
-		router: fhttp.NewRouter().WithFlash(flash),
-	}
+	a.flash = security.NewFlash(cfg.App.Key, !a.isDev())
+	a.router = fhttp.NewRouter().WithFlash(a.flash)
 
 	// The Application owns the recorder because it mounts the console route.
 	// One owner: an application that built its own would end up with a console
 	// showing a different buffer than the one the middleware fills.
-	if cfg.IsDev() || cfg.TracingSecret != "" {
+	if a.isDev() || cfg.Observability.TracingSecret != "" {
 		a.recorder = observability.NewRecorder(observability.DefaultRecorderSize)
 	}
 	return a
 }
+
+// isDev reports whether the debug surface is allowed to exist.
+//
+// It asks the environment and not the debug flag. The two are set together on
+// an ordinary machine and come apart on a staging deployment, where debug may
+// be on and the console, the reload stream and the insecure cookie must not be.
+func (a *Application) isDev() bool { return a.cfg.App.Env.Is(config.EnvDev) }
 
 // Recorder returns the buffer behind /_arandu/debug, or nil when nothing is
 // recording.
@@ -92,7 +99,7 @@ func New(cfg config.Config) *Application {
 // Pass it to middleware.Observe, and to the background loops that deserve the
 // same page:
 //
-//	app.Use(middleware.Observe(app.Recorder(), cfg.TracingSecret))
+//	app.Use(middleware.Observe(dev, cfg.Observability.TracingSecret, app.Recorder()))
 //	w := jobs.NewWorker(store, jobs.WorkerOptions{Recorder: app.Recorder()})
 //	scheduler.NewModule(app.Tasks(), scheduler.Options{Recorder: app.Recorder()})
 //
@@ -107,7 +114,7 @@ func New(cfg config.Config) *Application {
 func (a *Application) Recorder() *observability.Recorder { return a.recorder }
 
 // Config returns the configuration the Application was built with.
-func (a *Application) Config() config.Config { return a.cfg }
+func (a *Application) Config() bootstrap.Configuration { return a.cfg }
 
 // Logger returns the root logger. Request handlers must use
 // observability.Log(ctx) instead, which carries the request id.
@@ -229,7 +236,7 @@ func (a *Application) mountInternalRoutes() {
 	// Development only, and mounted from the same condition that injects the
 	// script -- so there is no arrangement in which a production page listens
 	// for a stream nothing answers. See reload.go.
-	if a.cfg.IsDev() {
+	if a.isDev() {
 		internal.Get(reloadPath, a.handleReload)
 		for _, m := range a.modules {
 			if t, ok := m.(ReloadTagger); ok {
@@ -242,10 +249,10 @@ func (a *Application) mountInternalRoutes() {
 	if a.recorder == nil {
 		return
 	}
-	console := observability.NewConsole(a.recorder, a.cfg.Editor)
+	console := observability.NewConsole(a.recorder, a.cfg.Observability.Editor)
 	handler := console.Handler
-	if !a.cfg.IsDev() {
-		handler = requireTracingSecret(a.cfg.TracingSecret, handler)
+	if !a.isDev() {
+		handler = requireTracingSecret(a.cfg.Observability.TracingSecret, handler)
 	}
 	internal.Get(observability.ConsolePath, handler)
 	internal.Get(observability.ConsolePath+"/{id}", handler)
@@ -308,7 +315,7 @@ func (a *Application) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (a *Application) Handler() http.Handler {
 	// Live reload is outermost after the logger, so it sees the finished
 	// document rather than a handler's intention to write one.
-	outer := append([]fhttp.Middleware{observability.RootLogger(a.log)}, devReload(a.cfg.IsDev())...)
+	outer := append([]fhttp.Middleware{observability.RootLogger(a.log)}, devReload(a.isDev())...)
 
 	// The flash is consumed above the application's own pipeline and below the
 	// logger, and the Application installs it rather than bootstrap/app.go for
@@ -382,7 +389,7 @@ func (a *Application) Run(ctx context.Context) error {
 	}
 
 	a.srv = &http.Server{
-		Addr:              a.cfg.HTTPAddr,
+		Addr:              a.cfg.App.HTTPAddr,
 		Handler:           a.Handler(),
 		ReadHeaderTimeout: readHeaderTimeout,
 		IdleTimeout:       idleTimeout,
@@ -391,7 +398,7 @@ func (a *Application) Run(ctx context.Context) error {
 
 	errc := make(chan error, 1)
 	go func() {
-		a.log.Info("server listening", "addr", a.cfg.HTTPAddr, "env", a.cfg.Env)
+		a.log.Info("server listening", "addr", a.cfg.App.HTTPAddr, "env", a.cfg.App.Env)
 		if err := a.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errc <- err
 		}

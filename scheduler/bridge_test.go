@@ -17,11 +17,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arandu-io/framework/config"
+	"github.com/arandu-io/framework/foundation/bootstrap"
 	"github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/scheduler"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/config"
 	"github.com/arandu-io/hesape/console/scheduling"
 )
 
@@ -476,7 +477,8 @@ func (l *memoryLocker) Run(ctx context.Context, name string, _ time.Duration, fn
 // TestTheKernelCollectsTasksFromModules: same shape as Migrations(), so a
 // module declares its scheduled work the way it declares everything else.
 func TestTheKernelCollectsTasksFromModules(t *testing.T) {
-	k := kernel.New(config.Config{Env: config.EnvDev}).Register(&schedulingModule{})
+	cfg := bootstrap.Configuration{App: config.App{Env: config.EnvDev}}
+	k := kernel.New(cfg).Register(&schedulingModule{})
 
 	tasks := k.Tasks()
 	if len(tasks) != 1 || tasks[0].ID != "billing.close" {

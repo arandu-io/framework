@@ -11,11 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arandu-io/framework/config"
-	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/foundation"
+	"github.com/arandu-io/framework/foundation/bootstrap"
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/observability"
+	"github.com/arandu-io/hesape/config"
+	"github.com/arandu-io/hesape/encryption"
 )
 
 // stub is a module with every optional interface, so one type covers boot,
@@ -56,17 +57,17 @@ func (s *stub) Migrations() []foundation.Migration {
 	return []foundation.Migration{{ID: s.name + "_0001", Up: "SELECT 1"}}
 }
 
-func testConfig(env config.Env) config.Config {
-	return config.Config{
-		AppName:  "test",
-		Env:      env,
-		HTTPAddr: ":0",
-		AppKey:   make([]byte, config.AppKeyLen),
-		Database: config.DatabaseConfig{
-			Connection: data.DialectSQLite,
-			Database:   "database/database.sqlite",
+// testConfig is what the Application reads and nothing else. It opens no
+// connection, so there is no database here to configure.
+func testConfig(env config.Env) bootstrap.Configuration {
+	return bootstrap.Configuration{
+		App: config.App{
+			Name:     "test",
+			Env:      env,
+			HTTPAddr: ":0",
+			Key:      make([]byte, encryption.KeySize),
 		},
-		LogLevel: slog.LevelError,
+		Observability: bootstrap.Observability{LogLevel: slog.LevelError},
 	}
 }
 
@@ -303,12 +304,8 @@ func TestFormatRoutesWithoutRoutes(t *testing.T) {
 // header, and read the buffer: SQL with its bound arguments, dumps, event
 // payloads, across every tenant.
 func TestTheConsoleIsClosedInProduction(t *testing.T) {
-	cfg := config.Config{
-		Env:           config.EnvProd,
-		AppKey:        make([]byte, 32),
-		TracingSecret: "s3cret-operator-only",
-		HTTPAddr:      ":0",
-	}
+	cfg := testConfig(config.EnvProd)
+	cfg.Observability.TracingSecret = "s3cret-operator-only"
 	k := foundation.New(cfg)
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
@@ -361,7 +358,7 @@ func TestTheConsoleIsClosedInProduction(t *testing.T) {
 // the configuration, and treating it as "no gate" would open the console for
 // every application that never set one.
 func TestAnEmptySecretDoesNotOpenTheConsole(t *testing.T) {
-	k := foundation.New(config.Config{Env: config.EnvProd, AppKey: make([]byte, 32), HTTPAddr: ":0"})
+	k := foundation.New(testConfig(config.EnvProd))
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
@@ -422,7 +419,7 @@ func TestBootDoesNotStartBackgroundLoops(t *testing.T) {
 func TestRunStartsBackgroundLoops(t *testing.T) {
 	spy := &backgroundSpy{}
 	cfg := testConfig(config.EnvProd)
-	cfg.HTTPAddr = "127.0.0.1:0"
+	cfg.App.HTTPAddr = "127.0.0.1:0"
 	k := foundation.New(cfg).Register(spy)
 
 	if err := k.Boot(context.Background()); err != nil {
@@ -465,7 +462,7 @@ func TestTheFrameworksOwnRoutesDoNotSpendTheApplicationsBudget(t *testing.T) {
 		})
 	}
 
-	k := foundation.New(config.Config{Env: config.EnvDev, AppKey: make([]byte, config.AppKeyLen), HTTPAddr: ":0"})
+	k := foundation.New(testConfig(config.EnvDev))
 	k.Use(counting)
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatal(err)

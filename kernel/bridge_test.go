@@ -24,11 +24,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arandu-io/framework/config"
 	"github.com/arandu-io/framework/foundation"
+	"github.com/arandu-io/framework/foundation/bootstrap"
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/config"
+	"github.com/arandu-io/hesape/encryption"
 	hfoundation "github.com/arandu-io/hesape/foundation"
 )
 
@@ -189,12 +191,14 @@ func (lock) Run(ctx context.Context, name string, ttl time.Duration, fn func(con
 	return fn(ctx)
 }
 
-func testConfig(env config.Env) config.Config {
-	return config.Config{
-		AppName:  "bridge",
-		Env:      env,
-		HTTPAddr: ":0",
-		AppKey:   make([]byte, config.AppKeyLen),
-		LogLevel: slog.LevelError,
+func testConfig(env config.Env) bootstrap.Configuration {
+	return bootstrap.Configuration{
+		App: config.App{
+			Name:     "bridge",
+			Env:      env,
+			HTTPAddr: ":0",
+			Key:      make([]byte, encryption.KeySize),
+		},
+		Observability: bootstrap.Observability{LogLevel: slog.LevelError},
 	}
 }

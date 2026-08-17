@@ -3,8 +3,8 @@
 package kernel
 
 import (
-	"github.com/arandu-io/framework/config"
 	"github.com/arandu-io/framework/foundation"
+	"github.com/arandu-io/framework/foundation/bootstrap"
 	"github.com/arandu-io/framework/http"
 )
 
@@ -21,11 +21,14 @@ type Kernel = foundation.Application
 // New assembles the kernel. It opens no connection and listens on no port --
 // that is Boot and Run.
 //
-// A wrapper and not an alias: Go has no alias form for a function. The
-// signature is the one it has always had, and that is deliberate -- it is
-// called from bootstrap/app.go in every project built on this framework, and a
-// bridge that changes a signature is not a bridge.
-func New(cfg config.Config) *Kernel { return foundation.New(cfg) }
+// A wrapper and not an alias: Go has no alias form for a function.
+//
+// It takes the settings LoadConfiguration answers, one struct per component.
+// The single struct it used to take is gone from the boot path, and keeping the
+// old signature here would have meant a translation between the two -- a second
+// answer to what an application is configured with, which is the thing this
+// bridge exists to retire rather than to preserve.
+func New(cfg bootstrap.Configuration) *Kernel { return foundation.New(cfg) }
 
 // FormatRoutes renders the route table for the terminal, grouped by module and
 // sorted by pattern. It is here, and not in the CLI, so that every project

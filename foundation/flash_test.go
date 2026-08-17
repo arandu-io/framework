@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/arandu-io/framework/config"
 	"github.com/arandu-io/framework/foundation"
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
+	"github.com/arandu-io/hesape/config"
 )
 
 // flashModule is an application that rejects a form and, on the way back,
@@ -97,7 +97,7 @@ func TestTheFlashMiddlewareIsInstalledWithoutTheApplicationWiringIt(t *testing.T
 // the console open, which is precisely when somebody is investigating something
 // else.
 func TestTheConsoleDoesNotSpendTheFlash(t *testing.T) {
-	f := security.NewFlash(testConfig(config.EnvDev).AppKey, false)
+	f := security.NewFlash(testConfig(config.EnvDev).App.Key, false)
 	rec := httptest.NewRecorder()
 	f.Write(rec, map[string][]string{"title": {"is required"}}, url.Values{})
 	var flash *http.Cookie

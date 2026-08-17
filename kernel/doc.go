@@ -21,8 +21,8 @@
 //
 //	Kernel        is foundation.Application; the old name stays here as an alias
 //	New           a wrapper and not an alias, because Go has no alias form for a
-//	              function. The signature is unchanged: it still takes
-//	              config.Config and still answers *Kernel
+//	              function. It answers *Kernel and takes the settings
+//	              bootstrap.LoadConfiguration builds, one struct per component
 //	FormatRoutes  the same, and what it now calls through to is
 //	              hesape/routing.FormatRoutes
 //

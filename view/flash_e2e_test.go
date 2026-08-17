@@ -9,12 +9,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/arandu-io/framework/config"
+	"github.com/arandu-io/framework/foundation/bootstrap"
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/framework/view"
+	"github.com/arandu-io/hesape/config"
+	"github.com/arandu-io/hesape/encryption"
 )
 
 // The failure this whole path exists to remove, reproduced end to end.
@@ -257,11 +259,13 @@ func TestTheFlashIsNotSpentByTheFragmentTheLandingPageFires(t *testing.T) {
 func signupApp(t *testing.T) http.Handler {
 	t.Helper()
 
-	k := kernel.New(config.Config{
-		AppName:  "test",
-		Env:      config.EnvProd,
-		HTTPAddr: ":0",
-		AppKey:   []byte(strings.Repeat("k", config.AppKeyLen)),
+	k := kernel.New(bootstrap.Configuration{
+		App: config.App{
+			Name:     "test",
+			Env:      config.EnvProd,
+			HTTPAddr: ":0",
+			Key:      []byte(strings.Repeat("k", encryption.KeySize)),
+		},
 	}).Register(view.NewModule(), signupModule{})
 
 	if err := k.Boot(context.Background()); err != nil {

@@ -59,8 +59,7 @@ inside the framework. Ours now says so: `kernel.Kernel` is
 `foundation.Application` (ADR 0049).
 
 `framework/kernel` still works. It is a bridge, and it is removed in v1.0.0 —
-every method keeps its name and signature, so the change is the import path and
-the type name:
+every method keeps its name, so the change is the import path and the type name:
 
 ```go
 app := foundation.New(cfg)   // was kernel.New(cfg), and still is
@@ -69,6 +68,45 @@ app := foundation.New(cfg)   // was kernel.New(cfg), and still is
 Two symbols did not survive the move, and neither was reachable from an
 application: `Locker` moved down into `foundation` under the same name, and
 `FormatRoutes` now calls through to `hesape/routing`.
+
+### The application is built from one struct per component
+
+| was | is | what to do |
+|---|---|---|
+| `kernel.New(config.Config)` | `kernel.New(bootstrap.Configuration)` | Build it with `bootstrap.LoadConfiguration()` and pass the result. `foundation.New` and `(*Application).Config()` follow it |
+
+`config.Config` was one struct of eleven fields read by one function. What
+replaces it is `github.com/arandu-io/framework/foundation/bootstrap`, where each
+component declares its own settings and `LoadConfiguration` reads the
+environment once to fill them in:
+
+```go
+cfg, err := bootstrap.LoadConfiguration()
+if err != nil {
+	return err
+}
+app := foundation.New(cfg)
+```
+
+The fields an application reaches for most:
+
+| was | is |
+|---|---|
+| `cfg.AppName`, `cfg.Env`, `cfg.HTTPAddr`, `cfg.AppKey` | `cfg.App.Name`, `cfg.App.Env`, `cfg.App.HTTPAddr`, `cfg.App.Key` |
+| `cfg.IsDev()` | `cfg.App.Env.Is(config.EnvDev)`, with `github.com/arandu-io/hesape/config` |
+| `cfg.SessionTTL` | `cfg.Session.Lifetime` |
+| `cfg.Database` | `cfg.Database`, which is `hesape/database.Config` |
+| `cfg.LogLevel`, `cfg.TracingSecret`, `cfg.Editor` | `cfg.Observability.LogLevel`, `.TracingSecret`, `.Editor` |
+
+`framework/config` still loads and still validates. It is a bridge from here,
+removed in v1.0.0, and nothing in the framework reads it any more.
+
+Two settings have no field yet, and an application that reads `RedisURL` or
+`CSRFTTL` off `config.Config` keeps doing so until they do.
+
+One behaviour changed with the move: `LOG_LEVEL` is parsed at boot, so a name
+outside the eight the logger knows stops the process instead of restoring a
+default. `warn` is spelled `warning`.
 
 ### The components are their own module
 
