@@ -89,6 +89,71 @@ func TestCSRFRejectsATokenFromAnotherSession(t *testing.T) {
 	}
 }
 
+// The token is not the only thing that decides any more. A page on another site
+// that got hold of a valid token used to be enough on its own, and the browser
+// says where the request came from long before the HMAC is computed.
+func TestCSRFRefusesACrossSiteRequestCarryingAValidToken(t *testing.T) {
+	h, csrf := csrfHandler("session-1")
+	token, err := csrf.Issue("session-1")
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	for _, tc := range []struct{ name, header, value string }{
+		{"the browser reports another site", "Sec-Fetch-Site", "cross-site"},
+		{"the browser reports a sibling host", "Sec-Fetch-Site", "same-site"},
+		{"an older browser sends only Origin", "Origin", "https://attacker.example"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "/invoices", nil)
+			r.Header.Set("X-CSRF-Token", token)
+			r.Header.Set(tc.header, tc.value)
+
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, r)
+
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403: the token was valid and the request was not ours", rec.Code)
+			}
+			if rec.Code == middleware.StatusCSRFExpired {
+				t.Error("a cross-origin request was answered as an expired token, so the page would reload into the same refusal")
+			}
+			if !strings.Contains(rec.Body.String(), "cross-origin") {
+				t.Errorf("the refusal does not say what was wrong: %q", rec.Body.String())
+			}
+		})
+	}
+}
+
+// The other half: the application's own pages must keep working, whichever of
+// the two headers the browser sends.
+func TestCSRFLetsTheApplicationsOwnPagesThrough(t *testing.T) {
+	h, csrf := csrfHandler("session-1")
+	token, err := csrf.Issue("session-1")
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	for _, tc := range []struct{ name, header, value string }{
+		{"the browser reports the same origin", "Sec-Fetch-Site", "same-origin"},
+		{"the browser reports no origin at all", "Sec-Fetch-Site", "none"},
+		{"an older browser sends a matching Origin", "Origin", "https://example.com"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "/invoices", nil)
+			r.Header.Set("X-CSRF-Token", token)
+			r.Header.Set(tc.header, tc.value)
+
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, r)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: this is the site posting to itself", rec.Code)
+			}
+		})
+	}
+}
+
 func TestCSRFLetsSafeMethodsThrough(t *testing.T) {
 	h, _ := csrfHandler("session-1")
 
