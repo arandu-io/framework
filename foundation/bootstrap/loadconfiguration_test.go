@@ -1,6 +1,7 @@
 package bootstrap_test
 
 import (
+	"log/slog"
 	"os"
 	"testing"
 	"time"
@@ -150,6 +151,102 @@ func TestTheDefaultHashDriverIsArgon2id(t *testing.T) {
 
 	if got, _ := cfg.Repository.String("hashing.driver"); got != "argon2id" {
 		t.Errorf("the default hash driver is %q, want argon2id", got)
+	}
+}
+
+// The root logger has a level of its own, and LOG_LEVEL is where it comes from.
+//
+// A channel carries its own level under Log.Channels. The root has no channel to
+// inherit one from, so the same variable answers both, parsed once into the type
+// the logger takes.
+func TestTheRootLogLevelComesFromTheSameVariableAsTheChannels(t *testing.T) {
+	env(t, "APP_KEY", testKey, "LOG_LEVEL", "error")
+
+	cfg, err := bootstrap.LoadConfiguration()
+	if err != nil {
+		t.Fatalf("LoadConfiguration: %v", err)
+	}
+
+	if got := cfg.Observability.LogLevel; got != slog.LevelError {
+		t.Errorf("the root level is %v, want %v", got, slog.LevelError)
+	}
+	if got := cfg.Log.Channels["single"].Level; got != "error" {
+		t.Errorf("the channel level is %q, want error -- the two read one variable", got)
+	}
+}
+
+// A typo in LOG_LEVEL stops the process instead of restoring a default.
+//
+// The level a channel falls back to is debug, so a misspelt name would turn a
+// deployment that asked for "error" into one writing every bound argument it
+// sees, and nothing would say so.
+func TestAnUnknownLogLevelFailsTheBoot(t *testing.T) {
+	env(t, "APP_KEY", testKey, "LOG_LEVEL", "warn")
+
+	if _, err := bootstrap.LoadConfiguration(); err == nil {
+		t.Fatal("LOG_LEVEL=warn was accepted; it is not one of the eight names and falls back to debug")
+	}
+}
+
+// Debug logging in production leaks the request into the log, and the refusal
+// belongs at boot rather than at the first query written out.
+func TestDebugLoggingIsRefusedInProduction(t *testing.T) {
+	env(t, "APP_KEY", testKey, "APP_ENV", "prod", "APP_DEBUG", "false",
+		"APP_URL", "https://loja.example", "LOG_LEVEL", "debug")
+
+	if _, err := bootstrap.LoadConfiguration(); err == nil {
+		t.Fatal("LOG_LEVEL=debug was accepted in production")
+	}
+}
+
+// The console gate is off unless a deployment turns it on. An empty secret is
+// the zero value, and treating it as "no gate" would open the buffer of every
+// application that never set one.
+func TestTracingIsOptInPerDeployment(t *testing.T) {
+	env(t, "APP_KEY", testKey)
+
+	cfg, err := bootstrap.LoadConfiguration()
+	if err != nil {
+		t.Fatalf("LoadConfiguration: %v", err)
+	}
+	if cfg.Observability.TracingSecret != "" {
+		t.Error("a tracing secret appeared without one being configured")
+	}
+
+	t.Setenv("ARANDU_TRACING_SECRET", "s3cret-operator-only")
+	cfg, err = bootstrap.LoadConfiguration()
+	if err != nil {
+		t.Fatalf("LoadConfiguration: %v", err)
+	}
+	if cfg.Observability.TracingSecret != "s3cret-operator-only" {
+		t.Errorf("the secret is %q", cfg.Observability.TracingSecret)
+	}
+}
+
+// ARANDU_EDITOR has one reader, and the exception handler is handed what the
+// Configuration holds rather than reading it again.
+//
+// Two readers of one variable are two answers the day one of them grows a
+// fallback the other does not: the error page would link to one editor and the
+// debug console to another, from the same .env.
+func TestTheEditorIsReadOnceAndHandedOn(t *testing.T) {
+	env(t, "APP_KEY", testKey)
+
+	cfg, err := bootstrap.LoadConfiguration()
+	if err != nil {
+		t.Fatalf("LoadConfiguration: %v", err)
+	}
+	if got := cfg.Observability.Editor; got != "vscode" {
+		t.Errorf("the default editor is %q, want vscode", got)
+	}
+
+	t.Setenv("ARANDU_EDITOR", "goland")
+	cfg, err = bootstrap.LoadConfiguration()
+	if err != nil {
+		t.Fatalf("LoadConfiguration: %v", err)
+	}
+	if got := cfg.Observability.Editor; got != "goland" {
+		t.Errorf("the editor is %q, want goland", got)
 	}
 }
 

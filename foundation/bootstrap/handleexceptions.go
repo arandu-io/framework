@@ -3,7 +3,6 @@ package bootstrap
 import (
 	"context"
 
-	"github.com/arandu-io/hesape/config"
 	"github.com/arandu-io/hesape/exception"
 )
 
@@ -32,9 +31,11 @@ func HandleExceptions(cfg Configuration, appModule string, diagnose func(context
 		// which is why this can read the field rather than checking again.
 		Dev: cfg.App.Debug,
 
-		// The editor a stack frame links to. vscode by default because it is
-		// what most people have; the link is only ever built in development.
-		Editor: config.String("ARANDU_EDITOR", "vscode"),
+		// The editor a stack frame links to, taken from the Configuration
+		// rather than read again here. The variable has one reader, and this
+		// page and the debug console link to the same editor because they are
+		// handed the same value.
+		Editor: cfg.Observability.Editor,
 
 		AppModule: appModule,
 		Diagnose:  diagnose,

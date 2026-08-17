@@ -23,6 +23,7 @@ package bootstrap
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -69,6 +70,10 @@ type Configuration struct {
 	Queue      queue.Config
 	View       view.Config
 
+	// Observability is what the assembled application needs to explain itself.
+	// It is here, beside the components, and not one of them -- see the type.
+	Observability Observability
+
 	// Repository answers the components that read configuration through an
 	// interface rather than a struct -- hashing.Config is one, and it is three
 	// keys and one method by design, so that hesape/hashing does not import a
@@ -78,6 +83,42 @@ type Configuration struct {
 	// framework depends on is read through it, and a key set here and nowhere
 	// else configures nothing.
 	Repository *config.Repository
+}
+
+// Observability is how the assembled application reports on itself: what the
+// root logger keeps, who may open the debug console, and where a stack frame
+// links to.
+//
+// It is the one part of Configuration that is not a component's own Config, and
+// the reason is what the three fields have in common: none of them configures a
+// component. The channels, the handlers and the format belong to Log, and a
+// channel carries its own level. These three belong to the application that was
+// assembled -- they decide the cut of the root logger, whether the console
+// answers at all outside development, and what an "open in IDE" link opens.
+type Observability struct {
+	// LogLevel is what the root logger keeps.
+	//
+	// It comes from LOG_LEVEL, spelled as one of the eight level names, and it
+	// is the level of the logger the application is built with -- not of a
+	// channel. A channel declares its own under Log.Channels; the root has no
+	// channel to inherit one from, so the variable is read here as well, once,
+	// and parsed into the type the logger takes.
+	//
+	// Debug is refused in production, where a request's arguments end up in the
+	// log of a system holding customer data.
+	LogLevel slog.Level
+
+	// TracingSecret opens the debug console outside development, to a request
+	// carrying it in the tracing header and to nothing else.
+	//
+	// Empty is the default and disables it. Tracing is opt-in per deployment: a
+	// console that answers because nobody set a variable is a buffer of SQL,
+	// bound arguments and dumps, across every tenant, reachable with no session.
+	TracingSecret string
+
+	// Editor is what the "open in IDE" links on the error page and the console
+	// open. One of vscode, cursor, goland, zed.
+	Editor string
 }
 
 // LoadConfiguration reads the environment once and answers every component's
@@ -111,15 +152,27 @@ func LoadConfiguration() (Configuration, error) {
 		return Configuration{}, err
 	}
 
+	// LOG_LEVEL is read once, here, because two things need it in two shapes:
+	// the channels take the name and the root logger takes the parsed level.
+	// Reading it twice is two answers to one variable the day one of the two
+	// grows a fallback the other does not have.
+	level := config.String("LOG_LEVEL", "info")
+
+	observability, err := loadObservability(app, level)
+	if err != nil {
+		return Configuration{}, err
+	}
+
 	cfg := Configuration{
-		App:        app,
-		Session:    loadSession(app),
-		Cache:      loadCache(),
-		Database:   db,
-		Log:        loadLog(app),
-		Filesystem: loadFilesystem(),
-		Queue:      loadQueue(),
-		View:       loadView(app),
+		App:           app,
+		Session:       loadSession(app),
+		Cache:         loadCache(),
+		Database:      db,
+		Log:           loadLog(app, level),
+		Filesystem:    loadFilesystem(),
+		Queue:         loadQueue(),
+		View:          loadView(app),
+		Observability: observability,
 	}
 	cfg.Repository = config.NewRepository(cfg.asMap())
 
@@ -195,9 +248,34 @@ func loadCache() cache.Config {
 	}
 }
 
+// loadObservability answers what the assembled application needs to explain
+// itself.
+//
+// The level is parsed here rather than carried as a name, because that is the
+// shape the root logger takes. An unknown name fails the process instead of
+// falling back: a typo in LOG_LEVEL that quietly restores the default is how a
+// deployment ends up logging more than it was told to, and the level a channel
+// would have fallen back to is debug -- the one value production must not have.
+func loadObservability(app config.App, level string) (Observability, error) {
+	parsed, err := log.ParseLevel(level)
+	if err != nil {
+		return Observability{}, fmt.Errorf("LOG_LEVEL: %w", err)
+	}
+	if app.Env.IsProduction() && parsed == log.LevelDebug {
+		return Observability{}, fmt.Errorf("LOG_LEVEL=debug is forbidden in production: it leaks request data into the log")
+	}
+
+	return Observability{
+		LogLevel:      parsed,
+		TracingSecret: config.String("ARANDU_TRACING_SECRET", ""),
+		// vscode by default because it is what most people have. The link is
+		// only ever built where the debug surface exists.
+		Editor: config.String("ARANDU_EDITOR", "vscode"),
+	}, nil
+}
+
 // loadLog answers the logging settings.
-func loadLog(app config.App) log.Config {
-	level := config.String("LOG_LEVEL", "info")
+func loadLog(app config.App, level string) log.Config {
 	return log.Config{
 		Default: config.String("LOG_CHANNEL", "stack"),
 		Env:     string(app.Env),
