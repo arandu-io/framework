@@ -1,12 +1,3 @@
-// Package config holds the typed application configuration.
-//
-// There is no config("app.name") lookup: a wrong key is a compile error, not a
-// runtime panic on the first request that happens to need it.
-//
-// Load is the one entry point. It reads a .env from the working directory when
-// there is one -- filling only what the environment has not already defined --
-// and then validates the result. There is no second loader and no flag that
-// moves the file.
 package config
 
 import (
