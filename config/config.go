@@ -28,8 +28,8 @@ const (
 	EnvProd    = hconfig.EnvProd
 )
 
-// AppKeyLen is the required length of the application key, in bytes.
-const AppKeyLen = 32
+// appKeyLen is the required length of the application key, in bytes.
+const appKeyLen = 32
 
 // Config is a struct, not a map. Every field is validated at boot.
 type Config struct {
@@ -38,7 +38,7 @@ type Config struct {
 	HTTPAddr string
 	LogLevel slog.Level
 
-	// AppKey signs session cookies and CSRF tokens. Exactly AppKeyLen bytes.
+	// AppKey signs session cookies and CSRF tokens. Exactly 32 bytes.
 	AppKey []byte
 
 	// Database is the connection, named the way a .env conventionally names it,
@@ -105,8 +105,8 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("invalid APP_ENV: %q (expected dev, staging or prod)", c.Env)
 	}
-	if len(c.AppKey) != AppKeyLen {
-		return fmt.Errorf("APP_KEY must be %d bytes, got %d (run `aru key:generate`)", AppKeyLen, len(c.AppKey))
+	if len(c.AppKey) != appKeyLen {
+		return fmt.Errorf("APP_KEY must be %d bytes, got %d (run `aru key:generate`)", appKeyLen, len(c.AppKey))
 	}
 	if err := c.Database.Validate(); err != nil {
 		return err

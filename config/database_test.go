@@ -11,7 +11,7 @@ import (
 // TestDefaultConnectionIsSQLite is the promise of a fresh checkout: clone, set a
 // key, run. Nothing installed, no server, no Docker.
 func TestDefaultConnectionIsSQLite(t *testing.T) {
-	t.Setenv("APP_KEY", strings.Repeat("k", config.AppKeyLen))
+	t.Setenv("APP_KEY", strings.Repeat("k", appKeyLen))
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -21,13 +21,13 @@ func TestDefaultConnectionIsSQLite(t *testing.T) {
 	if cfg.Database.Connection != data.DialectSQLite {
 		t.Fatalf("default connection = %q, want sqlite", cfg.Database.Connection)
 	}
-	if cfg.Database.Database != config.DefaultSQLitePath {
-		t.Fatalf("default database = %q, want %q", cfg.Database.Database, config.DefaultSQLitePath)
+	if cfg.Database.Database != defaultSQLitePath {
+		t.Fatalf("default database = %q, want %q", cfg.Database.Database, defaultSQLitePath)
 	}
 }
 
 func TestLoadRejectsUnknownConnection(t *testing.T) {
-	t.Setenv("APP_KEY", strings.Repeat("k", config.AppKeyLen))
+	t.Setenv("APP_KEY", strings.Repeat("k", appKeyLen))
 	t.Setenv("DATABASE_URL", "mongodb://127.0.0.1/db")
 
 	_, err := config.Load()

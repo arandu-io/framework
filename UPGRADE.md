@@ -108,6 +108,14 @@ One behaviour changed with the move: `LOG_LEVEL` is parsed at boot, so a name
 outside the eight the logger knows stops the process instead of restoring a
 default. `warn` is spelled `warning`.
 
+Three constants went with it, and none of them was reachable from anything:
+
+| was | is | what to do |
+|---|---|---|
+| `config.AppKeyLen` | `encryption.KeySize`, in `github.com/arandu-io/hesape/encryption` | It said 32 twice. The key is parsed and validated by `encryption`, which is where the length belongs |
+| `config.DefaultSQLitePath` | `database.DefaultSQLitePath`, in `github.com/arandu-io/hesape/database` | Same value, one owner |
+| `config.DefaultDatabaseURL` | `database.DefaultURL`, same package | Same |
+
 ### The components are their own module
 
 `github.com/arandu-io/hesape` is now a `require` of this one. Nothing in your

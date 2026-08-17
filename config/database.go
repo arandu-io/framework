@@ -49,12 +49,12 @@ type DatabaseConfig struct {
 	URL string
 }
 
-// DefaultSQLitePath is where a fresh project keeps its database file.
-const DefaultSQLitePath = "database/database.sqlite"
+// defaultSQLitePath is where a fresh project keeps its database file.
+const defaultSQLitePath = "database/database.sqlite"
 
-// DefaultDatabaseURL is what a project with no DATABASE_URL runs on: a file,
+// defaultDatabaseURL is what a project with no DATABASE_URL runs on: a file,
 // no server, nothing installed.
-const DefaultDatabaseURL = "sqlite://" + DefaultSQLitePath
+const defaultDatabaseURL = "sqlite://" + defaultSQLitePath
 
 // The variables that carry the connection in parts, refused rather than
 // ignored.
@@ -82,7 +82,7 @@ own.
 Remove %s (it is %q) and the rest of the DB_* block.`, name, name, value)
 	}
 
-	raw := env("DATABASE_URL", DefaultDatabaseURL)
+	raw := env("DATABASE_URL", defaultDatabaseURL)
 	return ParseDatabaseURL(raw)
 }
 

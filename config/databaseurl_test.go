@@ -149,7 +149,7 @@ func TestAURLThatSetsAPragmaReplacesTheDefaults(t *testing.T) {
 func TestTheRetiredVariablesAreRefusedAndNotIgnored(t *testing.T) {
 	for _, name := range []string{"DB_CONNECTION", "DB_HOST", "DB_PORT", "DB_USERNAME", "DB_PASSWORD", "DB_DATABASE"} {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv("APP_KEY", strings.Repeat("k", config.AppKeyLen))
+			t.Setenv("APP_KEY", strings.Repeat("k", appKeyLen))
 			t.Setenv("DATABASE_URL", "sqlite://database/blog.sqlite")
 			t.Setenv(name, "something")
 

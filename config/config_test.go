@@ -11,12 +11,23 @@ import (
 	"github.com/arandu-io/framework/data"
 )
 
+// What the package requires, written out here rather than read from it.
+//
+// The two used to be exported constants, and a test that asserts a length
+// against the constant the code checks with asserts nothing: change the
+// constant and the test moves with it. These are the numbers the requirement
+// is, so a change to either has to be made twice, on purpose.
+const (
+	appKeyLen         = 32
+	defaultSQLitePath = "database/database.sqlite"
+)
+
 func validConfig() config.Config {
 	return config.Config{
 		AppName:  "test",
 		Env:      config.EnvDev,
 		HTTPAddr: ":8080",
-		AppKey:   make([]byte, config.AppKeyLen),
+		AppKey:   make([]byte, appKeyLen),
 		Database: config.DatabaseConfig{
 			Connection: data.DialectSQLite,
 			Database:   "database/database.sqlite",
@@ -98,7 +109,7 @@ func TestIsDev(t *testing.T) {
 // TestLoadDecodesBase64Key covers the format `aru key:generate` emits: 32 random
 // bytes are not printable, so the value in .env is always encoded.
 func TestLoadDecodesBase64Key(t *testing.T) {
-	raw := make([]byte, config.AppKeyLen)
+	raw := make([]byte, appKeyLen)
 	for i := range raw {
 		raw[i] = byte(i)
 	}
@@ -110,8 +121,8 @@ func TestLoadDecodesBase64Key(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if len(cfg.AppKey) != config.AppKeyLen {
-		t.Fatalf("key length = %d, want %d", len(cfg.AppKey), config.AppKeyLen)
+	if len(cfg.AppKey) != appKeyLen {
+		t.Fatalf("key length = %d, want %d", len(cfg.AppKey), appKeyLen)
 	}
 	if string(cfg.AppKey) != string(raw) {
 		t.Fatal("the decoded key does not match what was encoded")
@@ -128,7 +139,7 @@ func TestLoadRejectsBrokenBase64Key(t *testing.T) {
 }
 
 func TestLoadAppliesDefaults(t *testing.T) {
-	t.Setenv("APP_KEY", strings.Repeat("k", config.AppKeyLen))
+	t.Setenv("APP_KEY", strings.Repeat("k", appKeyLen))
 	t.Setenv("DATABASE_URL", "sqlite://database/database.sqlite")
 
 	cfg, err := config.Load()
@@ -154,7 +165,7 @@ func TestLoadAppliesDefaults(t *testing.T) {
 }
 
 func TestLoadReadsTTLInSeconds(t *testing.T) {
-	t.Setenv("APP_KEY", strings.Repeat("k", config.AppKeyLen))
+	t.Setenv("APP_KEY", strings.Repeat("k", appKeyLen))
 	t.Setenv("DATABASE_URL", "sqlite://database/database.sqlite")
 	t.Setenv("SESSION_TTL", "60")
 
