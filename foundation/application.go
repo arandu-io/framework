@@ -379,6 +379,29 @@ func (a *Application) Handler() http.Handler {
 
 // internalPrefix is what this framework mounts for itself: the health probe,
 // the debug console, the development reload.
+//
+// It is declared surface rather than a hole in the inventory: every route under
+// it is registered on the router like any other, so `aru routes` prints it and
+// the error page names it. What it does not answer to is the application's
+// policy. exceptInternal takes every application middleware off it, and the
+// framework gates each endpoint itself -- the probe by nothing, because it reads
+// no data and holds no session; the console by its own secret, in constant time;
+// the reload by the environment; the assets by the hash in the path.
+//
+// The namespace has more than one owner, and that is the part still open. The
+// Application mounts the probe, the reload and the console; the view module
+// mounts the content-addressed asset route, from a prefix constant of its own.
+// So a route under here is not "one the framework registered" -- it is one
+// whoever registered it believed belonged to the framework, and exceptInternal
+// reads the path rather than the registration. A module that registers
+// /_arandu/anything gets a route with no Recover, no Observe, no
+// SecurityHeaders, no rate limit and no CSRF check, and the registration that
+// produced it looks like every other registration.
+//
+// Refusing that at boot needs a way to tell this framework's own surface from an
+// application's under the same prefix, and there is none today that is not
+// either a copy of another package's prefix constant or a module contract for
+// escaping the application's pipeline. Both are decisions rather than checks.
 const internalPrefix = "/_arandu/"
 
 // exceptInternal runs an application's middleware everywhere except on the
