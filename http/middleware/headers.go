@@ -12,8 +12,7 @@ import (
 // SecurityHeaders applies the default headers.
 //
 // The CSP is restrictive on purpose and still works with HTMX, because HTMX
-// operates through attributes rather than inline script. A module that truly
-// needs inline code asks for an explicit nonce -- there is no global
+// operates through attributes rather than inline script. There is no global
 // 'unsafe-inline' in this framework.
 //
 // A wrapper and not an alias, because a plain function has no alias form. The
