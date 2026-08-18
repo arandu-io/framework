@@ -16,6 +16,7 @@ import (
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/hesape/config"
+	"github.com/arandu-io/hesape/database/migrations"
 	"github.com/arandu-io/hesape/encryption"
 )
 
@@ -54,7 +55,21 @@ func (s *stub) Close(ctx context.Context) error {
 }
 
 func (s *stub) Migrations() []foundation.Migration {
-	return []foundation.Migration{{ID: s.name + "_0001", Up: "SELECT 1"}}
+	return []foundation.Migration{stubMigration{name: s.name + "_0001"}}
+}
+
+// stubMigration is a migration that names itself and does nothing, which is all
+// the collection test asks of one.
+type stubMigration struct {
+	migrations.BaseMigration
+	name string
+}
+
+func (m stubMigration) GetName() string { return m.name }
+
+func (stubMigration) Up(ctx context.Context, conn migrations.Connection) error {
+	_, err := conn.Statement(ctx, "SELECT 1", nil)
+	return err
 }
 
 // testConfig is what the Application reads and nothing else. It opens no
@@ -192,13 +207,14 @@ func TestMigrationsAreCollectedInRegistrationOrder(t *testing.T) {
 	k := foundation.New(testConfig(config.EnvProd)).
 		Register(&stub{name: "auth"}, &stub{name: "billing"})
 
-	migrations := k.Migrations()
+	collected := k.Migrations()
 
-	if len(migrations) != 2 {
-		t.Fatalf("collected %d migrations, want 2", len(migrations))
+	if len(collected) != 2 {
+		t.Fatalf("collected %d migrations, want 2", len(collected))
 	}
-	if migrations[0].ID != "auth_0001" || migrations[1].ID != "billing_0001" {
-		t.Fatalf("order = %s, %s: registration order decides schema order", migrations[0].ID, migrations[1].ID)
+	if collected[0].GetName() != "auth_0001" || collected[1].GetName() != "billing_0001" {
+		t.Fatalf("order = %s, %s: registration order decides collection order",
+			collected[0].GetName(), collected[1].GetName())
 	}
 }
 

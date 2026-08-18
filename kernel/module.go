@@ -105,8 +105,9 @@ type Migratable = foundation.Migratable
 
 // Migration is a versioned, immutable-once-published schema change.
 //
-// It is an alias, not a copy: the migration runner lives in the data package,
-// and a module must be able to hand its migrations straight to it.
+// It is an alias, not a copy: the migration runner lives in hesape, and a module
+// must be able to hand its migrations straight to it. It is an interface --
+// embed migrations.BaseMigration and only GetName and Up are left to write.
 type Migration = foundation.Migration
 
 // Health is optional and feeds `aru doctor` and the /_arandu/health endpoint.

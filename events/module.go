@@ -2,11 +2,10 @@
 //
 // github.com/arandu-io/hesape/events has a Module of its own and this is not an
 // envelope over it, for two reasons. It answers the contract the kernel collects
-// -- Routes and Migrations included -- and a Migration is a value the migrator
-// consumes, so the outbox table cannot travel to hesape until the migrator does.
-// And Start hands the loop to Relay.Run, which is where the Locker this
-// framework still hands out is driven; hesape's Module would take a relay that
-// cannot carry one.
+// -- Routes and Migrations included -- so the outbox table travels with the
+// module that owns it. And Start hands the loop to Relay.Run, which is where the
+// Locker this framework still hands out is driven; hesape's Module would take a
+// relay that cannot carry one.
 
 package events
 
@@ -17,6 +16,7 @@ import (
 
 	"github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/kernel"
+	"github.com/arandu-io/hesape/database/migrations"
 )
 
 // Module brings the outbox table, and runs the relay when one is wired.
@@ -64,15 +64,31 @@ func (*Module) Routes(*http.Router) {}
 
 // Migrations returns the outbox table.
 func (*Module) Migrations() []kernel.Migration {
-	return []kernel.Migration{
-		{
-			ID: "2026_07_31_000001_create_outbox_table",
-			// Portable types only: TEXT, INTEGER and TIMESTAMP mean the same
-			// thing on SQLite, Postgres and MySQL. jsonb would be one engine's
-			// spelling, and the payload is written and read as JSON text either
-			// way.
-			Up: `
-CREATE TABLE outbox (
+	return []kernel.Migration{createOutboxTable{}, addOutboxDeadLetter{}}
+}
+
+// Both migrations are reversible, and the assertion is here rather than
+// discovered at rollback: the Migrator tests for Down with a type assertion, so
+// a Down with the wrong signature would leave a rollback that silently does
+// nothing.
+var (
+	_ migrations.ReversibleMigration = createOutboxTable{}
+	_ migrations.ReversibleMigration = addOutboxDeadLetter{}
+)
+
+// createOutboxTable is the outbox and the two indexes the relay reads it by.
+type createOutboxTable struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (createOutboxTable) GetName() string { return "2026_07_31_000001_create_outbox_table" }
+
+// Up creates the table and its indexes.
+//
+// Portable types only: TEXT, INTEGER and TIMESTAMP mean the same thing on
+// SQLite, Postgres and MySQL. jsonb would be one engine's spelling, and the
+// payload is written and read as JSON text either way.
+func (createOutboxTable) Up(ctx context.Context, conn migrations.Connection) error {
+	if _, err := conn.Statement(ctx, `CREATE TABLE outbox (
     id            VARCHAR(255) PRIMARY KEY,
     tenant_id     VARCHAR(255) NOT NULL,
     event         TEXT NOT NULL,
@@ -85,39 +101,62 @@ CREATE TABLE outbox (
     published_at  TIMESTAMP,
     attempts      INTEGER NOT NULL DEFAULT 0,
     last_error    TEXT
-);
-
--- The relay reads unpublished events oldest first. A partial index would be
--- tighter, and MySQL does not have one; the two leading columns give the same
--- scan on every engine.
-CREATE INDEX idx_outbox_pending ON outbox (published_at, occurred_at);
-
--- Deduplication is the consumer's job, and the id is the key it deduplicates
--- on. Delivery is at-least-once: the same event can arrive twice, and that is
--- the price of never losing one.
-CREATE INDEX idx_outbox_tenant ON outbox (tenant_id, occurred_at);
-`,
-			Down: `DROP TABLE outbox;`,
-		},
-		{
-			// A separate migration rather than an edit to the one above,
-			// because the first one has already run somewhere. The column is
-			// nullable, so the previous binary keeps working during a rollout --
-			// it simply never writes it.
-			ID: "2026_07_31_000002_add_outbox_dead_letter",
-			Up: `
-ALTER TABLE outbox ADD COLUMN failed_at TIMESTAMP;
-
--- The relay reads pending events on every tick, and "pending" now means
--- neither published nor parked.
-CREATE INDEX idx_outbox_unfinished ON outbox (failed_at, published_at, occurred_at);
-`,
-			Down: `
-DROP INDEX idx_outbox_unfinished;
-ALTER TABLE outbox DROP COLUMN failed_at;
-`,
-		},
+)`, nil); err != nil {
+		return err
 	}
+
+	// The relay reads unpublished events oldest first. A partial index would be
+	// tighter, and MySQL does not have one; the two leading columns give the
+	// same scan on every engine.
+	if _, err := conn.Statement(ctx,
+		`CREATE INDEX idx_outbox_pending ON outbox (published_at, occurred_at)`, nil); err != nil {
+		return err
+	}
+
+	// Deduplication is the consumer's job, and the id is the key it
+	// deduplicates on. Delivery is at-least-once: the same event can arrive
+	// twice, and that is the price of never losing one.
+	_, err := conn.Statement(ctx,
+		`CREATE INDEX idx_outbox_tenant ON outbox (tenant_id, occurred_at)`, nil)
+	return err
+}
+
+// Down drops the table, which takes its indexes with it.
+func (createOutboxTable) Down(ctx context.Context, conn migrations.Connection) error {
+	_, err := conn.Statement(ctx, `DROP TABLE outbox`, nil)
+	return err
+}
+
+// addOutboxDeadLetter is where an event goes after it has failed too often.
+//
+// A separate migration rather than an edit to the one above, because the first
+// one has already run somewhere. The column is nullable, so the previous binary
+// keeps working during a rollout -- it simply never writes it.
+type addOutboxDeadLetter struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (addOutboxDeadLetter) GetName() string { return "2026_07_31_000002_add_outbox_dead_letter" }
+
+// Up adds the column and the index that reads around it.
+func (addOutboxDeadLetter) Up(ctx context.Context, conn migrations.Connection) error {
+	if _, err := conn.Statement(ctx, `ALTER TABLE outbox ADD COLUMN failed_at TIMESTAMP`, nil); err != nil {
+		return err
+	}
+
+	// The relay reads pending events on every tick, and "pending" now means
+	// neither published nor parked.
+	_, err := conn.Statement(ctx,
+		`CREATE INDEX idx_outbox_unfinished ON outbox (failed_at, published_at, occurred_at)`, nil)
+	return err
+}
+
+// Down drops the index before the column it names.
+func (addOutboxDeadLetter) Down(ctx context.Context, conn migrations.Connection) error {
+	if _, err := conn.Statement(ctx, `DROP INDEX idx_outbox_unfinished`, nil); err != nil {
+		return err
+	}
+	_, err := conn.Statement(ctx, `ALTER TABLE outbox DROP COLUMN failed_at`, nil)
+	return err
 }
 
 // Start begins the relay loop, and only the process that serves calls it.

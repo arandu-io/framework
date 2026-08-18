@@ -11,6 +11,7 @@ import (
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/modules/auth"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/database/migrations"
 )
 
 // The tests below need no database: every repository method checks the Grant
@@ -255,40 +256,67 @@ func TestModuleRegistersItsRoutes(t *testing.T) {
 		t.Fatalf("Name = %q, want auth", m.Name())
 	}
 
-	migrations := m.Migrations()
-	if len(migrations) == 0 {
+	declared := m.Migrations()
+	if len(declared) == 0 {
 		t.Fatal("the module declares no schema")
 	}
-	if !strings.Contains(migrations[0].Up, "UNIQUE (tenant_id, email)") {
+
+	first := statementsOf(t, declared[0])
+	if !strings.Contains(strings.Join(first, "\n"), "UNIQUE (tenant_id, email)") {
 		t.Error("the schema must keep emails unique per tenant, not globally")
 	}
-	if strings.Contains(migrations[0].Up, "text[]") {
+	if strings.Contains(strings.Join(first, "\n"), "text[]") {
 		t.Error("roles must be jsonb: a Postgres array needs a driver specific type to scan")
 	}
 
 	// Every later migration is nullable or has a default: a rollout runs the
 	// migration while the previous binary is still inserting rows that do not
 	// know about the column.
-	for _, m := range migrations[1:] {
-		if strings.Contains(m.Up, "ADD COLUMN") &&
-			strings.Contains(m.Up, "NOT NULL") && !strings.Contains(m.Up, "DEFAULT") {
-			t.Errorf("%s adds a NOT NULL column with no default: every insert from the previous binary fails during the rollout", m.ID)
+	for _, later := range declared[1:] {
+		for _, statement := range statementsOf(t, later) {
+			if strings.Contains(statement, "ADD COLUMN") &&
+				strings.Contains(statement, "NOT NULL") && !strings.Contains(statement, "DEFAULT") {
+				t.Errorf("%s adds a NOT NULL column with no default: every insert from the previous binary fails during the rollout", later.GetName())
+			}
 		}
-		if m.Down == "" {
-			t.Errorf("%s cannot be rolled back", m.ID)
+
+		down, err := migrations.DownStatements(context.Background(), later)
+		if err != nil {
+			t.Fatalf("%s: %v", later.GetName(), err)
+		}
+		if len(down) == 0 {
+			t.Errorf("%s cannot be rolled back", later.GetName())
 		}
 	}
 
-	// The ids are unique and ordered, because the runner applies them in slice
-	// order and records them by id. A duplicate is a migration recorded as
-	// applied by another one, and it never runs.
+	// The names are unique and sorted, because the name is the whole of the
+	// ordering rule and the repository records by it. A duplicate is a
+	// migration recorded as applied by another one, and it never runs.
 	seen := map[string]bool{}
-	for _, m := range migrations {
-		if seen[m.ID] {
-			t.Errorf("two migrations share the id %s", m.ID)
+	previous := ""
+	for _, declaration := range declared {
+		name := declaration.GetName()
+		if seen[name] {
+			t.Errorf("two migrations share the name %s", name)
 		}
-		seen[m.ID] = true
+		if name <= previous {
+			t.Errorf("%s is declared after %s but sorts before it, and the sort is what decides", name, previous)
+		}
+		seen[name] = true
+		previous = name
 	}
+}
+
+// statementsOf is the SQL a migration's Up would send, read the way the
+// migrator reads it.
+func statementsOf(t *testing.T, m migrations.Migration) []string {
+	t.Helper()
+
+	up, err := migrations.UpStatements(context.Background(), m)
+	if err != nil {
+		t.Fatalf("%s: %v", m.GetName(), err)
+	}
+	return up
 }
 
 // TestTenantComesFromTheApplication: a tenant chosen by the request is a tenant

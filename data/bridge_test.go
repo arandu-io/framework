@@ -1,11 +1,10 @@
 // Tests of the bridge, and of nothing else.
 //
 // What each symbol DOES is tested in github.com/arandu-io/hesape, against the
-// code that now runs. The unit tests of the rebinder, the statement splitter,
-// the batch numbering, the transaction and the recording into the Collector
-// belong there: they test an implementation this package no longer holds, and a
-// second copy of them here would be a second place for the behaviour to be
-// described.
+// code that now runs. The unit tests of the rebinder, the batch numbering, the
+// transaction and the recording into the Collector belong there: they test an
+// implementation this package no longer holds, and a second copy of them here
+// would be a second place for the behaviour to be described.
 //
 // What is left to prove is the only thing this package still claims: that the
 // old name reaches the new behaviour. That is one assertion per alias -- the
@@ -30,6 +29,7 @@ import (
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/auth"
 	"github.com/arandu-io/hesape/database"
+	"github.com/arandu-io/hesape/database/migrations"
 )
 
 // TestAliasesAreTheHesapeSymbols is the whole of the alias half of this bridge.
@@ -39,21 +39,18 @@ import (
 // rather than in the thirteen repositories that import these names.
 func TestAliasesAreTheHesapeSymbols(t *testing.T) {
 	var (
-		_ database.Dialect          = data.DialectSQLite
-		_ data.Dialect              = database.DialectPostgres
-		_ *database.DB              = (*data.DB)(nil)
-		_ *data.DB                  = (*database.DB)(nil)
-		_ *database.Tx              = (*data.Tx)(nil)
-		_ database.Query            = data.Query{Limit: 100}
-		_ data.Query                = database.Query{Cursor: "c"}
-		_ database.Migration        = data.Migration{ID: "0001"}
-		_ data.Migration            = database.Migration{ID: "0001"}
-		_ database.AppliedMigration = data.AppliedMigration{Batch: 1}
-		_ data.AppliedMigration     = database.AppliedMigration{Batch: 1}
+		_ database.Dialect     = data.DialectSQLite
+		_ data.Dialect         = database.DialectPostgres
+		_ *database.DB         = (*data.DB)(nil)
+		_ *data.DB             = (*database.DB)(nil)
+		_ *database.Tx         = (*data.Tx)(nil)
+		_ database.Query       = data.Query{Limit: 100}
+		_ data.Query           = database.Query{Cursor: "c"}
+		_ migrations.Migration = data.Migration(nil)
+		_ data.Migration       = migrations.Migration(nil)
 	)
 
 	for name, pair := range map[string][2]any{
-		"MigrationsTable": {data.MigrationsTable, database.MigrationsTable},
 		"KeyText":         {data.KeyText, database.KeyText},
 		"DialectSQLite":   {data.DialectSQLite, database.DialectSQLite},
 		"DialectPostgres": {data.DialectPostgres, database.DialectPostgres},
@@ -71,10 +68,6 @@ func TestAliasesAreTheHesapeSymbols(t *testing.T) {
 // when it migrates.
 func TestWrappersKeepTheHesapeSignature(t *testing.T) {
 	type (
-		migrator func(context.Context, *data.DB, []data.Migration) ([]string, error)
-		reporter func(context.Context, *data.DB, []data.Migration) ([]data.AppliedMigration, error)
-		lister   func(context.Context, *data.DB) ([]data.AppliedMigration, error)
-		pender   func(context.Context, *data.DB, []data.Migration) ([]data.Migration, error)
 		runner   func(context.Context, *data.DB, func(context.Context) error) error
 		asker    func(context.Context, *data.DB) bool
 		wrapper  func(*sql.DB, data.Dialect) *data.DB
@@ -85,16 +78,6 @@ func TestWrappersKeepTheHesapeSignature(t *testing.T) {
 	)
 
 	var (
-		_ migrator = data.Migrate
-		_ migrator = database.Migrate
-		_ migrator = data.Rollback
-		_ migrator = database.Rollback
-		_ reporter = data.Status
-		_ reporter = database.Status
-		_ lister   = data.AppliedMigrations
-		_ lister   = database.AppliedMigrations
-		_ pender   = data.Pending
-		_ pender   = database.Pending
 		_ runner   = data.Transaction
 		_ runner   = database.Transaction
 		_ asker    = data.InTransaction

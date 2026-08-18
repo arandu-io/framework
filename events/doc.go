@@ -30,7 +30,6 @@
 //	              options it would otherwise be handed cannot carry one
 //
 // Module stays framework code rather than an envelope. It answers the module
-// contract the kernel collects -- Routes and Migrations included -- and the
-// migration is a value the migrator consumes, so the outbox table cannot travel
-// with hesape until the migrator does.
+// contract the kernel collects -- Routes and Migrations included -- so the
+// outbox table travels with the module that owns it.
 package events

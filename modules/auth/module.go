@@ -18,6 +18,7 @@ import (
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/kernel"
+	"github.com/arandu-io/hesape/database/migrations"
 )
 
 // TenantResolver decides which tenant a request belongs to.
@@ -92,6 +93,29 @@ func (m *Module) Health(ctx context.Context) error {
 
 // Migrations declares the schema this module owns.
 //
+// They are returned in the order their names sort in, which is the order they
+// apply in: the name carries the order, and nothing else decides it.
+func (m *Module) Migrations() []kernel.Migration {
+	return []kernel.Migration{createUsers{}, addNameAndVerificationToUsers{}}
+}
+
+// Both migrations are reversible, and the assertion is here rather than
+// discovered at rollback: the Migrator tests for Down with a type assertion, so
+// a Down with the wrong signature would leave a rollback that silently does
+// nothing.
+var (
+	_ migrations.ReversibleMigration = createUsers{}
+	_ migrations.ReversibleMigration = addNameAndVerificationToUsers{}
+)
+
+// createUsers is the users table and the index the listing reads it by.
+type createUsers struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (createUsers) GetName() string { return "20260729_0001_create_users" }
+
+// Up creates the table and its index.
+//
 // Every type here spells the same in SQLite, PostgreSQL and MySQL, which is what
 // lets one project develop on a file and deploy on Postgres without a second
 // schema. The three things that would have broken that, and what replaced them:
@@ -102,36 +126,66 @@ func (m *Module) Health(ctx context.Context) error {
 //
 // The email is stored lowercased by the repository, so a plain UNIQUE index is
 // enough and no database-specific case-insensitive collation is needed.
-func (m *Module) Migrations() []kernel.Migration {
-	return []kernel.Migration{{
-		ID: "20260729_0001_create_users",
-		Up: `CREATE TABLE users (
-			id          VARCHAR(255) PRIMARY KEY,
-			-- Indexed, so VARCHAR rather than TEXT: see data.KeyText.
-			tenant_id   VARCHAR(255) NOT NULL,
-			email       VARCHAR(255) NOT NULL,
-			password    TEXT NOT NULL,
-			roles       TEXT NOT NULL,
-			created_at  TIMESTAMP NOT NULL,
-			UNIQUE (tenant_id, email)
-		);
-		CREATE INDEX users_tenant_created_idx ON users (tenant_id, created_at, id);`,
-		Down: `DROP TABLE users;`,
-	}, {
-		// A second migration and not an edit to the first. The first one has run
-		// in every database this module has ever touched, and a migration is
-		// identified by its id: changing what an applied id means leaves the
-		// column missing everywhere it already ran, and nothing says so.
-		//
-		// Both columns are nullable: during a rollout the previous binary is
-		// still inserting rows without them, and a NOT NULL column with no
-		// default fails every one of those inserts.
-		ID: "20260809_0002_add_name_and_verification_to_users",
-		Up: `ALTER TABLE users ADD COLUMN name VARCHAR(255);
-		ALTER TABLE users ADD COLUMN verified_at TIMESTAMP NULL;`,
-		// Two statements rather than one with two clauses: MySQL accepts
-		// `ADD COLUMN a, ADD COLUMN b`, SQLite does not.
-		Down: `ALTER TABLE users DROP COLUMN name;
-		ALTER TABLE users DROP COLUMN verified_at;`,
-	}}
+func (createUsers) Up(ctx context.Context, conn migrations.Connection) error {
+	if _, err := conn.Statement(ctx, `CREATE TABLE users (
+    id          VARCHAR(255) PRIMARY KEY,
+    -- Indexed, so VARCHAR rather than TEXT: see data.KeyText.
+    tenant_id   VARCHAR(255) NOT NULL,
+    email       VARCHAR(255) NOT NULL,
+    password    TEXT NOT NULL,
+    roles       TEXT NOT NULL,
+    created_at  TIMESTAMP NOT NULL,
+    UNIQUE (tenant_id, email)
+)`, nil); err != nil {
+		return err
+	}
+
+	_, err := conn.Statement(ctx,
+		`CREATE INDEX users_tenant_created_idx ON users (tenant_id, created_at, id)`, nil)
+	return err
+}
+
+// Down drops the table, which takes its index with it.
+func (createUsers) Down(ctx context.Context, conn migrations.Connection) error {
+	_, err := conn.Statement(ctx, `DROP TABLE users`, nil)
+	return err
+}
+
+// addNameAndVerificationToUsers adds the display name and the verification
+// timestamp.
+//
+// A second migration and not an edit to the first. The first one has run in
+// every database this module has ever touched, and a migration is identified by
+// its name: changing what an applied name means leaves the column missing
+// everywhere it already ran, and nothing says so.
+type addNameAndVerificationToUsers struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (addNameAndVerificationToUsers) GetName() string {
+	return "20260809_0002_add_name_and_verification_to_users"
+}
+
+// Up adds the two columns.
+//
+// Both are nullable: during a rollout the previous binary is still inserting
+// rows without them, and a NOT NULL column with no default fails every one of
+// those inserts.
+//
+// Two statements rather than one with two clauses: MySQL accepts
+// `ADD COLUMN a, ADD COLUMN b`, SQLite does not.
+func (addNameAndVerificationToUsers) Up(ctx context.Context, conn migrations.Connection) error {
+	if _, err := conn.Statement(ctx, `ALTER TABLE users ADD COLUMN name VARCHAR(255)`, nil); err != nil {
+		return err
+	}
+	_, err := conn.Statement(ctx, `ALTER TABLE users ADD COLUMN verified_at TIMESTAMP NULL`, nil)
+	return err
+}
+
+// Down drops the two columns, one statement each for the reason Up gives.
+func (addNameAndVerificationToUsers) Down(ctx context.Context, conn migrations.Connection) error {
+	if _, err := conn.Statement(ctx, `ALTER TABLE users DROP COLUMN name`, nil); err != nil {
+		return err
+	}
+	_, err := conn.Statement(ctx, `ALTER TABLE users DROP COLUMN verified_at`, nil)
+	return err
 }

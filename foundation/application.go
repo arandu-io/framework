@@ -483,7 +483,14 @@ func (a *Application) Shutdown() error {
 }
 
 // Migrations collects the migrations of every module, in registration order.
-// Hand the result to data.Migrate.
+// Hand the result to migrations.Migrator.RunPending.
+//
+// This is the module half of migration discovery, and migrations.Register is the
+// other half: a module is a value the Application already holds, so it is asked;
+// an application's own migrations live in a package nothing calls, so they
+// announce themselves from init(). What the two must never both hold is one
+// migration -- the registry orders by name and this orders by registration, so a
+// migration in both has two positions and no rule that says which one wins.
 func (a *Application) Migrations() []Migration {
 	var out []Migration
 	for _, m := range a.modules {

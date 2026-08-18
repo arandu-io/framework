@@ -12,10 +12,11 @@
 //
 // The components moved to github.com/arandu-io/hesape, where the package is
 // called database, and this package is now the old name pointing at them. It
-// answers to two hesape packages:
+// answers to three hesape packages:
 //
-//	hesape/database  Repository, Query, DB, Dialect, Transaction, Migration
-//	hesape/auth      Tenant
+//	hesape/database             Repository, Query, DB, Dialect, Transaction
+//	hesape/database/migrations  Migration
+//	hesape/auth                 Tenant
 //
 // The death date above is what keeps this from being a second way to import one
 // type. Nothing here holds an implementation: where the name and the signature
