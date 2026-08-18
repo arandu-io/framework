@@ -21,9 +21,9 @@ here fails the build.
 
 ## Unreleased — the components move out, and `httpx` becomes `http`
 
-Three changes, and the first two are import paths rather than behaviour. Nothing
-in this section renames an exported identifier: `Grant`, `Context`, `Router`,
-`Module`, `Migration` and the rest answer to what they always did.
+Four changes, and the first two are import paths rather than behaviour. Only the
+last renames anything: `Grant`, `Context`, `Router` and `Module` answer to what
+they always did, and `Migration` is the one that does not.
 
 ### `httpx` is `http`
 
@@ -133,6 +133,64 @@ One signature could not be preserved:
 | was | is | what to do |
 |---|---|---|
 | `subject.PasswordConfirmedWithin(d)` | `security.PasswordConfirmedWithin(subject, d)` | It was a method on `Subject`, and `Subject` is now an alias for `auth.Subject` — Go forbids declaring a method on another package's type |
+
+### A migration is a type, not three strings
+
+`Migration` was `{ID, Up, Down string}` and is now an interface (ADR 0063): `ID`
+is `GetName()`, and `Up` and `Down` are methods that take a connection.
+
+```go
+type CreateInvoicesTable struct{ migrations.BaseMigration }
+
+func (CreateInvoicesTable) GetName() string {
+	return "2026_08_17_000001_create_invoices_table"
+}
+
+func (CreateInvoicesTable) Up(ctx context.Context, conn migrations.Connection) error {
+	_, err := conn.Statement(ctx, `CREATE TABLE invoices (...)`, nil)
+	return err
+}
+
+func (CreateInvoicesTable) Down(ctx context.Context, conn migrations.Connection) error {
+	_, err := conn.Statement(ctx, `DROP TABLE invoices`, nil)
+	return err
+}
+```
+
+`BaseMigration` answers `GetConnection`, `ShouldRun` and `WithinTransaction`, so
+only `GetName` and `Up` are left to write. `Down` is optional and tested for by
+type assertion, which makes a `Down` with the wrong signature a build failure
+rather than a rollback that silently does nothing.
+
+**Keep the id.** It becomes the string `GetName` returns, unchanged. A migration
+that has run in a database and comes back under a different name is a migration
+that runs again.
+
+**One statement per call.** The `Up` string used to be split on semicolons before
+it was sent. Nothing splits now, so a body that held three statements becomes
+three `conn.Statement` calls, in order.
+
+The runner went with the struct:
+
+| was | is | what to do |
+|---|---|---|
+| `data.Migrate(ctx, *DB, []Migration)` | `(*migrations.Migrator).Run` / `.RunPending` | Build one with `migrations.NewMigrator`, and adapt the connection with `database.ForMigrations` or `database.MigrationResolver` |
+| `data.Rollback(ctx, *DB, []Migration)` | `(*migrations.Migrator).Rollback` | `Options.Steps` and `Options.Batch` decide how far back, and neither existed before |
+| `data.Status(ctx, *DB, []Migration)` | `(migrations.MigrationRepositoryInterface).GetMigrationBatches` | It answers name to batch, which is the table `migrate:status` prints |
+| `data.AppliedMigrations(ctx, *DB)` | `(migrations.MigrationRepositoryInterface).GetRan` | Names only, ordered by batch and then by name. For the batch as well, `GetMigrationBatches` |
+| `data.Pending(ctx, *DB, []Migration)` | `(*migrations.Migrator).Run` | Pending is computed inside `Run` now, against the registry, so there is nothing left to ask separately |
+| `data.AppliedMigration` | `migrations.MigrationRecord` | The fields are `ID`, `Migration` and `Batch` |
+| `data.MigrationsTable` | `migrations.DefaultTable` | **The value changed**, from `arandu_migrations` to `migrations`. A database migrated by an older binary has its record under the old name: pass `arandu_migrations` to `migrations.NewDatabaseMigrationRepository` to keep reading it, or rename the table |
+
+`data.Migration` and `data.KeyText` stay, and `data.Migration` is now an alias
+for `migrations.Migration`. Everything else in `data/migrate.go` is gone rather
+than deprecated: the migrator takes a connection instead of a `*DB`, so there was
+no signature left to bridge.
+
+A module still declares its schema with `Migrations() []kernel.Migration`, and
+the Application still collects them in registration order. What is new beside it
+is `migrations.Register` from an `init()`, which is how an application's own
+migrations reach the `Migrator` — a package nothing calls cannot be asked.
 
 ---
 
