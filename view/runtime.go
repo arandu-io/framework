@@ -23,6 +23,19 @@ import (
 // {{ .Name() }} was meant. That behaviour is hesape's now, and unchanged.
 func Text(v any) string { return hview.Text(v) }
 
+// UnsafeText renders a value as a string for interpolation that is written
+// without escaping.
+//
+// It converts exactly as [Text] does, and the two exist as separate names
+// because the escaping is the caller's: the escaped form wraps this conversion
+// in an HTML escape and the raw form writes the result as it is. Under one name
+// the two are indistinguishable in the generated file and in a search over a
+// project, so the raw form carries its own.
+//
+// Every call to this function is a place where the value has to be markup that
+// is already trusted.
+func UnsafeText(v any) string { return hview.Text(v) }
+
 // Yield renders the section a child view declared, or nothing.
 //
 // A layout yields sections that a given child may not have, and the answer is
