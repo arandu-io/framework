@@ -59,6 +59,13 @@ func Authorize[T any](ctx context.Context, p Policy[T], s Subject, a Action, res
 // Guest is a reader with no session, declared on purpose.
 func Guest(tenant string) Subject { return auth.Guest(tenant) }
 
+// Tenant returns the tenant the Grant was issued for. Every tenant-scoped
+// statement, cache key, storage path and lock name takes this value, never one
+// that arrived with the request.
+//
+// The zero Grant carries no tenant and answers the empty string.
+func Tenant(g Grant) string { return auth.Tenant(g) }
+
 // ValidTenant reports whether a tenant identifier is safe to use as a namespace.
 func ValidTenant(tenant string) bool { return auth.ValidTenant(tenant) }
 

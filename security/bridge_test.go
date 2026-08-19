@@ -134,6 +134,29 @@ func TestSystemGrantReachesHesape(t *testing.T) {
 	}
 }
 
+// TestTenantReachesHesape covers the wrapper that reads the tenant off a Grant.
+// It and auth.Tenant have the same shape -- a Grant in, a string out -- so a
+// bridge pointed at the wrong field, or at the wrong function, would still
+// compile.
+func TestTenantReachesHesape(t *testing.T) {
+	who := security.Subject{ID: "u1", Tenant: "acme"}
+
+	g, err := security.Authorize(context.Background(), allow{}, who, "post.view", 1)
+	if err != nil {
+		t.Fatalf("authorize: %v", err)
+	}
+
+	if got := security.Tenant(g); got != "acme" {
+		t.Errorf("security.Tenant = %q, want the tenant the Grant carries", got)
+	}
+	if security.Tenant(g) != auth.Tenant(g) {
+		t.Error("security.Tenant and auth.Tenant disagree about the same Grant")
+	}
+	if got := security.Tenant(security.Grant{}); got != "" {
+		t.Errorf("the zero Grant answers %q; it has no tenant to give", got)
+	}
+}
+
 // TestPasswordFunctionsReachHashing covers the three renames, and the
 // round trip is what proves Make and Check were not wired to each other's
 // arguments -- both take strings, so the compiler would not say.
