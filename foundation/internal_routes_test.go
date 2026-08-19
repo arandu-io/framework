@@ -2,6 +2,7 @@ package foundation
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -48,6 +49,14 @@ func internalCfg(env config.Env, secret string) bootstrap.Configuration {
 // route under the same prefix, from a prefix constant of its own, and it is not
 // visible from here -- that package imports this one in order to be a module. The
 // paragraph on internalPrefix carries what the second owner costs.
+//
+// Which is why each line written down carries the owning module rather than the
+// test requiring one. It used to refuse any route under the prefix that was not
+// tagged "arandu", and nothing under the prefix owes that tag: the asset route
+// belongs to the view module and says so, and calling it "arandu" would name the
+// wrong owner. The rule held only because an Application with no modules
+// registered has no route but its own to check. Written into the expectation, a
+// wrong tag still fails and a second owner is a line to add.
 func TestTheApplicationsInternalSurfaceIsInTheInventory(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -58,26 +67,26 @@ func TestTheApplicationsInternalSurfaceIsInTheInventory(t *testing.T) {
 		{
 			name: "production without a tracing secret",
 			env:  config.EnvProd,
-			want: []string{internalPrefix + "health"},
+			want: []string{internalPrefix + "health [arandu]"},
 		},
 		{
 			name:   "production with a tracing secret",
 			env:    config.EnvProd,
 			secret: "secret",
 			want: []string{
-				internalPrefix + "health",
-				observability.ConsolePath,
-				observability.ConsolePath + "/{id}",
+				internalPrefix + "health [arandu]",
+				observability.ConsolePath + " [arandu]",
+				observability.ConsolePath + "/{id} [arandu]",
 			},
 		},
 		{
 			name: "development",
 			env:  config.EnvDev,
 			want: []string{
-				internalPrefix + "health",
-				reloadPath,
-				observability.ConsolePath,
-				observability.ConsolePath + "/{id}",
+				internalPrefix + "health [arandu]",
+				reloadPath + " [arandu]",
+				observability.ConsolePath + " [arandu]",
+				observability.ConsolePath + "/{id} [arandu]",
 			},
 		},
 	} {
@@ -92,19 +101,15 @@ func TestTheApplicationsInternalSurfaceIsInTheInventory(t *testing.T) {
 				if !strings.HasPrefix(r.Pattern, internalPrefix) {
 					continue
 				}
-				if r.Module != "arandu" {
-					t.Errorf("%s %s is tagged with module %q: an internal route outside this framework's own module is invisible to whoever groups the table by owner",
-						r.Method, r.Pattern, r.Module)
-				}
-				got = append(got, r.Pattern)
+				got = append(got, fmt.Sprintf("%s [%s]", r.Pattern, r.Module))
 			}
 
 			if len(got) != len(tc.want) {
 				t.Fatalf("internal routes = %v, want %v: the surface the application's middleware does not cover changed", got, tc.want)
 			}
-			for i, pattern := range tc.want {
-				if got[i] != pattern {
-					t.Errorf("internal route %d = %q, want %q", i, got[i], pattern)
+			for i, want := range tc.want {
+				if got[i] != want {
+					t.Errorf("internal route %d = %q, want %q", i, got[i], want)
 				}
 			}
 		})
