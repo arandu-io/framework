@@ -32,7 +32,7 @@ func (*Module) Name() string { return "view" }
 // cacheable forever, and what makes a deploy invalidate it without anybody
 // clearing anything.
 func (*Module) Routes(r *http.Router) {
-	r.Get(AssetPath+"{hash}/{name}", Handler)
+	r.Get(AssetPath+"{hash}/{name}", Handler).Name("view.asset")
 }
 
 // ReloadTag supplies the development live-reload tag to the kernel.

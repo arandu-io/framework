@@ -14,6 +14,14 @@ import (
 // at, and a configurable one buys nothing while giving two parts of a project a
 // way to disagree about where the sign-in screen is.
 //
+// It is also the pattern that module registers the screen under, and the screen
+// carries the name "auth.login" -- so a path built from that name is this
+// string, by construction rather than by two declarations that happen to agree.
+// Which of the two to reach for is decided by what the caller holds: a guard
+// runs before any route has matched and has no table to ask, so it uses this;
+// anything holding a route table asks it for "auth.login" and gets the same
+// answer.
+//
 // The address somebody is sent to when they are ALREADY signed in is a
 // parameter, because that one genuinely differs -- a blog sends them to the
 // front page, an application to its dashboard.

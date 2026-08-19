@@ -88,15 +88,20 @@ func inventoryOf(routes []*fhttp.Route) []string {
 // console is mounted only where a recorder exists, and the development reload
 // only in development.
 func TestTheRouteTableIsTheFullExpectedInventory(t *testing.T) {
+	// The blank on the sign-in POST is the one deliberate one, and it is written
+	// here so that nobody reads it as an omission and fills it in: it shares its
+	// path with the GET above it, so a path built from "auth.login" is already
+	// where it posts. Naming it would put two names on one address, and a caller
+	// choosing between them cannot be wrong in a way anything reports.
 	const (
-		authLogin  = `GET /auth/login [auth] ""`
+		authLogin  = `GET /auth/login [auth] "auth.login"`
 		authSubmit = `POST /auth/login [auth] ""`
-		authLogout = `POST /auth/logout [auth] ""`
-		assets     = `GET /_arandu/assets/{hash}/{name} [view] ""`
-		health     = `GET /_arandu/health [arandu] ""`
-		reload     = `GET /_arandu/reload [arandu] ""`
-		console    = `GET /_arandu/debug [arandu] ""`
-		consoleOne = `GET /_arandu/debug/{id} [arandu] ""`
+		authLogout = `POST /auth/logout [auth] "auth.logout"`
+		assets     = `GET /_arandu/assets/{hash}/{name} [view] "view.asset"`
+		health     = `GET /_arandu/health [arandu] "arandu.health"`
+		reload     = `GET /_arandu/reload [arandu] "arandu.reload"`
+		console    = `GET /_arandu/debug [arandu] "arandu.debug.index"`
+		consoleOne = `GET /_arandu/debug/{id} [arandu] "arandu.debug.show"`
 	)
 
 	for _, tc := range []struct {

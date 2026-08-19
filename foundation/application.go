@@ -261,13 +261,13 @@ func (a *Application) startBackground(ctx context.Context) error {
 // dumps, event payloads, across every tenant, with no session and no header.
 func (a *Application) mountInternalRoutes() {
 	internal := a.router.ForModule("arandu")
-	internal.Get(internalPrefix+"health", a.handleHealth)
+	internal.Get(internalPrefix+"health", a.handleHealth).Name("arandu.health")
 
 	// Development only, and mounted from the same condition that injects the
 	// script -- so there is no arrangement in which a production page listens
 	// for a stream nothing answers. See reload.go.
 	if a.isDev() {
-		internal.Get(reloadPath, a.handleReload)
+		internal.Get(reloadPath, a.handleReload).Name("arandu.reload")
 		for _, m := range a.modules {
 			if t, ok := m.(ReloadTagger); ok {
 				reloadTag = []byte(t.ReloadTag(reloadPath))
@@ -284,8 +284,8 @@ func (a *Application) mountInternalRoutes() {
 	if !a.isDev() {
 		handler = requireTracingSecret(a.cfg.Observability.TracingSecret, handler)
 	}
-	internal.Get(observability.ConsolePath, handler)
-	internal.Get(observability.ConsolePath+"/{id}", handler)
+	internal.Get(observability.ConsolePath, handler).Name("arandu.debug.index")
+	internal.Get(observability.ConsolePath+"/{id}", handler).Name("arandu.debug.show")
 }
 
 // requireTracingSecret gates the console outside development.

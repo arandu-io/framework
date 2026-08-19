@@ -32,6 +32,11 @@ type loginPage struct {
 	Email string
 	// Errors is what went wrong, empty on the first visit.
 	Errors validation.Errors
+	// Action is where the form posts. It is read from middleware.SignInPath
+	// rather than written into the markup, because a copy of the address here is
+	// one that keeps pointing at the old screen after the constant moves -- and
+	// a form posting to a 404 loses the password somebody just typed.
+	Action string
 	// Stylesheet and HTMX are content-addressed, so they are read here rather
 	// than written as constants: the URL changes with the bytes, and a
 	// hard-coded one would serve last build's stylesheet forever.
@@ -70,6 +75,7 @@ func (m *Module) renderLogin(w http.ResponseWriter, r *http.Request, status int,
 		CSRFToken:  token,
 		Email:      email,
 		Errors:     errs,
+		Action:     middleware.SignInPath,
 		Stylesheet: view.URL(view.Stylesheet),
 		HTMX:       view.URL("htmx.min.js"),
 	})
@@ -142,7 +148,7 @@ func (m *Module) doLogout(w http.ResponseWriter, r *http.Request) {
 	if err := m.svc.session.Destroy(r.Context(), w, m.svc.session.IDFromRequest(r)); err != nil {
 		observability.Log(r.Context()).Error("destroying session", "error", err)
 	}
-	redirect(w, r, "/auth/login")
+	redirect(w, r, middleware.SignInPath)
 }
 
 // redirect answers the way the client can act on.
@@ -272,7 +278,7 @@ var loginForm = template.Must(template.New("login").Parse(`<!doctype html>
     <section><ul>{{range $field, $msgs := .Errors}}{{range $msgs}}<li>{{$field}}: {{.}}</li>{{end}}{{end}}</ul></section>
   </div>
 {{end}}
-  <form method="post" action="/auth/login" hx-boost="false">
+  <form method="post" action="{{.Action}}" hx-boost="false">
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
     <div class="field">
       <label class="label" for="email">Email</label>

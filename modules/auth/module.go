@@ -77,11 +77,23 @@ func (m *Module) Name() string { return "auth" }
 // which reads to them as having been signed out. There is nothing to guard on
 // the two POSTs -- signing in again is harmless, and signing out without a
 // session is a no-op that ends where it should.
+//
+// The sign-in address is middleware.SignInPath and not a "/auth" group with a
+// "/login" leaf, so that the address the guards redirect to and the address this
+// module answers at are one string. Two spellings of one path can disagree, and
+// the failure when they do is a guard that redirects to a 404 -- on the screen
+// every application has, reachable only once somebody is signed out.
+//
+// The screens are named so that a URL can be built from a name instead of
+// written out. The POST to the sign-in address is deliberately not: it shares
+// the path with the GET, so a path built from "auth.login" is already where it
+// posts, and a second name for one address is a choice nobody can make
+// correctly.
 func (m *Module) Routes(r *fhttp.Router) {
-	g := r.Group("/auth")
-	g.Get("/login", m.showLogin, middleware.RedirectIfAuthenticated(m.svc.session, "/"))
-	g.Post("/login", m.doLogin)
-	g.Post("/logout", m.doLogout)
+	r.Get(middleware.SignInPath, m.showLogin,
+		middleware.RedirectIfAuthenticated(m.svc.session, "/")).Name("auth.login")
+	r.Post(middleware.SignInPath, m.doLogin)
+	r.Post("/auth/logout", m.doLogout).Name("auth.logout")
 }
 
 // Health reports whether the module can reach its storage. It feeds
