@@ -36,6 +36,42 @@ func Text(v any) string { return hview.Text(v) }
 // is already trusted.
 func UnsafeText(v any) string { return hview.Text(v) }
 
+// TextAttr renders a value for a quoted attribute value.
+//
+// It escapes what would end the attribute or start markup. It does not escape
+// what only matters outside quotes, because the quotes are what bound the value
+// there, and a value written without them has no escaping that makes it safe.
+func TextAttr(v any) string { return hview.TextAttr(v) }
+
+// TextURL renders a value that is written where a URL is expected, and refuses
+// one that is not a URL a page may navigate to or fetch.
+//
+// The scheme is checked against a list of what is allowed rather than a list of
+// what is not, and the comparison is exact: a value that hides a scheme behind
+// whitespace or a control character fails to match instead of being cleaned up.
+// Cleaning would change what the page says without saying so.
+//
+// A refused value comes back as the empty string alongside the error, so a
+// caller that ignores the error writes nothing rather than the value.
+func TextURL(v any) (string, error) { return hview.TextURL(v) }
+
+// TextJS renders a value inside a script, as a literal rather than as code.
+//
+// What comes back is a quoted literal, so a value carrying statements arrives at
+// the interpreter as characters. The sequence that would end the enclosing
+// element is escaped as well, because the HTML parser finds it before the script
+// is ever read.
+func TextJS(v any) string { return hview.TextJS(v) }
+
+// TextCSS renders a value inside a style, and refuses one that is not a plain
+// style value.
+//
+// Style has no escaping that survives every position it can appear in, so this
+// admits what a style value is made of and refuses the rest, naming the
+// character it refused. As with [TextURL], a refusal returns the empty string
+// alongside the error.
+func TextCSS(v any) (string, error) { return hview.TextCSS(v) }
+
 // Yield renders the section a child view declared, or nothing.
 //
 // A layout yields sections that a given child may not have, and the answer is
