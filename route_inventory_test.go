@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"sort"
 	"testing"
 
@@ -140,5 +142,86 @@ func TestTheRouteTableIsTheFullExpectedInventory(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// pipelineProbe is a module with one ordinary route and the middleware that
+// records which requests reached it.
+//
+// The two live on one type because the assertion is about the pair: what the
+// application registered, and what the application's own middleware saw.
+type pipelineProbe struct{ seen []string }
+
+// Name is the module identifier.
+func (*pipelineProbe) Name() string { return "probe" }
+
+// Routes registers one route outside the internal prefix, as an application's
+// own route would be.
+func (*pipelineProbe) Routes(r *fhttp.Router) {
+	r.Get("/probe", func(w http.ResponseWriter, req *http.Request) { w.WriteHeader(http.StatusOK) })
+}
+
+// middleware records the path of every request that reaches it.
+func (p *pipelineProbe) middleware() fhttp.Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			p.seen = append(p.seen, r.URL.Path)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// TestTheInternalPrefixDecidesWhatTheApplicationsMiddlewareSees measures the
+// half of the inventory the table does not show: which of those routes answer
+// without the application's pipeline.
+//
+// Every middleware an application installs is wrapped so that it does not run
+// under the internal prefix, which means a request there is answered with no
+// Recover, no request logging, no security headers, no rate limit and no CSRF
+// check. That is deliberate for the health probe -- a probe throttled by the
+// application it reports on reports the wrong thing -- and it is what makes the
+// set worth asserting rather than describing.
+//
+// Four requests, one question each:
+//
+//   - an ordinary route is seen, which is the pipeline doing its job;
+//   - the health probe is not, which is the exemption working;
+//   - the asset route is not either, and it is registered by the view module
+//     rather than by the Application;
+//   - a path that only looks internal is seen like any other.
+//
+// The third is the finding and the fourth is what makes it legible. The
+// exemption reads the path, not the registration, so what escapes the pipeline
+// is whatever is spelled under the prefix -- and the prefix is a string constant
+// in one package while the asset path is a string constant in another. Nothing
+// ties the two together, so the set that escapes is held apart by two literals
+// agreeing, and this is where they are checked against each other.
+func TestTheInternalPrefixDecidesWhatTheApplicationsMiddlewareSees(t *testing.T) {
+	probe := &pipelineProbe{}
+	a := foundation.New(inventoryConfig(config.EnvProd, "")).
+		Register(view.NewModule(), probe).
+		Use(probe.middleware())
+	if err := a.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	handler := a.Handler()
+	for _, path := range []string{
+		"/probe",
+		"/_arandu/health",
+		"/_arandu/assets/000000000000/app.css",
+		"/_aranduish/probe",
+	} {
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+
+	want := []string{"/probe", "/_aranduish/probe"}
+	if len(probe.seen) != len(want) {
+		t.Fatalf("the application's middleware saw %v, want %v: what the pipeline covers changed", probe.seen, want)
+	}
+	for i := range want {
+		if probe.seen[i] != want[i] {
+			t.Errorf("request %d reached the middleware as %q, want %q", i, probe.seen[i], want[i])
+		}
 	}
 }
