@@ -1,6 +1,8 @@
 package view
 
 import (
+	"encoding/json"
+	"log/slog"
 	"net/url"
 	"sort"
 	"strings"
@@ -160,7 +162,108 @@ type Page struct {
 // Compile-time proof that embedding Page is all a page has to do to fit the
 // layout. If the layout asks for something else, this line is where the build
 // stops -- in one file, naming the contract, rather than in every page at once.
-var _ Layout = Page{}
+//
+// The other two are the ones that keep the token off the debug page. They are
+// asserted here because deleting either method is otherwise a silent change:
+// nothing stops compiling, and the next dump publishes the token.
+var (
+	_ Layout         = Page{}
+	_ json.Marshaler = Page{}
+	_ slog.LogValuer = Page{}
+)
+
+// redacted is what a secret looks like once it has left this package.
+//
+// The value never appears. Whether there was one does: an empty string stays
+// empty, and anything else becomes the marker. A secret that simply vanished
+// from the output would read exactly like a field nobody filled in, and "the
+// form posted an empty token" is the failure a page is dumped to find.
+func redacted(secret string) string {
+	if secret == "" {
+		return ""
+	}
+	return "[redacted]"
+}
+
+// MarshalJSON keeps the CSRF token out of anything that serializes a page.
+// Without it a single dump of the data a screen renders from publishes a token
+// that is live for that session, on a page whose whole purpose is to be read.
+//
+// It names the fields that may leave, rather than the ones that may not. A
+// field added to the struct later does not appear until it is named here, which
+// is the direction that cannot leak by accident -- the reverse spelling grows a
+// hole every time somebody adds a field and does not think about this method.
+//
+// Old and Errors are carried whole. Neither is a secret: the values a form
+// posts back are already drawn into the boxes the browser shows, and the
+// messages carry the limit a rule declared and never what was typed against it.
+//
+// A struct that embeds Page and adds fields of its own inherits this method,
+// and inheriting it means those fields are not serialized -- the token is
+// redacted and the rest of the screen's data does not appear. A page that is
+// dumped for its own data declares its own MarshalJSON, naming what it carries
+// alongside the chrome named here.
+func (p Page) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Title       string
+		Description string
+		Canonical   string
+		AppName     string
+		Token       string
+
+		Authenticated bool
+		UserName      string
+
+		HomeURL     string
+		LoginURL    string
+		LogoutURL   string
+		RegisterURL string
+		PanelURL    string
+		AdminURL    string
+
+		Path string
+
+		Errors validation.Errors
+		Old    url.Values
+	}{
+		Title:       p.Title,
+		Description: p.Description,
+		Canonical:   p.Canonical,
+		AppName:     p.AppName,
+		Token:       redacted(p.Token),
+
+		Authenticated: p.Authenticated,
+		UserName:      p.UserName,
+
+		HomeURL:     p.HomeURL,
+		LoginURL:    p.LoginURL,
+		LogoutURL:   p.LogoutURL,
+		RegisterURL: p.RegisterURL,
+		PanelURL:    p.PanelURL,
+		AdminURL:    p.AdminURL,
+
+		Path: p.Path,
+
+		Errors: p.Errors,
+		Old:    p.Old,
+	})
+}
+
+// LogValue implements [slog.LogValuer], so a log line handed a whole page
+// records which screen it was and nothing else.
+//
+// Shorter than MarshalJSON on purpose, and the token is not among the three.
+// A log line is shipped to an aggregator and kept, and neither the display name
+// of the person reading the screen nor the address they typed into a form is
+// something to keep there; a dump is one request, on one machine, in
+// development.
+func (p Page) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("path", p.Path),
+		slog.String("title", p.Title),
+		slog.Bool("authenticated", p.Authenticated),
+	)
+}
 
 // IsCurrent reports whether a navigation target is the page being read.
 //
