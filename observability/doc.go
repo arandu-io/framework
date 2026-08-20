@@ -22,15 +22,9 @@
 // it is the errorpage subpackage.
 //
 // The death date above is what keeps this from being a second way to import one
-// type. With one exception, named below, nothing here holds an implementation:
-// where the name and the signature survived the move it is a Go alias, and where
-// the design diverged it is a call through that translates and nothing more.
-//
-// The exception is Gauges, which has no counterpart in hesape/log. It is the
-// current value of a number the process owns, and the Collector and the Recorder
-// are both scoped to one request, so it belongs to neither. It is written here
-// because this is the observability layer a project imports; it needs a home
-// that outlives this package before the date above arrives.
+// type. Nothing here holds an implementation: where the name and the signature
+// survived the move it is a Go alias, and where the design diverged it is a call
+// through that translates and nothing more.
 //
 // The four renames, which are the whole of the divergence:
 //
