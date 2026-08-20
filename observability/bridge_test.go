@@ -177,8 +177,12 @@ func TestConstructorsAnswer(t *testing.T) {
 		t.Error("NewRecorder did not answer a recorder that records")
 	}
 
-	if observability.NewConsole(rec, "vscode") == nil {
+	if observability.NewConsole(rec, "vscode", observability.NewGauges()) == nil {
 		t.Error("NewConsole answered nil")
+	}
+
+	if observability.NewConsole(rec, "vscode", nil) == nil {
+		t.Error("NewConsole answered nil for a caller with no gauges")
 	}
 
 	if got := observability.Client(3 * time.Second).Timeout; got != 3*time.Second {

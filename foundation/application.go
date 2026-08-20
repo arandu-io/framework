@@ -87,6 +87,12 @@ type Application struct {
 	// and under a tracing secret, and is nil otherwise -- which is what makes
 	// the console cost nothing in production rather than cost little.
 	recorder *observability.Recorder
+	// gauges is the current value of the numbers the process owns. Unlike the
+	// recorder it always exists, because what it costs does not grow with
+	// traffic: it holds one int64 per metric per tenant and replaces it in
+	// place, so a process serving for a month holds what it held on the first
+	// request.
+	gauges *observability.Gauges
 }
 
 // New assembles the Application. It opens no connection and listens on no port
@@ -113,6 +119,12 @@ func New(cfg bootstrap.Configuration) *Application {
 	if a.isDev() || cfg.Observability.TracingSecret != "" {
 		a.recorder = observability.NewRecorder(observability.DefaultRecorderSize)
 	}
+	// The registry is owned here for the reason above and built unconditionally,
+	// which the recorder is not. Whatever writes a number does it from wherever
+	// it runs -- a socket server, a worker -- and asking those to check whether
+	// the console happens to exist would put the debug surface's lifetime into
+	// code that has nothing to do with it.
+	a.gauges = observability.NewGauges()
 	return a
 }
 
@@ -142,6 +154,19 @@ func (a *Application) isDev() bool { return a.cfg.App.Env.Is(config.EnvDev) }
 // for state would be the kind of hidden coupling the explicit wiring exists to
 // avoid.
 func (a *Application) Recorder() *observability.Recorder { return a.recorder }
+
+// Gauges returns the registry the console draws, which is never nil.
+//
+// Hand it to whatever holds a number worth seeing on /_arandu/debug -- a socket
+// server, a worker, a pool.
+//
+// One registry, for the reason there is one recorder: a caller that built its
+// own would write numbers the console has no way to reach, and the page would
+// be empty while the numbers were right.
+//
+// It stores and does not measure. What a name means is known to whatever writes
+// it, and the registry keeps one reading per name -- no history, no rate.
+func (a *Application) Gauges() *observability.Gauges { return a.gauges }
 
 // Config returns the configuration the Application was built with.
 func (a *Application) Config() bootstrap.Configuration { return a.cfg }
@@ -279,7 +304,7 @@ func (a *Application) mountInternalRoutes() {
 	if a.recorder == nil {
 		return
 	}
-	console := observability.NewConsole(a.recorder, a.cfg.Observability.Editor)
+	console := observability.NewConsole(a.recorder, a.cfg.Observability.Editor, a.gauges)
 	handler := console.Handler
 	if !a.isDev() {
 		handler = requireTracingSecret(a.cfg.Observability.TracingSecret, handler)

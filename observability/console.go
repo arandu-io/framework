@@ -31,10 +31,10 @@ const TracingHeader = hlog.TracingHeader
 // build failed.
 type Console = hlog.Console
 
-// NewConsole returns the console over a recorder.
+// NewConsole returns the console over a recorder and a gauge registry.
 //
-// The console also draws the gauges it is given, and this signature has no room
-// for the registry they come from: a console built here has no gauge section.
-func NewConsole(r *Recorder, editor string) *Console {
-	return hlog.NewConsole(r, editor, nil)
+// A nil registry draws no gauge section, which is what a caller that has no
+// numbers to show passes.
+func NewConsole(r *Recorder, editor string, gauges *Gauges) *Console {
+	return hlog.NewConsole(r, editor, gauges)
 }
