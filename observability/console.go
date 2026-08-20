@@ -32,6 +32,9 @@ const TracingHeader = hlog.TracingHeader
 type Console = hlog.Console
 
 // NewConsole returns the console over a recorder.
+//
+// The console also draws the gauges it is given, and this signature has no room
+// for the registry they come from: a console built here has no gauge section.
 func NewConsole(r *Recorder, editor string) *Console {
-	return hlog.NewConsole(r, editor)
+	return hlog.NewConsole(r, editor, nil)
 }
