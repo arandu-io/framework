@@ -13,6 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The api diff step below reads the tags and checks the last release
+          # out into a second worktree. The default checkout fetches one commit
+          # and no tags at all, which does not fail that step -- it makes it
+          # find no release, say so, and exit 0. A gate that compares nothing
+          # and passes is not a gate, and this one had been green that way
+          # since it was written, across 52 releases.
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
@@ -86,6 +94,23 @@ jobs:
       # forbids is breaking QUIETLY: an incompatible change with no entry in
       # UPGRADE.md fails here, in a diff a reviewer is looking at, rather than in
       # somebody's build three weeks later.
+      #
+      # The comparison is per MODULE and not package by package. A loop over the
+      # packages of the working tree cannot see a package that was deleted: it is
+      # not in `go list ./...` any more, so nothing ever asks about it. Removing
+      # a whole package is the worst break there is, and it was the one that got
+      # through -- httpx and httpx/middleware went in v0.26.0, and a per-package
+      # loop run over that release names neither. Module mode reports a removed
+      # package as the removal it is.
+      #
+      # -incompatible asks apidiff for that section instead of cutting it out of
+      # the full report afterwards; a `sed` from the "Incompatible changes"
+      # heading to the end also swallows the compatible section when both are
+      # present, which does not change the verdict but does fill the log with
+      # additions nobody needs to read.
+      #
+      # There is one module here, so one comparison. Nothing under this tree
+      # carries a go.mod of its own.
       - name: api diff against the last release
         run: |
           set -euo pipefail
@@ -96,29 +121,27 @@ jobs:
           fi
           echo "comparing the working tree against $latest"
 
-          old=$(mktemp -d)
+          tmp=$(mktemp -d)
+          old="$tmp/last-release"
           git worktree add -q --detach "$old" "$latest"
-
-          broke=""
-          for pkg in $(go list ./... | sed 's|github.com/arandu-io/framework|.|'); do
-            # A package that did not exist in the release is an addition, and an
-            # addition breaks nobody.
-            [ -d "$old/${pkg#./}" ] || continue
-            (cd "$old" && go run golang.org/x/exp/cmd/apidiff@latest -w "$old/api.out" "$pkg") >/dev/null 2>&1 || continue
-            diff=$(go run golang.org/x/exp/cmd/apidiff@latest "$old/api.out" "$pkg" 2>/dev/null \
-                     | sed -n '/Incompatible changes/,$p' | grep '^- ' || true)
-            if [ -n "$diff" ]; then
-              echo "$pkg:"
-              echo "$diff" | sed 's/^/    /'
-              broke="yes"
-            fi
-          done
+          # Reading the old surface has to happen in the old tree: apidiff
+          # resolves a module path against the go.mod of the directory it runs
+          # in, and from anywhere else it would read the module cache -- which
+          # holds the published release, not the tag this checkout is at.
+          #
+          # No error is swallowed here. The loop this replaced ended both of its
+          # apidiff calls with `|| continue` and `2>/dev/null`, so a package that
+          # failed to load counted as a package with nothing to report.
+          (cd "$old" && go run golang.org/x/exp/cmd/apidiff@latest -m -w "$tmp/api.out" github.com/arandu-io/framework)
+          broke=$(go run golang.org/x/exp/cmd/apidiff@latest -m -incompatible "$tmp/api.out" github.com/arandu-io/framework | grep '^- ' || true)
           git worktree remove --force "$old"
 
           if [ -z "$broke" ]; then
             echo "no incompatible change since $latest"
             exit 0
           fi
+          echo "$broke" | sed 's/^/    /'
+
           # Broken is allowed. Broken and unwritten is not.
           if git diff --quiet "$latest" -- UPGRADE.md; then
             echo

@@ -13,9 +13,9 @@ in Go and it is deliberate — the alternative is freezing a shape before anyone
 has built on it. What is not deliberate is breaking it quietly, which is what
 this file exists to stop.
 
-Every release from now on is compared against the one before it, package by
-package, by `apidiff` in CI. An incompatible change that is not written down
-here fails the build.
+Every release from now on is compared against the one before it, across the
+whole module, by `apidiff` in CI. An incompatible change that is not written
+down here fails the build.
 
 ---
 
@@ -286,7 +286,9 @@ When one is, it goes through four steps and this file records each:
 ## How this is checked
 
 `apidiff` runs in CI on every pull request, comparing the working tree against
-the latest tag, package by package. Incompatible changes are printed in the
+the latest tag, across the whole module. Comparing it package by package would
+miss the worst break of all: a package that was deleted is no longer in the list
+of packages, so nothing asks about it. Incompatible changes are printed in the
 build log, and the build fails when there are some and this file has no entry
 for them.
 
