@@ -34,6 +34,6 @@
 //
 // Two names foundation declares rather than forwards, and they keep their old
 // meaning here exactly: Module, whose Routes still takes a *http.Router, and
-// Locker, which is retired and which the events bridge kept because
-// github.com/arandu-io/kv asserts against it.
+// Locker, which is retired and which the events bridge kept because the lock
+// hesape asks for there is a concrete issuer a Locker cannot be turned into.
 package kernel

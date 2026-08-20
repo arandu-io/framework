@@ -119,8 +119,8 @@ func TestTaskCarriesTheGrantUnchanged(t *testing.T) {
 
 // TestTheThreeDeclaredNamesAreTheFoundationOnes covers what foundation declares
 // rather than forwards. Module keeps a *fhttp.Router, so a module written
-// against the old name still compiles; Locker is the interface
-// github.com/arandu-io/kv implements and events.Locker aliases.
+// against the old name still compiles; Locker is the interface events.Locker
+// aliases, so one value wires into both the relay and the scheduler.
 func TestTheThreeDeclaredNamesAreTheFoundationOnes(t *testing.T) {
 	for name, pair := range map[string][2]reflect.Type{
 		"Module":           {reflect.TypeFor[kernel.Module](), reflect.TypeFor[foundation.Module]()},
@@ -184,7 +184,7 @@ func (probe) Routes(r *fhttp.Router) {
 	r.Get("/probe", func(w http.ResponseWriter, req *http.Request) { w.WriteHeader(http.StatusOK) })
 }
 
-// lock is a Locker of the shape github.com/arandu-io/kv implements.
+// lock is a Locker of the shape an application supplies.
 type lock struct{}
 
 func (lock) Run(ctx context.Context, name string, ttl time.Duration, fn func(context.Context) error) error {

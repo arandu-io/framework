@@ -57,12 +57,12 @@ func TestErrNoTransactionIsOneValue(t *testing.T) {
 	}
 }
 
-// TestLockerIsTheKernelInterface: github.com/arandu-io/kv asserts
-// `var _ events.Locker = (*Locker)(nil)` in a separate module, and the scheduler
-// takes a kernel.Locker. One interface is what keeps the wiring one line.
+// TestLockerIsTheKernelInterface: the relay takes an events.Locker and the
+// scheduler takes a kernel.Locker, and an application wires one value into
+// both. One interface is what keeps that one line rather than two.
 func TestLockerIsTheKernelInterface(t *testing.T) {
 	if reflect.TypeFor[events.Locker]() != reflect.TypeFor[kernel.Locker]() {
-		t.Fatal("events.Locker stopped being kernel.Locker: kv wires the same value into both")
+		t.Fatal("events.Locker stopped being kernel.Locker: one value no longer wires into both")
 	}
 	var _ events.Locker = (*fakeLocker)(nil)
 }
@@ -229,11 +229,12 @@ func grant(tenant string) security.Grant {
 	return security.SystemGrant("outbox.store", tenant)
 }
 
-// fakeLocker is a Locker of the shape github.com/arandu-io/kv implements: it
-// runs the work under a lock it takes and gives back itself.
+// fakeLocker is a Locker of the shape an application supplies: it runs the work
+// under a lock it takes and gives back itself.
 type fakeLocker struct {
 	// refuse is what a lock somebody else holds answers with. The relay reads
-	// that from the message, because the core does not import the adapter.
+	// that from the message, because the core does not import the
+	// implementation.
 	refuse error
 
 	mu    sync.Mutex

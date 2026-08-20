@@ -4,7 +4,7 @@
 // the pending events, publishes them, marks them, parks the ones that gave up.
 // What stays here is the lock, because that is where the design diverged --
 // hesape/events.RelayOptions takes a *cache.Locks, and the lock this framework
-// hands out is the Locker interface that github.com/arandu-io/kv implements.
+// hands out is the Locker interface, which cannot be turned into one.
 
 package events
 
@@ -34,8 +34,8 @@ type PublisherFunc = hevents.PublisherFunc
 //
 // It stays an alias for kernel.Locker, which is the one declaration of it in the
 // framework: the scheduler needs the same thing, and two identical interfaces in
-// two packages is a signature that can drift in one of them.
-// github.com/arandu-io/kv implements it, and asserts as much against this name.
+// two packages is a signature that can drift in one of them. One interface is
+// what lets a single value be wired into both the relay and the scheduler.
 //
 // It is the one thing here hesape has no counterpart for. There the lock is
 // *cache.Locks, a concrete issuer over a store that can acquire and release by

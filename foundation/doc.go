@@ -27,8 +27,8 @@
 //	RendererProvider  hesape/foundation has none, deliberately: it names the
 //	                  boot sequence that looks for it, and that sequence is here
 //	Locker            it is retired, and the events bridge kept it --
-//	                  hesape/cache.Locks cannot be built from what
-//	                  github.com/arandu-io/kv implements
+//	                  hesape/cache.Locks cannot be built from a Locker, and it
+//	                  is a *cache.Locks that hesape/events asks for
 //
 // [FormatRoutes] is neither: it is a call through to
 // hesape/routing.FormatRoutes, which the alias on http.Route makes possible

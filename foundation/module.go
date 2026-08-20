@@ -107,10 +107,12 @@ type Diagnostic = hfoundation.Diagnostic
 //
 // It lives here because two things need it -- the outbox relay and the
 // scheduler -- and two identical interfaces in two packages is the duplication
-// that the second one would create. github.com/arandu-io/kv implements it.
+// that the second one would create.
 //
-// Nil is correct for a single replica and wrong for two. What it costs is
-// duplicate work, which every task here has to tolerate anyway.
+// Nothing in the collection implements it. An application that runs more than
+// one replica supplies one; nil is correct for a single replica and wrong for
+// two. What it costs is duplicate work, which every task here has to tolerate
+// anyway.
 //
 // # Why it is still here
 //
@@ -118,9 +120,12 @@ type Diagnostic = hfoundation.Diagnostic
 // The events bridge did not delete it, because hesape/cache.Locks is a concrete
 // issuer over a store that acquires and releases by owner, and a Locker -- which
 // only knows how to run a function under a lock it takes and gives back itself
-// -- cannot be turned into one.
-// events.Locker is an alias to this name and kv asserts against it, so deleting
-// the declaration deletes the wiring rather than the duplication.
+// -- cannot be turned into one. hesape/events.RelayOptions takes that concrete
+// issuer, so there is nothing to hand it and nothing to alias to.
+//
+// events.Locker is an alias to this name, and the scheduler takes this one, so
+// a single value wires into both. Deleting the declaration deletes that wiring
+// rather than the duplication.
 //
 // It moved with the rest of the package instead, and stays one declaration.
 type Locker interface {

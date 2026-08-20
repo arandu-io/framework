@@ -19,12 +19,11 @@ import (
 //
 // It stays declared here rather than pointing at hesape. The replacement there
 // is hesape/routing/middleware.Throttle, which takes a CONCRETE
-// *hesape/cache.RateLimiter rather than an interface, and
-// github.com/arandu-io/kv implements this interface by these method names in a
-// separate module (kv/limiter.go:29 asserts it). A separate module cannot
-// satisfy a concrete struct, so aliasing here would compile in the framework
-// and break the adapter silently -- the one failure `go build` in this module
-// cannot catch.
+// *hesape/cache.RateLimiter rather than an interface, and a distributed limiter
+// implements this interface by this method name from a module this one does not
+// compile. A separate module cannot satisfy a concrete struct, so aliasing here
+// would compile in the framework and break that limiter in silence -- the one
+// failure `go build` in this module cannot catch.
 type Limiter interface {
 	Allow(key string, limit int, window time.Duration) (remaining int, retryAfter time.Duration, ok bool)
 }

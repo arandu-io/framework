@@ -213,10 +213,10 @@ func TestLocalPathReachesHesape(t *testing.T) {
 	}
 }
 
-// TestMemoryBackendKeepsTheOldMethodNames is the assertion that
-// github.com/arandu-io/kv depends on and that go build in this module cannot
-// make: kv is a separate module implementing SessionBackend by these four
-// names, so SessionBackend may not become an alias for hesape's Handler.
+// TestMemoryBackendKeepsTheOldMethodNames is the assertion a backend outside
+// this module depends on and that go build here cannot make: a backend
+// implements SessionBackend by these four names, so SessionBackend may not
+// become an alias for hesape's Handler.
 func TestMemoryBackendKeepsTheOldMethodNames(t *testing.T) {
 	ctx := context.Background()
 	var b security.SessionBackend = security.NewMemoryBackend()

@@ -35,9 +35,9 @@ var (
 	// longer holds it -- expired, or destroyed by a logout elsewhere.
 	//
 	// Renamed on the way to hesape: it is session.ErrExpired there. The alias
-	// is what keeps github.com/arandu-io/kv correct without a line changing --
-	// it returns this value, and hesape/session.Handler requires that one, and
-	// they are the same value.
+	// is what keeps a backend correct without a line changing -- it returns
+	// this value, and hesape/session.Handler requires that one, and they are
+	// the same value.
 	ErrSessionExpired = session.ErrExpired
 
 	// ErrConfirmationNotStored means the backend accepted the password
@@ -88,9 +88,9 @@ func PasswordConfirmedWithin(sub Subject, window time.Duration) bool {
 // hesape/session.Handler -- which renamed all four: Get is Read, Put is Write,
 // Delete is Destroy and DeleteSubject is DestroyIndex.
 //
-// github.com/arandu-io/kv implements this interface, by these names, and it is
-// a separate module: an alias here would compile in the framework and break the
-// adapter silently, which is the one failure this bridge exists to prevent.
+// A backend implements this interface, by these names, from a module this one
+// does not compile: an alias here would compile in the framework and break it
+// in silence, which is the one failure this bridge exists to prevent.
 // backendHandler is what carries an implementation of this across to hesape.
 type SessionBackend interface {
 	// Get returns the subject, or ErrSessionExpired when the backend does not

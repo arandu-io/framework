@@ -24,8 +24,7 @@
 //	              whether the context is in a transaction, and *data.DB answers
 //	              that through a package-level function instead
 //	RelayOptions  the Locker field became a *cache.Locks, which nothing outside
-//	              hesape can build from the Locker that github.com/arandu-io/kv
-//	              implements
+//	              hesape can build from a Locker
 //	Relay         Run drives the locked pass through that Locker, because the
 //	              options it would otherwise be handed cannot carry one
 //

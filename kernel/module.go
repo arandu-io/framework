@@ -65,11 +65,13 @@ type Diagnostic = foundation.Diagnostic
 //
 // It lives in foundation because two things need it -- the outbox relay and the
 // scheduler -- and two identical interfaces in two packages is the duplication
-// that the second one would create. github.com/arandu-io/kv implements it, and
-// events.Locker is an alias to this name.
+// that the second one would create. events.Locker is an alias to this name, so
+// a single value wires into both.
 //
-// Nil is correct for a single replica and wrong for two. What it costs is
-// duplicate work, which every task here has to tolerate anyway.
+// Nothing in the collection implements it. An application that runs more than
+// one replica supplies one; nil is correct for a single replica and wrong for
+// two. What it costs is duplicate work, which every task here has to tolerate
+// anyway.
 type Locker = foundation.Locker
 
 // Scope says whether a task runs once or once per tenant.

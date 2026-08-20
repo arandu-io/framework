@@ -52,7 +52,8 @@ type Options struct {
 	// It stays a kernel.Locker. hesape claims a window through a
 	// SchedulingMutex, which marks the window and never releases it, where this
 	// one wraps the run and releases at the end -- a lock that cannot be
-	// expressed as the other, and github.com/arandu-io/kv implements this one.
+	// expressed as the other. Nothing in the collection implements this shape;
+	// an application supplies one, or leaves it nil.
 	Locker kernel.Locker
 	// Tenants expands PerTenant tasks. Nil means those tasks do not run, which
 	// is reported rather than silent.
@@ -300,11 +301,12 @@ func (s *Scheduler) runOne(ctx context.Context, e *entry, g security.Grant, at t
 	return err
 }
 
-// isLocked recognizes "somebody else holds it" without importing the adapter.
+// isLocked recognizes "somebody else holds it" without importing whatever holds
+// the lock.
 //
 // By message rather than by type, which is ugly and is the price of the core
-// not depending on github.com/arandu-io/kv. The alternative -- a sentinel here
-// that the adapter imports -- inverts the dependency the wrong way.
+// not depending on the implementation. The alternative -- a sentinel here that
+// the implementation imports -- inverts the dependency the wrong way.
 func isLocked(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "lock is held")
 }

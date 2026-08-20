@@ -452,9 +452,9 @@ func TestStartAndStop(t *testing.T) {
 	}
 }
 
-// memoryLocker stands in for github.com/arandu-io/kv, which is tested against a
-// real server in its own repository. This one exists to prove the scheduler
-// asks for the lock and honors the answer.
+// memoryLocker stands in for whatever an application wires in, which is tested
+// against a real server wherever it is written. This one exists to prove the
+// scheduler asks for the lock and honors the answer.
 type memoryLocker struct {
 	mu   sync.Mutex
 	held map[string]bool

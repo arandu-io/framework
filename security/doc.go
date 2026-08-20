@@ -26,7 +26,7 @@
 //	SessionStore     hesape/session.RecordStore[Subject] returns a Record that
 //	                 wraps the payload, and the intended destination moved to
 //	                 hesape/http
-//	SessionBackend   hesape/session.Handler renamed all four methods, and
-//	                 github.com/arandu-io/kv implements the old names
+//	SessionBackend   hesape/session.Handler renamed all four methods, and a
+//	                 backend outside this module implements the old names
 //	SignInThrottle   all three methods gained a context.Context
 package security
