@@ -33,8 +33,10 @@ type Func = hview.Func
 // finding out from a page that renders the wrong thing.
 func Register(name string, f Func) { hview.Register(name, f) }
 
-// Registered returns the known view names, sorted. `aru doctor` reads it to
-// check that every ctx.View("x") has a view named x.
+// Registered returns the known view names, sorted.
+//
+// A name is in here once the generated code that draws it has run its init, so
+// this answers what the binary can render, not what the source tree holds.
 func Registered() []string { return hview.Registered() }
 
 // Renderer draws a view. It is the concrete side of http.Renderer.

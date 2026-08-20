@@ -25,10 +25,9 @@ func moduleWithRelay(t *testing.T, opts events.RelayOptions, publisher events.Pu
 
 // recorder is a Publisher that signals the test when an event arrives.
 type recorder struct {
-	mu     sync.Mutex
-	names  []string
-	got    chan struct{}
-	closed bool
+	mu    sync.Mutex
+	names []string
+	got   chan struct{}
 }
 
 func newRecorder() *recorder { return &recorder{got: make(chan struct{}, 16)} }
