@@ -34,10 +34,10 @@ func grant() security.Grant { return security.SystemGrant("invoice.send", tenant
 
 // TestAliasesAreTheHesapeSymbols is the whole of the alias half of this bridge.
 //
-// The three errors matter more here than anywhere else: github.com/arandu-io/queue
-// and its kv sibling return these values from Push, and hesape's own drivers
-// return the jobs ones. The alias is what makes errors.Is answer yes across the
-// two modules.
+// The three errors matter more here than anywhere else: a driver written to the
+// contract this package declares returns these values from Push, and hesape's
+// own drivers return the jobs ones. The alias is what makes errors.Is answer yes
+// across the two modules.
 func TestAliasesAreTheHesapeSymbols(t *testing.T) {
 	if jobs.DefaultQueue != hjobs.DefaultQueue {
 		t.Errorf("jobs.DefaultQueue is %q, hesape says %q", jobs.DefaultQueue, hjobs.DefaultQueue)
@@ -151,9 +151,9 @@ func TestAuthorizedRefusesAForgedJob(t *testing.T) {
 }
 
 // fakeQueue implements the framework's Queue contract, by the framework's
-// method names, which is the point: it stands where github.com/arandu-io/queue
-// stands, in a module the framework's build cannot check. If queueAdapter is
-// wired to the wrong method, this is where it shows.
+// method names, which is the point: it stands where a driver stands, in a
+// module the framework's build cannot check. If queueAdapter is wired to the
+// wrong method, this is where it shows.
 type fakeQueue struct {
 	mu       sync.Mutex
 	ready    []jobs.Job

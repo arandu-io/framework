@@ -5,9 +5,9 @@
 // Moving that into an optional package would make the guarantee optional, and an
 // optional guarantee is not one.
 //
-// A driver is a separate module under github.com/arandu-io/queue, because in Go
-// there is no optional dependency and a core that carried a Redis client would
-// put it in every project's go.sum.
+// A driver that needs a client installed is a module of its own, because in Go
+// there is no optional dependency: a contract that carried a Redis client would
+// put it in every project's go.sum, its build and its vulnerability surface.
 //
 // Delivery is at-least-once. A handler that cannot run twice safely is a handler
 // with a bug -- the process can die between doing the work and acknowledging it,
@@ -37,10 +37,13 @@
 //	Handler          takes *jobs.Job rather than a Job
 //	Worker           Daemon rather than Run, and WorkerOptions renamed two fields
 //
-// None of the four could alias, and none of the four may change shape here:
-// github.com/arandu-io/queue and github.com/arandu-io/queue/kv implement Queue
-// by the old method names in separate modules, the second one marshals a Job to
-// JSON by the old field names, and `aru make:job` emits a Handler with the old
-// signature. An alias would compile in this module and break all three in
-// silence, which is the one failure a build of the framework cannot catch.
+// None of the four could alias, and none of the four may change shape here. A
+// driver implements Queue by these method names and marshals a Job by these
+// field names, both in a module of its own; `aru make:job` emits a Handler with
+// this signature, and every handler in a project is written against it. An
+// alias would compile in this module and break all of them in silence, which is
+// the one failure a build of the framework cannot catch.
+//
+// What crosses to hesape is the adapter in worker.go, and it is the only thing
+// that has to know both shapes.
 package jobs

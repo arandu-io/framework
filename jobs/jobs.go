@@ -21,10 +21,10 @@ const DefaultQueue = hjobs.DefaultQueue
 //
 // It stays declared here rather than aliasing hesape/queue/jobs.Job, which
 // renamed ID to UUID, added three fields and put a driver behind the job so
-// it can settle itself. Three things outside this module read this shape:
-// github.com/arandu-io/queue writes j.ID into a column, its kv sibling marshals
-// this struct to JSON and back, and `aru make:job` generates against it. An
-// alias would rename a column and a wire field at once.
+// it can settle itself. Two things outside this module read this shape: a
+// driver writes j.ID into a column or marshals this struct to JSON and back,
+// and `aru make:job` generates against it. An alias would rename a column and a
+// wire field at once.
 //
 // The three fields hesape added -- DisplayName, Exceptions and Attributes --
 // and the settlement bookkeeping behind them have no counterpart here, and
@@ -143,11 +143,11 @@ func (f HandlerFunc) Handle(ctx context.Context, g security.Grant, j Job) error 
 // Fail on the job, Parked is Failed, Pending is PendingSize and Oldest is
 // CreationTimeOfOldestPendingJob, answering with a time rather than a duration.
 //
-// github.com/arandu-io/queue and github.com/arandu-io/queue/kv implement this
-// interface, by these names, and they are separate modules: an alias here would
-// compile in the framework and break both drivers silently, which is the one
-// failure this bridge exists to prevent. queueAdapter, in worker.go, is what
-// carries an implementation of this across to hesape.
+// A driver implements this interface, by these names, from a module this one
+// does not compile: an alias here would compile in the framework and break
+// every such driver in silence, which is the one failure this bridge exists to
+// prevent. queueAdapter, in worker.go, is what carries an implementation of
+// this across to hesape.
 type Queue interface {
 	// Push adds a job. The tenant comes from the Grant.
 	Push(ctx context.Context, g security.Grant, j Job) error
