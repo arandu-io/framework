@@ -32,13 +32,12 @@
 // # The two shapes that stay declared here, and why
 //
 //	Store  hesape/filesystem.Adapter takes stored paths and no Grant, and has a
-//	       sixth method (Stat). github.com/arandu-io/storage and
-//	       github.com/arandu-io/storage/s3 implement the old five-method,
-//	       Grant-taking shape in separate modules, so an alias would compile in
-//	       this module and break those two in silence.
+//	       sixth method (Stat). A driver implements the five-method,
+//	       Grant-taking shape from a module this one does not compile, so an
+//	       alias would compile here and break it in silence.
 //	File   hesape/filesystem.File carries its metadata in an embedded Info, so
-//	       the flat composite literal both driver modules write does not compile
-//	       against it. The fields and their meanings are unchanged.
+//	       the flat composite literal a driver writes does not compile against
+//	       it. The fields and their meanings are unchanged.
 //
 // Neither declaration is a way around the Grant: the only thing that produces a
 // stored path is Path, and Path needs one.

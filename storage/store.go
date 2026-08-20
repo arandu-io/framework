@@ -4,10 +4,9 @@
 // the old Store into filesystem.Adapter, which takes stored paths and no Grant,
 // and filesystem.Disk, which takes a Grant and calls filesystem.Key before it
 // calls the Adapter. The two names below therefore stay declared with their old
-// form: github.com/arandu-io/storage and github.com/arandu-io/storage/s3
-// implement Store and build File in separate modules, and an alias would compile
-// here while breaking both of them in silence -- the one failure `go build` in
-// this module cannot catch.
+// form: a driver implements Store and builds File from a module this one does
+// not compile, and an alias would compile here while breaking it in silence --
+// the one failure `go build` in this module cannot catch.
 
 package storage
 

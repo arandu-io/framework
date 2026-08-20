@@ -124,8 +124,7 @@ func TestTheRefusalsStillReachTheOldNames(t *testing.T) {
 	}
 }
 
-// noopStore is the shape github.com/arandu-io/storage and
-// github.com/arandu-io/storage/s3 implement, written out here so that a change
+// noopStore is the shape a driver implements, written out here so that a change
 // to Store fails in this module rather than in theirs.
 type noopStore struct{}
 
@@ -143,9 +142,9 @@ func (noopStore) Exists(context.Context, security.Grant, string) (bool, error) {
 
 var _ storage.Store = noopStore{}
 
-// TestFileIsStillBuiltFlat is the other half of the same guarantee. Both driver
-// modules write this literal, and it is the reason File did not become an alias
-// for filesystem.File, whose fields sit inside an embedded Info.
+// TestFileIsStillBuiltFlat is the other half of the same guarantee. A driver
+// writes this literal, and it is the reason File did not become an alias for
+// filesystem.File, whose fields sit inside an embedded Info.
 func TestFileIsStillBuiltFlat(t *testing.T) {
 	f := storage.File{
 		Key:         "invoice.pdf",
