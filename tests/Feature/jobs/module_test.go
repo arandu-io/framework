@@ -12,7 +12,7 @@
 // answers nil -- a jobs table that is never created, on a queue that otherwise
 // looks wired.
 
-package jobs_test
+package feature
 
 import (
 	"context"

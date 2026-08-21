@@ -1,4 +1,4 @@
-package foundation_test
+package feature
 
 import (
 	"context"

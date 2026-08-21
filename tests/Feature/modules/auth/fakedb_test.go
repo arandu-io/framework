@@ -1,4 +1,4 @@
-package auth_test
+package feature
 
 import (
 	"context"

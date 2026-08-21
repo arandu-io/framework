@@ -1,4 +1,4 @@
-package framework_test
+package feature
 
 import (
 	"context"

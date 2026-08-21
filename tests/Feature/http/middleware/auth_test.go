@@ -1,4 +1,4 @@
-package middleware_test
+package feature
 
 import (
 	"context"

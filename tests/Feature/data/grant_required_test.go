@@ -1,9 +1,11 @@
-package data_test
+package feature
 
 import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/arandu-io/framework/tests"
 )
 
 // TestRepositoryWithoutGrantDoesNotCompile proves the claim in the only way it
@@ -15,10 +17,17 @@ import (
 // runs the toolchain over fixtures under testdata and requires them to fail --
 // with the specific message, because a fixture that fails for an unrelated
 // reason proves nothing.
+//
+// The fixtures stay under data/testdata and did not travel here with the test.
+// The toolchain skips any directory named testdata when it expands a pattern,
+// and that is the only thing keeping code written to fail out of the build; a
+// fixture anywhere else would be compiled by ./... and break it.
 func TestRepositoryWithoutGrantDoesNotCompile(t *testing.T) {
 	if testing.Short() {
 		t.Skip("compiles a fixture with the go tool")
 	}
+
+	root := tests.ModuleRoot(t)
 
 	cases := []struct {
 		fixture string
@@ -26,12 +35,12 @@ func TestRepositoryWithoutGrantDoesNotCompile(t *testing.T) {
 		want    string
 	}{
 		{
-			fixture: "./testdata/missing_grant",
+			fixture: "./data/testdata/missing_grant",
 			reason:  "calling a repository without a Grant",
 			want:    "not enough arguments in call to repo.Find",
 		},
 		{
-			fixture: "./testdata/forged_grant",
+			fixture: "./data/testdata/forged_grant",
 			reason:  "building a valid Grant outside the security package",
 			want:    "cannot refer to unexported field valid",
 		},
@@ -39,7 +48,13 @@ func TestRepositoryWithoutGrantDoesNotCompile(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.reason, func(t *testing.T) {
-			out, err := exec.Command("go", "vet", c.fixture).CombinedOutput()
+			// From the module root, so the fixture path reads the way it
+			// would be typed by hand and the toolchain resolves it against
+			// this module rather than against wherever this test now lives.
+			cmd := exec.Command("go", "vet", c.fixture)
+			cmd.Dir = root
+
+			out, err := cmd.CombinedOutput()
 			if err == nil {
 				t.Fatalf("%s compiled. The framework thesis is broken.\n%s", c.reason, out)
 			}
