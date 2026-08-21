@@ -1,9 +1,18 @@
-package foundation
+// Tests of the module envelope, which is four methods carrying two guarantees.
+//
+// What a connection does against a real server is tested in hesape; what is left
+// to prove here is that the envelope passes the question through unchanged --
+// that a store which is down says so where the database says so, and that the
+// pool is handed back when the process stops.
+
+package unit
 
 import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/arandu-io/framework/foundation"
 )
 
 // fakeConnection stands in for a key-value connection.
@@ -36,7 +45,7 @@ func (c *fakeConnection) Close() error {
 func TestTheModuleAnswersForTheConnectionItHolds(t *testing.T) {
 	down := errors.New("connection refused")
 	conn := &fakeConnection{pingErr: down}
-	m := NewCacheModule("cache", conn)
+	m := foundation.NewCacheModule("cache", conn)
 
 	if err := m.Health(context.Background()); !errors.Is(err, down) {
 		t.Errorf("Health hid the refusal: got %v, want %v", err, down)
@@ -55,7 +64,7 @@ func TestTheModuleAnswersForTheConnectionItHolds(t *testing.T) {
 // late: a connection nothing closes leaks its pool for the life of the process.
 func TestCloseReturnsThePool(t *testing.T) {
 	conn := &fakeConnection{}
-	m := NewCacheModule("cache", conn)
+	m := foundation.NewCacheModule("cache", conn)
 
 	if err := m.Close(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -65,7 +74,7 @@ func TestCloseReturnsThePool(t *testing.T) {
 	}
 
 	failing := errors.New("already closed")
-	m = NewCacheModule("cache", &fakeConnection{closeErr: failing})
+	m = foundation.NewCacheModule("cache", &fakeConnection{closeErr: failing})
 	if err := m.Close(context.Background()); !errors.Is(err, failing) {
 		t.Errorf("Close swallowed the failure: got %v, want %v", err, failing)
 	}
@@ -75,7 +84,7 @@ func TestCloseReturnsThePool(t *testing.T) {
 // stores apart on a health report.
 func TestTheNameIsUsedAsGiven(t *testing.T) {
 	for _, name := range []string{"cache", "sessions", "rate-limit"} {
-		if got := NewCacheModule(name, &fakeConnection{}).Name(); got != name {
+		if got := foundation.NewCacheModule(name, &fakeConnection{}).Name(); got != name {
 			t.Errorf("Name() = %q, want %q", got, name)
 		}
 	}
@@ -86,5 +95,5 @@ func TestTheNameIsUsedAsGiven(t *testing.T) {
 func TestItRegistersNoRoutes(t *testing.T) {
 	// A nil router is safe precisely because nothing is registered. If Routes
 	// ever touches its argument, this panics rather than passing quietly.
-	NewCacheModule("cache", &fakeConnection{}).Routes(nil)
+	foundation.NewCacheModule("cache", &fakeConnection{}).Routes(nil)
 }
