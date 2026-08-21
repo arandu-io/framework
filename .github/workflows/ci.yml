@@ -56,6 +56,13 @@ jobs:
       - name: vet
         run: go vet ./...
 
+      # The layout of the test tree, checked by the thing that can check it.
+      # The first of its four rules is the one that costs the most to get wrong:
+      # a file named DiskTest.go or disk_Test.go compiles as ordinary code and
+      # none of its tests run, with no error and no warning.
+      - name: test layout
+        run: bash tests/test-layout-guard.sh
+
       # The race detector is what keeps the per-request Collector honest: it is
       # shared by every goroutine a request fans out to.
       #
