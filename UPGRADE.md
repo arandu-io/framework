@@ -192,6 +192,25 @@ the Application still collects them in registration order. What is new beside it
 is `migrations.Register` from an `init()`, which is how an application's own
 migrations reach the `Migrator` — a package nothing calls cannot be asked.
 
+### The root package is gone, and it never held anything
+
+`apidiff` reports `github.com/arandu-io/framework: removed`, and it is right
+about the fact and misleading about the consequence, so it is written down here
+rather than argued with.
+
+That package existed only because two test files sat at the top of the
+repository. It had no non-test file, therefore no exported symbol, and
+therefore could never be imported: `import "github.com/arandu-io/framework"`
+answered `no Go files in ...` at v0.32.0 exactly as it does now. The two tests
+moved into `tests/`, the last file at the root went with them, and the package
+stopped existing.
+
+**Nothing to change.** No code could have named it.
+
+What is importable and new beside it is `github.com/arandu-io/framework/tests`,
+which is the base the suites build on. It exports `ModuleRoot`, it imports
+`testing`, and no code that ships should reach it.
+
 ---
 
 ## v0.13.3 — everything published so far
