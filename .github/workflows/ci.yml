@@ -58,8 +58,16 @@ jobs:
 
       # The race detector is what keeps the per-request Collector honest: it is
       # shared by every goroutine a request fans out to.
+      #
+      # The tags are not optional and are not a convenience. tests/Integration
+      # and tests/E2E sit behind them so that a fresh clone can run `go test
+      # ./...` without infrastructure -- and a directory whose files are all
+      # excluded by a build constraint does not fail, it DISAPPEARS from
+      # `./...`. Nothing is reported, nothing is skipped, the count simply drops
+      # and the run is green. Removing these two words switches those suites off
+      # and looks like a passing build.
       - name: test
-        run: go test -race ./...
+        run: go test -race -tags 'integration e2e' ./...
 
       # Exit criterion 5 of phase 1: the core depends on the standard library and
       # golang.org/x/crypto, and nothing else. x/sys comes in transitively,
