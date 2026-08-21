@@ -49,3 +49,25 @@ func FormatRoutes(routes []*http.Route) string { return foundation.FormatRoutes(
 //
 // A wrapper for the same reason New is.
 func NewLocker(locks *cache.Locks) Locker { return foundation.NewLocker(locks) }
+
+// CacheConnection is the part of a key-value connection a module needs.
+//
+// An alias, so an application names one type whichever package it imports.
+type CacheConnection = foundation.CacheConnection
+
+// CacheModule registers a key-value connection with the application.
+type CacheModule = foundation.CacheModule
+
+// NewCacheModule returns a module that health-checks a key-value connection and
+// releases its pool on shutdown.
+//
+//	k.Register(kernel.NewCacheModule("cache", conn))
+//
+// Registering it is what puts "the key-value store is down" on the health
+// endpoint beside the database, and what returns the pool when the process
+// stops.
+//
+// A wrapper for the same reason New is.
+func NewCacheModule(name string, conn CacheConnection) *CacheModule {
+	return foundation.NewCacheModule(name, conn)
+}
