@@ -166,6 +166,78 @@ func (h backendHandler) DestroyIndex(ctx context.Context, tenant, subjectID, kee
 	return h.backend.DeleteSubject(ctx, tenant, subjectID, keepID)
 }
 
+// NewSessionBackend presents a session handler as a SessionBackend.
+//
+// It is backendHandler run the other way, and it exists because the traffic is
+// not one-way. A backend written against the four names of this package needs
+// carrying across; a handler written against the four names of hesape/session
+// needs carrying back, and a distributed one is written there -- it is the
+// same interface for every store that keeps sessions off the process, and none
+// of them knows this package exists.
+//
+//	handler := <driver>.NewCacheBasedSessionHandler[security.Subject](conn)
+//	store := security.NewSessionStore(key, ttl, true, security.NewSessionBackend(handler))
+//
+// The payload type is Subject and is not a choice the caller makes: a session
+// of this framework holds a Subject, so a handler over anything else is a
+// handler for a different store.
+//
+// The four renames are all there is, and each is the same operation under
+// another name: Read is Get, Write is Put, Destroy is Delete, DestroyIndex is
+// DeleteSubject. The record translation is the same one MemoryBackend does --
+// hesape/session keeps the tenant, the account and the two fields that decide
+// how long a record lives beside an opaque payload, and this package keeps all
+// of it on the Subject.
+//
+// The refusal crosses unchanged, which is the half a careless adapter loses: a
+// handler that does not hold the id answers session.ErrExpired, and
+// ErrSessionExpired is that same value, so a caller branching on it to send
+// somebody back to the sign-in screen behaves the same whichever store is
+// wired.
+//
+// A nil handler is a wiring mistake rather than a request for the in-memory
+// store, and it panics on the first session. Substituting memory here would
+// answer it by quietly giving a fleet of replicas a session store per process,
+// which is the failure the distributed handler was wired to prevent.
+func NewSessionBackend(h session.Handler[Subject]) SessionBackend {
+	return handlerBackend{handler: h}
+}
+
+// handlerBackend presents a hesape/session.Handler as a SessionBackend.
+//
+// A value rather than a pointer: it holds one field it never writes, and every
+// method forwards. Two goroutines calling it share nothing but the handler,
+// which is where the concurrency question belongs.
+type handlerBackend struct{ handler session.Handler[Subject] }
+
+var _ SessionBackend = handlerBackend{}
+
+// Get returns the subject, or ErrSessionExpired when the handler does not hold
+// the id.
+func (b handlerBackend) Get(ctx context.Context, id string) (Subject, error) {
+	rec, err := b.handler.Read(ctx, id)
+	if err != nil {
+		return Subject{}, err
+	}
+	return subjectFrom(rec), nil
+}
+
+// Put stores the subject under id for the given ttl.
+func (b handlerBackend) Put(ctx context.Context, id string, s Subject, ttl time.Duration) error {
+	return b.handler.Write(ctx, id, recordFor(s), ttl)
+}
+
+// Delete removes the session, if present.
+func (b handlerBackend) Delete(ctx context.Context, id string) error {
+	return b.handler.Destroy(ctx, id)
+}
+
+// DeleteSubject removes every session of one subject of one tenant except
+// keepID.
+func (b handlerBackend) DeleteSubject(ctx context.Context, tenant, subjectID, keepID string) error {
+	return b.handler.DestroyIndex(ctx, tenant, subjectID, keepID)
+}
+
 // MemoryBackend keeps sessions in the process memory.
 //
 // It is the right choice for development and for a single instance. Behind more
