@@ -52,8 +52,7 @@ type Options struct {
 	// It stays a kernel.Locker. hesape claims a window through a
 	// SchedulingMutex, which marks the window and never releases it, where this
 	// one wraps the run and releases at the end -- a lock that cannot be
-	// expressed as the other. Nothing in the collection implements this shape;
-	// an application supplies one, or leaves it nil.
+	// expressed as the other. kernel.NewLocker builds one over a lock issuer.
 	Locker kernel.Locker
 	// Tenants expands PerTenant tasks. Nil means those tasks do not run, which
 	// is reported rather than silent.

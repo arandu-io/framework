@@ -68,10 +68,9 @@ type Diagnostic = foundation.Diagnostic
 // that the second one would create. events.Locker is an alias to this name, so
 // a single value wires into both.
 //
-// Nothing in the collection implements it. An application that runs more than
-// one replica supplies one; nil is correct for a single replica and wrong for
-// two. What it costs is duplicate work, which every task here has to tolerate
-// anyway.
+// NewLocker builds one over a lock issuer. Nil is correct for a single replica
+// and wrong for two. What it costs is duplicate work, which every task here has
+// to tolerate anyway.
 type Locker = foundation.Locker
 
 // Scope says whether a task runs once or once per tenant.

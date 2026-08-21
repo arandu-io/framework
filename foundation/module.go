@@ -109,19 +109,24 @@ type Diagnostic = hfoundation.Diagnostic
 // scheduler -- and two identical interfaces in two packages is the duplication
 // that the second one would create.
 //
-// Nothing in the collection implements it. An application that runs more than
-// one replica supplies one; nil is correct for a single replica and wrong for
-// two. What it costs is duplicate work, which every task here has to tolerate
+// NewLocker builds one over a lock issuer, and is the only thing here that
+// produces this shape. Nil is correct for a single replica and wrong for two.
+// What it costs is duplicate work, which every task here has to tolerate
 // anyway.
 //
 // # Why it is still here
 //
 // It is retired in favour of one kind of lock in the collection, cache.Lock.
-// The events bridge did not delete it, because hesape/cache.Locks is a concrete
-// issuer over a store that acquires and releases by owner, and a Locker -- which
-// only knows how to run a function under a lock it takes and gives back itself
-// -- cannot be turned into one. hesape/events.RelayOptions takes that concrete
-// issuer, so there is nothing to hand it and nothing to alias to.
+// The events bridge did not delete it, and the reason is that the conversion
+// only runs one way.
+//
+// A cache.Locks makes a Locker: NewLocker does it in a line, because naming a
+// lock and running a function under it is exactly what Run is. The other
+// direction is closed. A Locker takes a lock and gives it back inside a single
+// call and never yields the handle, so there is no owner token to read and
+// nothing to release from anywhere else -- and those are the operations a
+// cache.Locks is. hesape/events.RelayOptions takes the concrete issuer, so
+// there is still nothing to alias this name to.
 //
 // events.Locker is an alias to this name, and the scheduler takes this one, so
 // a single value wires into both. Deleting the declaration deletes that wiring

@@ -6,6 +6,7 @@ import (
 	"github.com/arandu-io/framework/foundation"
 	"github.com/arandu-io/framework/foundation/bootstrap"
 	"github.com/arandu-io/framework/http"
+	"github.com/arandu-io/hesape/cache"
 )
 
 // Kernel holds the composed application: configuration, modules, the global
@@ -37,3 +38,14 @@ func New(cfg bootstrap.Configuration) *Kernel { return foundation.New(cfg) }
 // A wrapper for the same reason New is. What it reaches is
 // hesape/routing.FormatRoutes, through foundation.
 func FormatRoutes(routes []*http.Route) string { return foundation.FormatRoutes(routes) }
+
+// NewLocker returns a Locker that takes each lock from locks.
+//
+// It is what makes a Singleton task and the outbox relay run on exactly one
+// replica, and it is the only thing in the framework that produces the shape
+// both of them take.
+//
+//	sched.Locker = kernel.NewLocker(cache.NewLocks(store))
+//
+// A wrapper for the same reason New is.
+func NewLocker(locks *cache.Locks) Locker { return foundation.NewLocker(locks) }
