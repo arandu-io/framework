@@ -147,6 +147,15 @@ while IFS= read -r module; do
 	[ -z "$module" ] && continue
 	asked=$((asked + 1))
 
+	# The cache is warmed before anything is measured, and it is not a
+	# convenience. `go list` writes "go: downloading <module> <version>" to
+	# stderr, which is captured here on purpose so that a module that does not
+	# build is reported instead of read as an empty package list -- and those two
+	# words then arrive as package names, which is what "no required module
+	# provides package v0.12.0" is. CI has a cold cache every run, so this failed
+	# there and passed here.
+	(cd "$module" && GOWORK=off go mod download all >/dev/null 2>&1) || true
+
 	if ! packages=$(cd "$module" && GOWORK=off go list -tags 'integration e2e' ./... 2>&1); then
 		echo "[FAILED] go list failed in $module, so nothing was checked there:"
 		printf '%s\n' "$packages" | sed 's/^/    /'
