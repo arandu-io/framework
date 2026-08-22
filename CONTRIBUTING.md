@@ -25,10 +25,12 @@ go vet ./...
 go test -race ./...
 ```
 
-CI runs exactly this, plus a check that no new dependency entered the core: the
-framework depends on the standard library and `golang.org/x/crypto`, and nothing
-else. A pull request that adds a dependency there needs to argue for it first,
-in an issue.
+CI runs these, along with several other checks; `.github/workflows/ci.yml` is
+what decides, and reading it beats any list kept here, which goes stale. One
+rule is worth knowing before you write the patch, because it is the one that
+sends a patch back: the core depends on the standard library and
+`golang.org/x/crypto`, and nothing else. A pull request that adds a dependency
+there needs to argue for it first, in an issue.
 
 ## Where a test goes
 
