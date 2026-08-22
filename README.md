@@ -40,13 +40,13 @@ not compile.
   one.
 - **Tenant scoped at the source** — the tenant is read from the Grant with
   `Tenant(g)`, never from a path, a body, a query or a header, and
-  `ValidTenant` refuses anything outside `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`.
+  `ValidTenant` refuses anything outside `^[a-z0-9][a-z0-9_-]{0,63}$`.
 - **One boot sequence** — [`foundation`](https://pkg.go.dev/github.com/arandu-io/framework/foundation)
   composes the process exactly once, at start, never per request.
 - **Background work that survives a crash** — jobs carry a Grant, domain
   events are written to an outbox in the same transaction as the row that
-  caused them, and the scheduler holds a lock per replica so N copies of the
-  process do not run the same task N times.
+  caused them, and a task the scheduler marks `Singleton` takes a named lock,
+  so N copies of the process do not run it N times.
 - **Diagnosis without an extra install** — a console, a request timeline and
   an N+1 detector live in the core rather than a plugin, and allocate nothing
   when they are off.
@@ -58,15 +58,17 @@ that is `aru doctor`, a lint, not the type system, with the rules
 
 Zero direct third-party dependencies. `golang.org/x/crypto` arrives indirectly,
 through `hesape`, which is the only place it is used; CI refuses a second one.
-11,091 lines of production code and 10,798 of test, across 49 test files —
+11,901 lines of production code and 12,466 of test, across 59 test files —
 `go test -race ./...` passes.
 
 Today, most of what this module exports — `security`, `data`, `http`, `jobs`,
-`events`, `mail`, `observability`, `storage`, `validation`, `arandutest` — is a
-compatibility alias: the implementation moved to the sibling `hesape`
-repository, and each package's own doc comment names the import path that
-replaces it. They are removed in v1.0.0. What stays here for good is process
-bootstrap (`foundation`) and typed configuration (`config`).
+`events`, `mail`, `observability`, `scheduler`, `storage`, `validation`, `view`,
+`arandutest` — is a compatibility alias: the implementation moved to the sibling
+`hesape` repository, and each package's own doc comment names the import path
+that replaces it. `kernel` and `config` are bridges too, pointing one directory
+across at `foundation` and `foundation/bootstrap`. All of them go in v1.0.0.
+What stays here for good is the boot sequence: `foundation` composes the
+application, and `foundation/bootstrap` reads its typed configuration.
 
 ## Install
 
@@ -94,13 +96,18 @@ next phase, and it will be an Arandu application.
 
 `aru` is the command line; `arandu` is the project skeleton it clones; `hesape`
 is the 47-package collection this module is built from; `examples` is a
-complete application to read. `database`, `kv`, `queue` and `storage` are the
-storage adapters.
+complete application to read. The database, cache, queue and file adapters used
+to be four repositories of their own; they are `hesape` packages now, each heavy
+driver in a submodule with its own `go.mod`, because Go has no optional
+dependency and a project should pay in `go.sum` only for what it imports.
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Before opening a pull request, the three
-commands at the top of that file have to pass, and CI runs exactly them.
+commands at the top of that file have to pass. CI runs them and four more that
+a laptop has no reason to: a guard on the layout of the test tree, the
+dependency budget, an API diff against the last release that fails an
+incompatible change carrying no `UPGRADE.md` entry, and `govulncheck`.
 
 ## Security Vulnerabilities
 
