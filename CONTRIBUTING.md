@@ -34,25 +34,44 @@ there needs to argue for it first, in an issue.
 
 ## Where a test goes
 
-Beside the code it tests, named `*_test.go`, in the same directory. There is no
-`tests/` directory, and that is not style: `go test` attributes coverage per
-directory, so a test filed elsewhere leaves the package under test reporting
-0% -- and it can only reach what the package exports.
+Two places, and the choice between them is not a preference. A test that
+exercises a package through what it exports goes in `tests/`. A test that needs
+an identifier the package does not export goes beside that code, named
+`*_internal_test.go` -- Go grants that access only to a file declaring the
+package itself, which is a file in the package's own directory, so the
+exception is anchored there by the compiler rather than by taste.
+`tests/test-layout-guard.sh` runs in CI and fails anything else outside
+`tests/`.
 
-Which package the test declares is a real choice, and it answers one question:
+The suite tree is split by how much has to be running, and the split is
+directories rather than a filename suffix, because `go test` only runs a file
+whose name ends in `_test.go` and a naming scheme that competes with that rule
+switches the suite off without failing:
 
-| declare | when |
+| directory | what belongs there |
 |---|---|
-| `package X_test` | this is the **contract**. The test sees what a caller sees, which is the point |
-| `package X` | this is the **implementation**, and the test genuinely needs something the package does not export |
+| `tests/Unit/` | one thing, with nothing running |
+| `tests/Feature/` | a whole behaviour, across the layers that produce it |
+| `tests/E2E/` | the sequence of requests a client actually makes |
 
-Prefer the first. Take the second only when you use it -- `plans/testpackages.go`
-in the arandu-io working tree checks exactly that, by intersecting the
-identifiers a test names with what its package declares unexported, and the
-checklist runs it across every repository.
+The directory is capitalised and the package clause is not -- `package unit`,
+`package feature`, `package e2e` -- and the guard checks that too, along with
+the rule that nothing in production may import the tree: it pulls in `testing`,
+and a package that reaches it registers a test binary's flags into whatever
+imports it.
+
+`go test` attributes coverage per directory, and that is what the layout
+trades: the suite tree credits itself, so `-coverpkg` is how you ask for the
+number against the packages under test. The internal test is the other side of
+the same rule -- it sits where the code it reaches sits, and so it is the one
+that credits that package directly. Take it only when you use the access it
+takes -- `plans/testpackages.go` in the arandu-io working tree checks exactly
+that, by intersecting the identifiers a test names with what its package
+declares unexported, and the checklist runs it across every Go repository in the project.
 
 A `package main` has no external form: it cannot be imported, so its tests are
-internal and that is the end of it.
+internal and that is the end of it. They still carry the `_internal_test.go`
+name, because the guard reads the name.
 
 ## What the commit message says
 
