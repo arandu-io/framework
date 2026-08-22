@@ -2,10 +2,10 @@ module github.com/arandu-io/framework
 
 go 1.26
 
-// This module is Laravel's laravel/framework, and hesape is its src/Illuminate.
 // The components live in a module of their own because Go publishes a submodule
-// without a subtree splitter -- laravel/framework carries src/Illuminate plus a
-// 7 MB splitsh-lite binary to do the same job (ADR 0049).
+// without a subtree splitter: a directory with its own go.mod is already a
+// module anyone can require, so nothing has to copy the tree to publish it
+// (ADR 0049).
 //
 // github.com/arandu-io/* is ours and does not spend the dependency budget. What
 // the budget forbids is a dependency the core did not write and cannot fix, and

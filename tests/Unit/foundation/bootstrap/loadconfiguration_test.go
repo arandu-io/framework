@@ -32,7 +32,7 @@ func TestLoadConfigurationRefusesToBootWithoutAKey(t *testing.T) {
 // Reading it as seconds compiles, boots, and turns an existing
 // SESSION_LIFETIME=120 into a two-minute session. Everybody stays signed in long
 // enough for it to look like it worked and is then thrown out mid-form.
-func TestSessionLifetimeIsReadAsMinutesLikeLaravel(t *testing.T) {
+func TestSessionLifetimeIsReadAsMinutes(t *testing.T) {
 	env(t, "APP_KEY", testKey, "SESSION_LIFETIME", "120")
 
 	cfg, err := bootstrap.LoadConfiguration()
@@ -41,7 +41,7 @@ func TestSessionLifetimeIsReadAsMinutesLikeLaravel(t *testing.T) {
 	}
 
 	if got, want := cfg.Session.Lifetime, 2*time.Hour; got != want {
-		t.Errorf("SESSION_LIFETIME=120 became %v, want %v -- it is minutes, as Laravel writes it", got, want)
+		t.Errorf("SESSION_LIFETIME=120 became %v, want %v -- the unit is minutes", got, want)
 	}
 }
 

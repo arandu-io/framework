@@ -29,8 +29,8 @@ they always did, and `Migration` is the one that does not.
 
 Every import of `github.com/arandu-io/framework/httpx` becomes
 `github.com/arandu-io/framework/http`, and `httpx/middleware` moves with it. The
-`x` was never a convention — it marked that `net/http` had the word first, and
-Illuminate calls the component `Http` (ADR 0047).
+`x` was never a convention — it marked that `net/http` had the word first, and a
+package is named for what it holds, not for what took the name first (ADR 0047).
 
 A file that imports both aliases **ours**, so `http` goes on meaning `net/http`
 as it does in every other Go file:
@@ -45,18 +45,16 @@ import (
 func (c *InvoiceController) Index(ctx *fhttp.Context) error
 ```
 
-A file that does not import `net/http` needs no alias and reads `http.Context`,
-which is what a Laravel developer types.
+A file that does not import `net/http` needs no alias and reads `http.Context`.
 
 No shim is left behind. `framework/httpx` does not exist, and an import of it
 fails to resolve rather than compiling against something stale.
 
 ### `kernel` is `foundation`, and `Kernel` is `Application`
 
-`Illuminate\Foundation` is not a published package — of the 37 `illuminate/*`
-that `laravel/framework` declares, none is Foundation, because it ships only
-inside the framework. Ours now says so: `kernel.Kernel` is
-`foundation.Application` (ADR 0049).
+The type is the application object, and the name now says so: `kernel.Kernel` is
+`foundation.Application` (ADR 0049). Unlike the components, `foundation` is not a
+module of its own: it ships only inside this one.
 
 `framework/kernel` still works. It is a bridge, and it is removed in v1.0.0 —
 every method keeps its name, so the change is the import path and the type name:

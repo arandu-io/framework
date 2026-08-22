@@ -80,12 +80,11 @@ jobs:
       # golang.org/x/crypto, and nothing else. x/sys comes in transitively,
       # required by x/crypto itself.
       #
-      # github.com/arandu-io/* is ours and is not third-party. This layer is
-      # laravel/framework and hesape is src/Illuminate: the components live in
-      # their own module because Go publishes a submodule without a subtree
-      # splitter, not because they are somebody else's code. What the budget
-      # exists to stop is a dependency the core did not write and cannot fix,
-      # and that check is unchanged -- add a fifth line here and it fails.
+      # github.com/arandu-io/* is ours and is not third-party. The components
+      # live in a module of their own because Go publishes a submodule without a
+      # subtree splitter, not because they are somebody else's code. What the
+      # budget exists to stop is a dependency the core did not write and cannot
+      # fix, and that check is unchanged -- add a fifth line here and it fails.
       - name: dependency budget
         run: |
           unexpected=$(go list -m all | tail -n +2 |
