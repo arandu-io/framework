@@ -115,16 +115,10 @@
 		return arandu.theme || null;
 	}
 
-	function toggleDark() {
+	function setMode(mode) {
 		var store = theme();
-		if (store && typeof store.toggleDark === 'function') store.toggleDark();
-		stamp(document);
-	}
-
-	function setAccent(name) {
-		var store = theme();
-		if (!name || !store || typeof store.setAccent !== 'function') return;
-		store.setAccent(name);
+		if (!mode || !store || typeof store.set !== 'function') return;
+		store.set(mode);
 		stamp(document);
 	}
 
@@ -324,11 +318,10 @@
 
 	function stamp(scope) {
 		var node = scope && (scope.nodeType === 1 || scope.nodeType === 9) ? scope : document;
-		var accent = document.documentElement.getAttribute('data-theme') || '';
+		var mode = document.documentElement.getAttribute('data-theme') || 'auto';
 
-		each(node, '[data-theme-accent]', function (button) {
-			if (button.getAttribute('data-theme-accent') === accent) button.setAttribute('aria-current', 'true');
-			else button.removeAttribute('aria-current');
+		each(node, '[data-theme-mode]', function (button) {
+			button.setAttribute('aria-checked', button.getAttribute('data-theme-mode') === mode ? 'true' : 'false');
 		});
 		each(node, '[data-combobox]', function (box) {
 			box.setAttribute('data-combobox-initialized', 'true');
@@ -351,10 +344,8 @@
 		var copyButton = from.closest('[data-copy]');
 		if (copyButton) copy(copyButton);
 
-		if (from.closest('[data-theme-dark]')) toggleDark();
-
-		var swatch = from.closest('[data-theme-accent]');
-		if (swatch) setAccent(swatch.getAttribute('data-theme-accent'));
+		var mode = from.closest('[data-theme-mode]');
+		if (mode) setMode(mode.getAttribute('data-theme-mode'));
 
 		var option = from.closest('[data-combobox] ' + OPTION);
 		if (option) chooseOption(option.closest('[data-combobox]'), option);
