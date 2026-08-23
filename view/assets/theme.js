@@ -1,13 +1,14 @@
 // The theme: dark or light, and which accent colour.
 //
 // It is client state and nothing else. The server is never told, no cookie
-// carries it, and no request depends on it -- which is what RULE 13 allows
-// Alpine for, and what keeps a cached page correct for two people who chose
-// differently on the same device.
+// carries it, and no request depends on it -- which is what keeps a cached page
+// correct for two people who chose differently on the same device.
 //
-// The first block runs before the body is parsed, on purpose. Waiting for Alpine
-// would paint the page in the default theme and repaint it a frame later, and
-// that flash is visible on every navigation.
+// The first block runs before the body is parsed, on purpose. Waiting for a
+// deferred script would paint the page in the default theme and repaint it a
+// frame later, and that flash is visible on every navigation. It is also what
+// lets the stylesheet swap the theme glyphs with no script at all: the class is
+// already on <html> when the first paint happens.
 (() => {
 	const KEY = 'arandu.theme';
 	const ACCENTS = ['slate', 'blue', 'green', 'amber', 'rose', 'violet'];
@@ -31,26 +32,43 @@
 	document.documentElement.classList.toggle('dark', dark);
 	document.documentElement.dataset.theme = accent;
 
-	document.addEventListener('alpine:init', () => {
-		Alpine.store('theme', {
-			accents: ACCENTS,
-			dark,
-			accent,
+	// The same state, without a directive framework. It is read and written from
+	// ui.js, which is delegated and cannot run before the body is parsed; this
+	// object is what carries the choice across that gap.
+	//
+	// The current values are not stored here: they are on the html element,
+	// which is where they were applied above and where a stylesheet can see
+	// them. Reading them back means there is one copy.
+	window.arandu = window.arandu || {};
+	window.arandu.theme = {
+		accents: ACCENTS.slice(),
 
-			save() {
+		get dark() {
+			return document.documentElement.classList.contains('dark');
+		},
+
+		get accent() {
+			return document.documentElement.dataset.theme;
+		},
+
+		save() {
+			try {
 				localStorage.setItem(KEY, JSON.stringify({ dark: this.dark, accent: this.accent }));
-			},
-			toggleDark() {
-				this.dark = !this.dark;
-				document.documentElement.classList.toggle('dark', this.dark);
-				this.save();
-			},
-			setAccent(next) {
-				if (!ACCENTS.includes(next)) return;
-				this.accent = next;
-				document.documentElement.dataset.theme = next;
-				this.save();
-			},
-		});
-	});
+			} catch {
+				// A browser that refuses storage still gets the theme it asked
+				// for; it just does not get it back on the next page.
+			}
+		},
+
+		toggleDark() {
+			document.documentElement.classList.toggle('dark', !this.dark);
+			this.save();
+		},
+
+		setAccent(next) {
+			if (!ACCENTS.includes(next)) return;
+			document.documentElement.dataset.theme = next;
+			this.save();
+		},
+	};
 })();

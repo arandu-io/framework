@@ -49,40 +49,6 @@ OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ---
 
-## Alpine.js — `view/assets/alpine.min.js`
-
-| | |
-|---|---|
-| Version | 3.14.8 |
-| Author | Caleb Porzio and contributors |
-| Home | https://alpinejs.dev |
-| License | MIT |
-
-```
-MIT License
-
-Copyright © 2019-2021 Caleb Porzio and contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
----
 
 ## Tailwind CSS — `view/assets/app.css`
 
@@ -182,6 +148,13 @@ adding one is a decision somebody wrote down rather than an omission.
 - `view/assets/theme.js` — Arandu, MIT, covered by `LICENSE.md`. It reads the
   theme somebody chose out of localStorage and applies it before the first
   paint. It contains no third-party code.
+- `view/assets/ui.js` — Arandu, MIT, covered by `LICENSE.md`. It is the
+  delegated client behaviour: copy buttons, the theme toggle, the combobox, the
+  command palette and the range slider, all dispatched from `data-*` attributes
+  read as data. It contains no third-party code, and it is why no directive
+  framework is embedded here — compiling an attribute into a function needs
+  `unsafe-eval`, and the Content-Security-Policy this framework sets is
+  `script-src 'self'`.
 - `view/assets/app.src.css` — Arandu, MIT, covered by `LICENSE.md`. It is the
   Tailwind input this project wrote; it contains no third-party code, only
   `@import "tailwindcss"`, which is a build instruction.

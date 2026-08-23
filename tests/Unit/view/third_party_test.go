@@ -61,16 +61,15 @@ func TestEveryEmbeddedAssetIsCredited(t *testing.T) {
 func TestTheCreditedVersionsAreTheEmbeddedOnes(t *testing.T) {
 	notice := readNotice(t)
 
-	// Both HTMX and Alpine expose their version the same way in their minified
-	// build: a `version:"x.y.z"` property on the object they export.
+	// HTMX exposes its version in its minified build: a `version:"x.y.z"`
+	// property on the object it exports.
 	declared := regexp.MustCompile(`version:"([0-9][0-9a-zA-Z.\-]*)"`)
 	// Tailwind writes a banner instead, and the compiler preserves it.
 	banner := regexp.MustCompile(`tailwindcss v([0-9][0-9a-zA-Z.\-]*)`)
 
 	for file, pattern := range map[string]*regexp.Regexp{
-		"htmx.min.js":   declared,
-		"alpine.min.js": declared,
-		"app.css":       banner,
+		"htmx.min.js": declared,
+		"app.css":     banner,
 	} {
 		body, err := os.ReadFile(filepath.Join(assetsDir(t), file))
 		if err != nil {
@@ -97,7 +96,6 @@ func TestTheLicenseTextsAreComplete(t *testing.T) {
 	required := map[string]string{
 		"the MIT permission grant": "Permission is hereby granted, free of charge",
 		"the MIT notice clause":    "The above copyright notice and this permission notice shall be included",
-		"the Alpine copyright":     "Caleb Porzio",
 		"the Tailwind copyright":   "Tailwind Labs, Inc.",
 		"the 0BSD grant":           "Permission to use, copy, modify, and/or distribute this software",
 	}
