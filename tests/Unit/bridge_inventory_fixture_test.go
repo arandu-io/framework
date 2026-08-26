@@ -142,8 +142,12 @@ var allowedHesapeImports = bridgeSurface{
 		github.com/arandu-io/hesape/auth github.com/arandu-io/hesape/database
 		github.com/arandu-io/hesape/database/migrations
 	`),
+	// database/schema is here because a migration that writes DDL names the
+	// Blueprint. It is the standard path since ADR 0097, and it is a dependency
+	// on a package that compiles strings -- not a second route to the database.
 	"events": inventoryItems(`
-		github.com/arandu-io/hesape/database/migrations github.com/arandu-io/hesape/events
+		github.com/arandu-io/hesape/database/migrations github.com/arandu-io/hesape/database/schema
+		github.com/arandu-io/hesape/events
 	`),
 	"foundation": inventoryItems(`
 		github.com/arandu-io/hesape/cache github.com/arandu-io/hesape/config
@@ -174,6 +178,7 @@ var allowedHesapeImports = bridgeSurface{
 	`),
 	"modules/auth": inventoryItems(`
 		github.com/arandu-io/hesape/database/migrations
+		github.com/arandu-io/hesape/database/schema
 	`),
 	"observability": inventoryItems(`
 		github.com/arandu-io/hesape/log

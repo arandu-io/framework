@@ -330,7 +330,7 @@ func (r *UserRepo) List(ctx context.Context, g security.Grant, q data.Query) ([]
 // The placeholder list is built from the count and never from the values, so
 // this is a parameterised query however many ids arrive.
 func (r *UserRepo) NamesByID(ctx context.Context, g security.Grant, ids []string) (map[string]string, error) {
-	if err := g.Check(ActionUserView); err != nil {
+	if err := g.Check(ActionUserNamesPublic); err != nil {
 		return nil, err
 	}
 	if len(ids) == 0 {

@@ -261,11 +261,23 @@ func TestModuleRegistersItsRoutes(t *testing.T) {
 		t.Fatal("the module declares no schema")
 	}
 
-	first := statementsOf(t, declared[0])
-	if !strings.Contains(strings.Join(first, "\n"), "UNIQUE (tenant_id, email)") {
-		t.Error("the schema must keep emails unique per tenant, not globally")
+	// The assertion is the intent, not one engine's spelling of it. The schema
+	// is written with the Blueprint now, and the Blueprint emits a unique index
+	// where the hand-written DDL wrote a table constraint -- the same guarantee,
+	// in the words each engine uses.
+	//
+	// What has to stay true is that the tenant leads: an index on (email,
+	// tenant_id) would also be unique per tenant and would be useless for every
+	// lookup this module makes, and one on (email) alone would make an address
+	// unique across every customer in the system.
+	first := strings.ToLower(strings.Join(statementsOf(t, declared[0]), "\n"))
+	if !strings.Contains(first, "unique") {
+		t.Error("the schema declares no unique constraint at all")
 	}
-	if strings.Contains(strings.Join(first, "\n"), "text[]") {
+	if !strings.Contains(first, `"tenant_id", "email"`) {
+		t.Error("the schema must keep emails unique per tenant, not globally, and with the tenant leading")
+	}
+	if strings.Contains(first, "text[]") {
 		t.Error("roles must be jsonb: a Postgres array needs a driver specific type to scan")
 	}
 

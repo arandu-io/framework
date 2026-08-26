@@ -10,10 +10,11 @@ import (
 // Actions of this module. They are constants, not strings at the call site: a
 // typo in an action name would silently authorize nothing, or worse, everything.
 const (
-	ActionUserView   security.Action = "auth.user.view"
-	ActionUserCreate security.Action = "auth.user.create"
-	ActionUserUpdate security.Action = "auth.user.update"
-	ActionUserDelete security.Action = "auth.user.delete"
+	ActionUserView        security.Action = "auth.user.view"
+	ActionUserCreate      security.Action = "auth.user.create"
+	ActionUserUpdate      security.Action = "auth.user.update"
+	ActionUserDelete      security.Action = "auth.user.delete"
+	ActionUserNamesPublic security.Action = "auth.user.names.public"
 )
 
 // UserPolicy is the only authority over who does what with a User.
@@ -24,6 +25,20 @@ type UserPolicy struct{}
 
 // Can decides whether the subject may perform the action on the user.
 func (UserPolicy) Can(ctx context.Context, s security.Subject, a security.Action, u User) error {
+	// Public names are a tenant-scoped collection projection. There is no user
+	// row to authorize yet, so the collection scope carries the tenant instead.
+	// Keep this decision separate from the object rules below: making names
+	// public must not make a full User public.
+	if a == ActionUserNamesPublic {
+		if s.Tenant == "" || u.TenantID == "" {
+			return fmt.Errorf("public user names require a tenant")
+		}
+		if u.TenantID != s.Tenant {
+			return fmt.Errorf("resource belongs to another tenant")
+		}
+		return nil
+	}
+
 	// Tenant isolation comes first and applies to every action: without it,
 	// every check below would be pointless in a multi-tenant system.
 	if u.ID != "" && u.TenantID != s.Tenant {

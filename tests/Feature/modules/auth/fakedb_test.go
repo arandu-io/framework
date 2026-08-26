@@ -343,6 +343,24 @@ func (c *fakeConn) QueryContext(_ context.Context, query string, args []driver.N
 		}
 		return &outboxRows{rows: pending}, nil
 
+	case strings.Contains(query, "SELECT id, name, email FROM users"):
+		tenant, _ := args[0].Value.(string)
+		ids := make(map[string]struct{}, len(args)-1)
+		for _, arg := range args[1:] {
+			id, _ := arg.Value.(string)
+			ids[id] = struct{}{}
+		}
+		var names []auth.User
+		for _, u := range f.users {
+			if u.TenantID != tenant {
+				continue
+			}
+			if _, found := ids[u.ID]; found {
+				names = append(names, u)
+			}
+		}
+		return &nameRows{rows: names}, nil
+
 	case strings.Contains(query, "FROM users"):
 		if f.breakUsers {
 			return nil, errUsersUnreachable
@@ -424,6 +442,32 @@ func (r *userRows) Next(dest []driver.Value) error {
 		dest[6] = u.VerifiedAt
 	}
 	dest[7] = u.CreatedAt
+	return nil
+}
+
+// nameRows answers the narrow projection used to label public authors.
+type nameRows struct {
+	rows []auth.User
+	i    int
+}
+
+func (*nameRows) Columns() []string { return []string{"id", "name", "email"} }
+
+func (*nameRows) Close() error { return nil }
+
+func (r *nameRows) Next(dest []driver.Value) error {
+	if r.i >= len(r.rows) {
+		return io.EOF
+	}
+	u := r.rows[r.i]
+	r.i++
+	dest[0] = u.ID
+	if u.Name == "" {
+		dest[1] = nil
+	} else {
+		dest[1] = u.Name
+	}
+	dest[2] = u.Email
 	return nil
 }
 
