@@ -347,6 +347,65 @@ func TestRunNowUsesTheSamePath(t *testing.T) {
 	}
 }
 
+// TestConcurrentRunNowKeepsEachTenantOnItsOwnOperation pauses the first call
+// after it has selected a tenant, lets the second finish, and then resumes it.
+// The ordering is explicit so the semantic leak is reproducible even when the
+// race detector has nothing to report.
+func TestConcurrentRunNowKeepsEachTenantOnItsOwnOperation(t *testing.T) {
+	firstAtClock := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var clockMu sync.Mutex
+	clockCalls := 0
+	now := func() time.Time {
+		clockMu.Lock()
+		clockCalls++
+		call := clockCalls
+		clockMu.Unlock()
+		if call == 1 {
+			close(firstAtClock)
+			<-releaseFirst
+		}
+		return at("2026-08-03T13:00:00Z")
+	}
+
+	tenants := make(chan string, 2)
+	tk := task("billing.close", func(_ context.Context, g security.Grant) error {
+		tenants <- g.Subject().Tenant
+		return nil
+	})
+	tk.Scope = kernel.PerTenant
+
+	s, err := scheduler.New([]kernel.Task{tk}, scheduler.Options{Now: now})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- s.RunNow(context.Background(), "billing.close", "tenant-first")
+	}()
+	<-firstAtClock
+
+	secondErr := s.RunNow(context.Background(), "billing.close", "tenant-second")
+	secondTenant := <-tenants
+	close(releaseFirst)
+	firstErr := <-firstDone
+	firstTenant := <-tenants
+
+	if secondErr != nil {
+		t.Errorf("RunNow for second tenant: %v", secondErr)
+	}
+	if firstErr != nil {
+		t.Errorf("RunNow for first tenant: %v", firstErr)
+	}
+	if secondTenant != "tenant-second" {
+		t.Errorf("second operation ran for %q, want tenant-second", secondTenant)
+	}
+	if firstTenant != "tenant-first" {
+		t.Errorf("first operation ran for %q, want tenant-first", firstTenant)
+	}
+}
+
 // TestRunNowReportsWhatTheTaskFailedWith: the error has to come back out of
 // hesape's Event.Run, or `aru schedule:run` reports success on a task that
 // failed.

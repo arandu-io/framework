@@ -236,10 +236,20 @@ func (s *Scheduler) RunNow(ctx context.Context, id, tenant string) error {
 		if e.task.Scope == kernel.PerTenant && tenant == "" {
 			return fmt.Errorf("%s runs per tenant: say which one with --tenant", id)
 		}
+
+		// The scheduled event is shared by every tick. A manual run gets its own
+		// event because the tenant and the callback result are operation state;
+		// putting either on the shared event lets concurrent runs overwrite one
+		// another even when their execution is otherwise serialized.
+		event := scheduling.NewCallbackEvent(nil, s.work(e), nil)
+		event.Name(e.task.ID)
+		event.Cron(e.task.Spec)
+		event.Action(e.task.Action)
 		if e.task.Scope == kernel.PerTenant {
-			e.event.Tenant(tenant)
+			event.PerTenant()
+			event.Tenant(tenant)
 		}
-		return e.event.Run(withWindow(ctx, s.opts.Now()))
+		return event.Run(withWindow(ctx, s.opts.Now()))
 	}
 	return fmt.Errorf("no task with id %s. `aru schedule:list` shows the registered ones", id)
 }
