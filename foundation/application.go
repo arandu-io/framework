@@ -84,6 +84,10 @@ type Application struct {
 	flash *security.Flash
 
 	booted bool
+	// reloadTag comes from this application's view module. Keeping it on the
+	// application prevents another application in the same process from changing
+	// the markup injected into responses already served by this one.
+	reloadTag []byte
 	// recorder is the ring buffer behind the console. It exists in development
 	// and under a tracing secret, and is nil otherwise -- which is what makes
 	// the console cost nothing in production rather than cost little.
@@ -317,7 +321,7 @@ func (a *Application) mountInternalRoutes() {
 		internal.Get(reloadPath, a.handleReload).Name("arandu.reload")
 		for _, m := range a.modules {
 			if t, ok := m.(ReloadTagger); ok {
-				reloadTag = []byte(t.ReloadTag(reloadPath))
+				a.reloadTag = []byte(t.ReloadTag(reloadPath))
 				break
 			}
 		}
@@ -392,7 +396,7 @@ func (a *Application) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (a *Application) Handler() http.Handler {
 	// Live reload is outermost after the logger, so it sees the finished
 	// document rather than a handler's intention to write one.
-	outer := append([]fhttp.Middleware{observability.RootLogger(a.log)}, devReload(a.isDev())...)
+	outer := append([]fhttp.Middleware{observability.RootLogger(a.log)}, devReload(a.isDev(), a.reloadTag)...)
 
 	// The flash is consumed above the application's own pipeline and below the
 	// logger, and the Application installs it rather than bootstrap/app.go for
