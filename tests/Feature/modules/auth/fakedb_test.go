@@ -50,6 +50,14 @@ type fakeDB struct {
 	stmts []string
 	args  [][]driver.NamedValue
 
+	// rowsAffectedErr makes successful statements unable to report their row
+	// count. A statement may have reached the database and still leave its
+	// caller unable to decide whether it changed the intended row.
+	rowsAffectedErr error
+	// rowsAffected overrides the count for tests about a statement that matched
+	// no row. Nil keeps each statement's natural count.
+	rowsAffected *int64
+
 	// users are the rows a SELECT on the users table can find. Empty means every
 	// lookup answers "no rows", which is what a test about an insert wants.
 	users []auth.User
@@ -141,6 +149,28 @@ func (f *fakeDB) usersTableFails(broken bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.breakUsers = broken
+}
+
+// rowsAffectedFails makes every result refuse to report its row count.
+func (f *fakeDB) rowsAffectedFails(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rowsAffectedErr = err
+}
+
+// reportsRowsAffected overrides the count returned by every statement.
+func (f *fakeDB) reportsRowsAffected(rows int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rowsAffected = &rows
+}
+
+// result builds a statement result while the caller holds f.mu.
+func (f *fakeDB) result(rows int64) fakeResult {
+	if f.rowsAffected != nil {
+		rows = *f.rowsAffected
+	}
+	return fakeResult{rows: rows, err: f.rowsAffectedErr}
 }
 
 // errUnreachable is what a table that is not there looks like from here.
@@ -253,10 +283,10 @@ func (c *fakeConn) ExecContext(_ context.Context, query string, args []driver.Na
 		for i := range f.users {
 			if f.users[i].ID == id && f.users[i].TenantID == tenant {
 				f.users[i].Password = hash
-				return affected, nil
+				return f.result(1), nil
 			}
 		}
-		return fakeResult{}, nil
+		return f.result(0), nil
 
 	case strings.Contains(query, "UPDATE users SET verified_at"):
 		// The conditional flip, counted the way a database counts it: one row
@@ -268,12 +298,12 @@ func (c *fakeConn) ExecContext(_ context.Context, query string, args []driver.Na
 		for i := range f.users {
 			if f.users[i].ID == id && f.users[i].VerifiedAt.IsZero() {
 				f.users[i].VerifiedAt = at
-				return affected, nil
+				return f.result(1), nil
 			}
 		}
-		return fakeResult{}, nil
+		return f.result(0), nil
 	}
-	return affected, nil
+	return f.result(1), nil
 }
 
 // storedFrom reads the outbox insert back into the row it wrote. The order is
@@ -338,13 +368,13 @@ func (fakeTx) Rollback() error { return nil }
 // fakeResult carries the row count, because two callers decide on it: Update
 // reads zero as "no such user", and Confirm reads zero as "somebody else got
 // here first".
-type fakeResult struct{ rows int64 }
-
-// affected is the answer every statement gets unless it says otherwise.
-var affected = fakeResult{rows: 1}
+type fakeResult struct {
+	rows int64
+	err  error
+}
 
 func (fakeResult) LastInsertId() (int64, error)   { return 0, nil }
-func (r fakeResult) RowsAffected() (int64, error) { return r.rows, nil }
+func (r fakeResult) RowsAffected() (int64, error) { return r.rows, r.err }
 
 // emptyRows answers every read with "no rows", which is what a lookup before an
 // insert should find.

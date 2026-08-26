@@ -138,9 +138,14 @@ func (r *UserRepo) Update(ctx context.Context, g security.Grant, u User) (User, 
 		}
 		return User{}, err
 	}
-	if n, err := res.RowsAffected(); err == nil && n == 0 {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return User{}, err
+	}
+	if n == 0 {
 		return User{}, ErrUserNotFound
 	}
+	u.TenantID = data.Tenant(g)
 	return u, nil
 }
 
@@ -224,7 +229,11 @@ func (r *UserRepo) SetPassword(ctx context.Context, g security.Grant, id, hash s
 	if err != nil {
 		return err
 	}
-	if n, err := res.RowsAffected(); err == nil && n == 0 {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
 		return ErrUserNotFound
 	}
 	return nil
@@ -240,7 +249,11 @@ func (r *UserRepo) Delete(ctx context.Context, g security.Grant, id string) erro
 	if err != nil {
 		return err
 	}
-	if n, err := res.RowsAffected(); err == nil && n == 0 {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
 		return ErrUserNotFound
 	}
 	return nil
