@@ -6,7 +6,7 @@ license: MIT
 
 # The module contract and the boot sequence
 
-`foundation` is one of the four packages in this module that hold code rather
+`foundation` is one of the five packages in this module that hold code rather
 than forward to `github.com/arandu-io/hesape`, and it is the one that will still
 be here after v1.0.0 removes the bridges. What it owns is the `Application`:
 the object that composes the process exactly once, at start, never per request.
@@ -94,23 +94,25 @@ can leave out is a line an application leaves out.
 
 ## The pipeline
 
-`Handler()` (`:370`) composes in this order, outermost first: the root logger,
+`Handler()` (`:392`) composes in this order, outermost first: the root logger,
 the development reload, the flash, then the application's own middleware, then
 the router. The logger has to be outermost or every `Log(ctx)` in a request
 falls back to `slog.Default()` and ignores the configured handler and level.
 
-Everything below the logger is wrapped in `exceptInternal` (`:443`), which takes
+Everything below the logger is wrapped in `exceptInternal` (`:456`), which takes
 the application's middleware off anything under `/_arandu/`. That is not
 tidiness: the development reload asks once a second which process is answering,
 and running that through an application's own rate limit answered "too many
 requests" on a page nobody had hammered. `TestTheFrameworksOwnRoutesDoNotSpendTheApplicationsBudget`
 (`tests/Feature/foundation/application_test.go:472`) is that bug, kept.
 
-The known open edge is written on `internalPrefix` (`:405-430`): the namespace
-has more than one owner, `exceptInternal` reads the path rather than the
-registration, and a module that registers `/_arandu/anything` gets a route with
-no Recover, no Observe, no security headers, no rate limit and no CSRF check.
-Read that comment before adding anything under the prefix.
+`Boot` refuses every route an application or third-party module registers under
+`/_arandu/`. The view module is the second legitimate owner beside the
+Application, and carries a marker from `internal/routes`; Go refuses that import
+outside this module. The check also verifies the direct dynamic type's package
+path, so embedding `view.Module` in an external type and replacing `Routes`
+does not inherit ownership. The two public-seam proofs are in
+`tests/Feature/foundation/reserved_routes_test.go`.
 
 ## The server limits are named, not defaulted
 

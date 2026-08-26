@@ -25,7 +25,7 @@ This is a library, and every change compiles into every project that imports it.
 Three of the four skills exist because the three ways to get that wrong here are
 specific and none of them is obvious from the file you are looking at.
 
-The first is writing the fix in the wrong repository. Fifteen of the nineteen
+The first is writing the fix in the wrong repository. Fifteen of the twenty
 packages here hold no implementation — they are old names pointing at
 `github.com/arandu-io/hesape`, with a death date in their doc comment — so a
 plausible-looking edit to `security/session.go` or `view/render.go` is very

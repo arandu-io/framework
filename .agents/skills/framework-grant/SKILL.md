@@ -136,7 +136,7 @@ build that does not complete.
 
 ## Where the change goes
 
-`security` and `data` are bridge packages: fifteen of this module's nineteen
+`security` and `data` are bridge packages: fifteen of this module's twenty
 hold no implementation, and these two are among them. `security` answers to five
 hesape packages and `data` to three, each named in its `doc.go`. A change to
 what a Grant *does* is a change in `github.com/arandu-io/hesape`; what belongs

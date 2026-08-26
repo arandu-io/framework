@@ -195,12 +195,10 @@ func (p *pipelineProbe) middleware() fhttp.Middleware {
 //     rather than by the Application;
 //   - a path that only looks internal is seen like any other.
 //
-// The third is the finding and the fourth is what makes it legible. The
-// exemption reads the path, not the registration, so what escapes the pipeline
-// is whatever is spelled under the prefix -- and the prefix is a string constant
-// in one package while the asset path is a string constant in another. Nothing
-// ties the two together, so the set that escapes is held apart by two literals
-// agreeing, and this is where they are checked against each other.
+// The third holds the view module's intentional exemption and the fourth makes
+// the prefix boundary legible. Boot refuses application and third-party module
+// routes under the prefix; the asset module carries a framework-private marker,
+// so this test checks the two legitimate owners still agree on the namespace.
 func TestTheInternalPrefixDecidesWhatTheApplicationsMiddlewareSees(t *testing.T) {
 	probe := &pipelineProbe{}
 	a := foundation.New(inventoryConfig(config.EnvProd, "")).

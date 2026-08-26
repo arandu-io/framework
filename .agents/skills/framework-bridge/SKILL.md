@@ -1,6 +1,6 @@
 ---
 name: framework-bridge
-description: Fifteen of this module's nineteen packages hold no implementation — they are old names pointing at github.com/arandu-io/hesape and they are removed in v1.0.0. Use before changing anything under security, data, http, view, jobs, events, mail, observability, scheduler, storage, validation, arandutest, config or kernel; when a fix looks like it belongs to one of them; when the request is to "fix this function", "add a method" or "change this behaviour" and the file turns out to be one line long; when adding, renaming or removing an exported symbol anywhere in this module; and when the request mentions "alias", "wrapper", "deprecated", "compatibility", "UPGRADE.md" or "apidiff". Covers how to tell an alias from an envelope, where the change actually goes, the test each bridge carries, and the CI gate that fails a quiet break.
+description: Fifteen of this module's twenty packages hold no implementation — they are old names pointing at github.com/arandu-io/hesape and they are removed in v1.0.0. Use before changing anything under security, data, http, view, jobs, events, mail, observability, scheduler, storage, validation, arandutest, config or kernel; when a fix looks like it belongs to one of them; when the request is to "fix this function", "add a method" or "change this behaviour" and the file turns out to be one line long; when adding, renaming or removing an exported symbol anywhere in this module; and when the request mentions "alias", "wrapper", "deprecated", "compatibility", "UPGRADE.md" or "apidiff". Covers how to tell an alias from an envelope, where the change actually goes, the test each bridge carries, and the CI gate that fails a quiet break.
 license: MIT
 ---
 
@@ -12,12 +12,12 @@ at it, with a death date on every one.
 
 ```sh
 export GOWORK=off
-go list ./... | grep -vc '/tests'                                 # 19
+go list ./... | grep -vc '/tests'                                 # 20
 grep -rl "This package is a bridge" --include='doc.go' . | wc -l  # 15
 ```
 
-The four that hold code are `foundation`, `foundation/bootstrap`,
-`http/middleware` and `modules/auth`. Everything else on that list — `security`,
+The five that hold code are `foundation`, `foundation/bootstrap`,
+`http/middleware`, `internal/routes` and `modules/auth`. Everything else on that list — `security`,
 `data`, `http`, `view`, `jobs`, `events`, `mail`, `observability`,
 `observability/errorpage`, `scheduler`, `storage`, `validation`, `arandutest`,
 `config`, `kernel` — is a bridge.
