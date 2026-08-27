@@ -21,15 +21,30 @@ import (
 )
 
 // stub is a module with every optional interface, so one type covers boot,
-// health, migrations and shutdown.
+// health, readiness, migrations and shutdown.
 type stub struct {
 	name       string
 	bootErr    error
 	healthErr  error
+	readyErr   error
 	booted     bool
 	closed     bool
 	closeOrder *[]string
 }
+
+// readyOnly implements Ready and not Health, which is the case the defaults have
+// to answer rather than describe: it must be able to withhold traffic without
+// being able to touch liveness.
+type readyOnly struct {
+	name     string
+	readyErr error
+}
+
+func (m *readyOnly) Name() string { return m.name }
+
+func (m *readyOnly) Routes(*fhttp.Router) {}
+
+func (m *readyOnly) Ready(context.Context) error { return m.readyErr }
 
 type reloadTagModule struct {
 	name string
@@ -62,6 +77,8 @@ func (s *stub) Boot(ctx context.Context) error {
 }
 
 func (s *stub) Health(ctx context.Context) error { return s.healthErr }
+
+func (s *stub) Ready(ctx context.Context) error { return s.readyErr }
 
 func (s *stub) Close(ctx context.Context) error {
 	s.closed = true
@@ -196,6 +213,120 @@ func TestHealthIsOKWhenEveryModuleIsHealthy(t *testing.T) {
 
 	if rec.Code != http.StatusOK || rec.Body.String() != "ok" {
 		t.Fatalf("status = %d, body = %q", rec.Code, rec.Body.String())
+	}
+}
+
+// TestReadinessFailsWhileLivenessPassesOnTheSameApplication is the assertion the
+// split exists for, and it is deliberately not a check that both routes are
+// mounted.
+//
+// One endpoint used to answer both questions, so a module reporting a condition
+// that stops traffic -- an outbox minutes behind, a shared cache that cannot be
+// reached -- returned 503 to whichever probe was pointed at it. An orchestrator
+// wired to it for liveness kills the process, and a restart drains no outbox and
+// brings no cache back: it throws away the warm state and starts the same
+// backlog again on a colder instance. Two routes that both answered 503 would
+// reproduce that exactly while looking fixed.
+//
+// So what is measured is the disagreement: one application, one moment, and the
+// two endpoints giving opposite answers. The three cases are the three shapes a
+// module can take -- Ready without Health, Health without a readiness opinion,
+// and both together with only the readiness half failing. The last one is the
+// footgun check: implementing Ready must not quietly retire the Health check
+// beside it, and the reverse case is the row above it.
+func TestReadinessFailsWhileLivenessPassesOnTheSameApplication(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		module foundation.Module
+		wants  string
+	}{
+		{
+			name:   "a module that implements Ready alone and is not ready",
+			module: &readyOnly{name: "relay", readyErr: errors.New("outbox is five minutes behind")},
+			wants:  "relay",
+		},
+		{
+			name:   "a module that implements Health alone and is unhealthy",
+			module: &stub{name: "cache", healthErr: errors.New("shared cache is unreachable")},
+			wants:  "cache",
+		},
+		{
+			name:   "a module that is healthy and still not ready",
+			module: &stub{name: "warming", readyErr: errors.New("cache is still warming")},
+			wants:  "warming",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k := foundation.New(testConfig(config.EnvProd)).Register(tc.module)
+			if err := k.Boot(context.Background()); err != nil {
+				t.Fatalf("Boot: %v", err)
+			}
+			handler := k.Handler()
+
+			ready := httptest.NewRecorder()
+			handler.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/_arandu/health", nil))
+			if ready.Code != http.StatusServiceUnavailable {
+				t.Errorf("readiness = %d, want 503: traffic keeps arriving at an instance that cannot serve it", ready.Code)
+			}
+			if !strings.Contains(ready.Body.String(), tc.wants) {
+				t.Errorf("readiness body = %q, want it to name %q", ready.Body.String(), tc.wants)
+			}
+
+			live := httptest.NewRecorder()
+			handler.ServeHTTP(live, httptest.NewRequest(http.MethodGet, "/_arandu/live", nil))
+			if live.Code != http.StatusOK {
+				t.Fatalf("liveness = %d, want 200: the process is killed over a condition a restart does not fix", live.Code)
+			}
+		})
+	}
+}
+
+// TestBothChecksOfOneModuleAreConsulted holds the rule that a module implementing
+// both interfaces passes both.
+//
+// Ready adds a condition to Health rather than replacing it. Were Ready to
+// override, a module that gained a warmup check would silently stop reporting the
+// database check it already had, and the author who added the method is the last
+// person who would notice.
+func TestBothChecksOfOneModuleAreConsulted(t *testing.T) {
+	both := &stub{
+		name:      "billing",
+		healthErr: errors.New("database is away"),
+		readyErr:  nil,
+	}
+	k := foundation.New(testConfig(config.EnvProd)).Register(both)
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	k.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/_arandu/health", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readiness = %d, want 503: a passing Ready hid a failing Health", rec.Code)
+	}
+}
+
+// TestLivenessConsultsNoModule is the other half of the design written down as an
+// assertion: the liveness answer does not depend on anything a module reports.
+//
+// Every module here is failing every check it has, and the process still declines
+// to ask to be restarted -- because none of these conditions is repaired by a
+// restart. If a future change wires a module into the liveness handler, this is
+// what stops it.
+func TestLivenessConsultsNoModule(t *testing.T) {
+	k := foundation.New(testConfig(config.EnvProd)).Register(
+		&stub{name: "billing", healthErr: errors.New("database is away")},
+		&stub{name: "search", readyErr: errors.New("index is rebuilding")},
+		&readyOnly{name: "relay", readyErr: errors.New("outbox is five minutes behind")},
+	)
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	k.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/_arandu/live", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != "ok" {
+		t.Fatalf("liveness = %d, body = %q: a module reached the liveness answer", rec.Code, rec.Body.String())
 	}
 }
 
@@ -529,6 +660,7 @@ func TestTheFrameworksOwnRoutesDoNotSpendTheApplicationsBudget(t *testing.T) {
 
 	for _, path := range []string{
 		"/_arandu/health",
+		"/_arandu/live",
 		"/_arandu/reload",
 		observability.ConsolePath,
 	} {
