@@ -46,7 +46,11 @@ type (
 
 // Resource registers the REST routes a controller implements.
 //
-//	Route.Resource("invoices", InvoiceController{})
+//	r.Resource("invoices", InvoiceController{})
+//
+// The receiver is the router. This line read Route.Resource until it was found
+// not to compile: Route is an alias for the route metadata type, which has no
+// Resource method. ExampleRouter_Resource compiles the corrected spelling.
 //
 // The seven, in the conventional order and with the conventional names:
 //

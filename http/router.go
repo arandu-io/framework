@@ -131,7 +131,12 @@ func (r *Router) Delete(pattern string, h http.HandlerFunc, mws ...Middleware) *
 
 // Action registers one controller action, for a route outside a resource.
 //
-//	Route.Action("GET", "/dashboard", dashboard.Index).Name("dashboard")
+//	r.Action("GET", "/dashboard", dashboard.Index).Name("dashboard")
+//
+// The receiver is the router. This line read Route.Action until it was found
+// not to compile: Route is an alias for the route metadata type, which has no
+// Action method, so the example named a method expression on the wrong type.
+// ExampleRouter_Action compiles the corrected spelling.
 func (r *Router) Action(method, pattern string, h func(*Context) error, mws ...Middleware) *Route {
 	return r.inner.Match([]string{method}, pattern, r.adapt(h), mws...)
 }
