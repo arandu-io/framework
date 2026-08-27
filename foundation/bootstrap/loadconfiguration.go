@@ -307,17 +307,37 @@ func loadFilesystem() filesystem.Config {
 	}
 }
 
-// loadDatabase answers the database settings.
+// loadDatabase answers the database settings: where the database is, and how
+// many connections to hold.
 //
-// One variable, not six: the connection is a URL, because six variables have
+// The connection is one variable, not six, because six variables have
 // thirty-two states of which one is right, and a URL either parses or says
 // where it stopped.
+//
+// The pool is three more, and they are deliberately not part of that URL. How
+// many connections to hold is a property of the process rather than of the
+// database: two deployments of one application behind different traffic want
+// different numbers against the same server, and putting them in the connection
+// string would mean editing the address to change the size.
+//
+// Unset leaves all three at zero, and zero is the value that works. The
+// database package reads a zero on any of them as the pool it keeps by default,
+// never as database/sql's zero, which is an unbounded pool. So no number is
+// written here: a default in this function as well would be a second place to
+// change one, and the two would disagree the day only one was edited.
 func loadDatabase() (database.Config, error) {
 	raw := config.String("DATABASE_URL", database.DefaultURL)
 	cfg, err := database.ParseURL(raw)
 	if err != nil {
 		return database.Config{}, fmt.Errorf("DATABASE_URL: %w", err)
 	}
+
+	cfg.MaxOpenConns = config.Int("DB_MAX_OPEN_CONNS", 0)
+	cfg.MaxIdleConns = config.Int("DB_MAX_IDLE_CONNS", 0)
+	// Seconds, like every duration read in this file except SESSION_LIFETIME:
+	// "3600" survives a deployment template and "1h" does not.
+	cfg.ConnMaxLifetime = config.Seconds("DB_CONN_MAX_LIFETIME", 0)
+
 	return cfg, nil
 }
 

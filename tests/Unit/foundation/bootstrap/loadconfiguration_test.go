@@ -250,7 +250,80 @@ func TestTheEditorIsReadOnceAndHandedOn(t *testing.T) {
 	}
 }
 
+// The three pool settings reach the Config.
+//
+// Until they were read they had nowhere to arrive: DATABASE_URL says where the
+// database is and nothing about how many connections to hold, so an application
+// that set these three got the defaults and no error saying the variables were
+// ignored.
+func TestThePoolSettingsReachTheDatabaseConfig(t *testing.T) {
+	env(t, "APP_KEY", testKey,
+		"DB_MAX_OPEN_CONNS", "50",
+		"DB_MAX_IDLE_CONNS", "12",
+		"DB_CONN_MAX_LIFETIME", "900")
+
+	cfg, err := bootstrap.LoadConfiguration()
+	if err != nil {
+		t.Fatalf("LoadConfiguration: %v", err)
+	}
+
+	if got := cfg.Database.MaxOpenConns; got != 50 {
+		t.Errorf("DB_MAX_OPEN_CONNS=50 arrived as %d", got)
+	}
+	if got := cfg.Database.MaxIdleConns; got != 12 {
+		t.Errorf("DB_MAX_IDLE_CONNS=12 arrived as %d", got)
+	}
+	if got, want := cfg.Database.ConnMaxLifetime, 15*time.Minute; got != want {
+		t.Errorf("DB_CONN_MAX_LIFETIME=900 arrived as %v, want %v -- the unit is seconds", got, want)
+	}
+}
+
+// Unset leaves all three at zero, and the zero is the assertion.
+//
+// The database package reads a zero on any of these as the pool it keeps by
+// default; database/sql's meaning for the same zero is an unbounded pool, which
+// is what the bound exists to prevent. A number written here as well would be a
+// second place to change one, so this asserts what this function produces --
+// zero -- and not the 25, 5 and hour that zero turns into. Asserting those would
+// be pinning another package's behaviour from the outside, and it would keep
+// passing on the day this function started writing them itself.
+func TestThePoolSettingsStayAtZeroWhenUnset(t *testing.T) {
+	env(t, "APP_KEY", testKey)
+	unset(t, "DB_MAX_OPEN_CONNS", "DB_MAX_IDLE_CONNS", "DB_CONN_MAX_LIFETIME")
+
+	cfg, err := bootstrap.LoadConfiguration()
+	if err != nil {
+		t.Fatalf("LoadConfiguration: %v", err)
+	}
+
+	if got := cfg.Database.MaxOpenConns; got != 0 {
+		t.Errorf("MaxOpenConns is %d with nothing set, want 0 -- zero is what the database package reads as its own default", got)
+	}
+	if got := cfg.Database.MaxIdleConns; got != 0 {
+		t.Errorf("MaxIdleConns is %d with nothing set, want 0", got)
+	}
+	if got := cfg.Database.ConnMaxLifetime; got != 0 {
+		t.Errorf("ConnMaxLifetime is %v with nothing set, want 0", got)
+	}
+}
+
 func writeFile(path, body string) error { return os.WriteFile(path, []byte(body), 0o600) }
+
+// unset removes variables for the duration of one test, and puts back whatever
+// the process had.
+//
+// t.Setenv registers the restore; unsetting afterwards is what makes the
+// variable absent rather than empty, which is the state a deployment that never
+// wrote it is actually in.
+func unset(t *testing.T, keys ...string) {
+	t.Helper()
+	for _, key := range keys {
+		t.Setenv(key, "")
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("unsetting %s: %v", key, err)
+		}
+	}
+}
 
 func chdir(t *testing.T, dir string) {
 	t.Helper()
