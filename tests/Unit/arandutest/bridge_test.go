@@ -119,6 +119,21 @@ var _ = auth.Subject(security.Subject{})
 // this package would otherwise check it.
 var _ events.Publisher = (*arandutest.Collected)(nil)
 
+// And it has to BE the hesape recorder, not a second one shaped like it.
+//
+// Two identical structs in two packages satisfy every assertion above and are
+// still two things to keep in step. A pointer only assigns across an alias, so
+// re-declaring the struct here stops the build instead of passing quietly.
+var _ *hesapetest.Collected = (*arandutest.Collected)(nil)
+
+// DrainOutbox forwards, and this is the condition that lets it.
+//
+// It held an implementation for as long as the outbox and the publisher were
+// types of this module's own. Written as the signature hesape declares, this
+// line stops compiling the day either alias is undone -- which is the day the
+// forward would silently be passing something else.
+var _ func(*testing.T, context.Context, *events.Outbox, events.Publisher) = hesapetest.DrainOutbox
+
 // The hesape client answers the assertions this envelope forwards to. If any of
 // them is renamed again, this fails at compile time in the package that has to
 // change, rather than at the thirteen call sites that must not.

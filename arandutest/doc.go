@@ -13,39 +13,38 @@
 // net/http/httptest. What is left here is the old names pointing at them.
 //
 // The death date above is what keeps this from being a second way to import one
-// helper. Nothing here holds an implementation of the browser or of the
-// assertions: the cookie jar, the CSRF token read off the last page, and every
-// comparison a Response makes run in hesape.
+// helper. Nothing here holds an implementation: the cookie jar, the CSRF token
+// read off the last page, every comparison a Response makes and the pass the
+// outbox drain runs are all hesape's. Where the name and the signature survived
+// the move it is a Go alias, and where the design diverged it is an envelope
+// that translates and nothing more.
 //
 // Two hesape packages answer for it, and which one depends on the symbol:
 //
 //	hesape/arandutest  Client, Response, DrainOutbox, Collected
 //	hesape/auth        the subject a test acts as
 //
-// # What diverged
+// One name is a plain alias. The rest are envelopes, and the divergence each
+// one absorbs is worth naming:
 //
-// Nothing here is a plain alias, and the reasons are worth naming:
-//
-//	Response   every assertion was renamed -- Status becomes AssertStatus, OK
-//	           becomes AssertOk, See becomes AssertSee, DontSee becomes
-//	           AssertDontSee, RedirectsTo becomes AssertRedirect, Body becomes
-//	           GetContent. The envelope keeps the old names and forwards
-//	Client     Get and Post answer the Response above, so the client that
-//	           returns them is an envelope as well
-//	ActingAs   hesape deleted the package-level form and put the subject under
-//	           auth.WithSubject, which is the key a policy actually reads. The
-//	           old signature is kept and now writes that key
-//	Subject    the reader for the above; it is auth.SubjectFrom in hesape
-//
-// # What is still framework-side, and why
-//
-// DrainOutbox and Collected are declared here rather than forwarded, because
-// their parameters are framework/events types and hesape/events.Outbox is not
-// the same type as framework/events.Outbox: the hesape outbox takes a DB
-// interface that reports its own transaction, the framework one takes
-// *data.DB. Until framework/events is deleted outright, a call through would
-// have nothing to pass. Collected becomes a one-line alias the day
-// framework/events.Stored is one.
+//	Collected    the alias. It has to satisfy framework/events.Publisher over
+//	             framework/events.Stored, and both of those are hesape's own
+//	             types under this module's names
+//	Response     every assertion was renamed -- Status becomes AssertStatus, OK
+//	             becomes AssertOk, See becomes AssertSee, DontSee becomes
+//	             AssertDontSee, RedirectsTo becomes AssertRedirect, Body becomes
+//	             GetContent. The envelope keeps the old names and forwards
+//	Client       Get and Post answer the Response above, so the client that
+//	             returns them is an envelope as well
+//	ActingAs     hesape deleted the package-level form and put the subject under
+//	             auth.WithSubject, which is the key a policy actually reads. The
+//	             old signature is kept and now writes that key
+//	Subject      the reader for the above; it is auth.SubjectFrom in hesape
+//	DrainOutbox  a forward and not an alias, so the parameters keep the names
+//	             this module spells them with. It carried an implementation for
+//	             as long as framework/events.Outbox was a type of its own; that
+//	             type is an alias now, so the two signatures name the same types
+//	             and there is nothing left to translate
 //
 // # What hesape has and this bridge does not re-export
 //

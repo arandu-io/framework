@@ -24,6 +24,8 @@ package bootstrap
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -307,18 +309,149 @@ func loadFilesystem() filesystem.Config {
 	}
 }
 
-// loadDatabase answers the database settings.
+// loadDatabase answers the database settings: where the database is, and how
+// many connections to hold.
 //
-// One variable, not six: the connection is a URL, because six variables have
+// The connection is one variable, not six, because six variables have
 // thirty-two states of which one is right, and a URL either parses or says
 // where it stopped.
+//
+// The pool is three more, and they are deliberately not part of that URL. How
+// many connections to hold is a property of the process rather than of the
+// database: two deployments of one application behind different traffic want
+// different numbers against the same server, and putting them in the connection
+// string would mean editing the address to change the size.
+//
+// Unset leaves all three at zero, and zero is the value that works. The
+// database package reads a zero on any of them as the pool it keeps by default,
+// never as database/sql's zero, which is an unbounded pool. So no number is
+// written here: a default in this function as well would be a second place to
+// change one, and the two would disagree the day only one was edited.
+//
+// A value that is there and cannot be used stops the boot instead. This is the
+// only reader of the three variables in the collection, and a reader that
+// swallows a typo hands the operator the default pool while the .env says
+// something else -- with nothing, anywhere, saying the number was dropped.
 func loadDatabase() (database.Config, error) {
 	raw := config.String("DATABASE_URL", database.DefaultURL)
 	cfg, err := database.ParseURL(raw)
 	if err != nil {
 		return database.Config{}, fmt.Errorf("DATABASE_URL: %w", err)
 	}
+
+	if cfg.MaxOpenConns, err = poolSize("DB_MAX_OPEN_CONNS"); err != nil {
+		return database.Config{}, err
+	}
+	if cfg.MaxIdleConns, err = poolSize("DB_MAX_IDLE_CONNS"); err != nil {
+		return database.Config{}, err
+	}
+	if cfg.ConnMaxLifetime, err = poolLifetime("DB_CONN_MAX_LIFETIME"); err != nil {
+		return database.Config{}, err
+	}
+
 	return cfg, nil
+}
+
+// setting returns a variable's value and whether it was written at all.
+//
+// Unset and empty are one answer, because they are one intention: a deployment
+// template that rendered to nothing is not somebody asking for a number. Both
+// readers this function replaced already agreed on that, and so does
+// config.String.
+//
+// The value is trimmed, so a number that arrived with a newline from a YAML
+// block is the number rather than a boot failure.
+func setting(key string) (string, bool) {
+	value := strings.TrimSpace(os.Getenv(key))
+	return value, value != ""
+}
+
+// poolSize reads one of the two connection counts.
+//
+// It is not config.Int, and the difference is the point. config.Int falls back
+// on a value it cannot parse and says nothing, which is right for a setting
+// whose fallback is a working answer -- and wrong here, because the fallback is
+// zero and zero is what the database package reads as "use your own default".
+// DB_MAX_OPEN_CONNS=fifty would hand back the default pool with the .env saying
+// otherwise and no line anywhere reporting it.
+// The numbers the messages below show.
+//
+// They are deliberately NOT the defaults the database package applies. An error
+// that prints the default invites reading it as one, and it would be this
+// function restating a number it does not own -- which is the drift the rest of
+// this file is written to avoid. They are examples of the shape, and every
+// message says that leaving the variable out is how the default is asked for.
+const (
+	exampleConns    = "50"
+	exampleLifetime = "900"
+)
+
+func poolSize(key string) (int, error) {
+	value, ok := setting(key)
+	if !ok {
+		return 0, nil
+	}
+
+	size, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf(`%s is %q, and it is read as a whole number of connections.
+
+    %s=%s
+
+Leave it unset to keep the default.`, key, value, key, exampleConns)
+	}
+	if size <= 0 {
+		return 0, refuseNonPositive(key, value, exampleConns)
+	}
+	return size, nil
+}
+
+// poolLifetime reads how long a connection may live.
+func poolLifetime(key string) (time.Duration, error) {
+	value, ok := setting(key)
+	if !ok {
+		return 0, nil
+	}
+
+	seconds, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf(`%s is %q, and it is read as a count of seconds.
+
+    %s=%s
+
+Seconds rather than Go's duration syntax, because these values are written by
+deployment tooling as often as by people, and "900" survives a chart where "15m"
+does not. Leave it unset to keep the default.`, key, value, key, exampleLifetime)
+	}
+	if seconds <= 0 {
+		return 0, refuseNonPositive(key, value, exampleLifetime)
+	}
+	return time.Duration(seconds) * time.Second, nil
+}
+
+// refuseNonPositive answers a number that parsed and cannot be used.
+//
+// Zero is refused rather than read, and that is a decision worth stating: it has
+// two plausible meanings -- "give me the default" and "take the bound off" --
+// and only the first is implemented, because an unbounded pool turns one traffic
+// spike into "too many connections" on the server instead of a queue in this
+// process. Reading it as the default would answer the second person's question
+// with the first person's answer, silently, which is the shape of failure this
+// whole reader exists to remove.
+//
+// Refusing costs nothing, because there is already an unambiguous way to ask for
+// the default: leave the variable out. A negative is refused with it -- there is
+// no reading of it at all, and one rule for the whole field is one people
+// remember.
+func refuseNonPositive(key, value, example string) error {
+	return fmt.Errorf(`%s is %q, and it has to be greater than zero.
+
+    %s=%s
+
+Leave it unset to keep the default. Zero is not the way to ask for that, because
+it also reads as "no limit" -- and there is no unbounded pool to ask for: the
+bound is what turns a traffic spike into a queue here instead of "too many
+connections" on the server.`, key, value, key, example)
 }
 
 // asMap flattens the typed settings into the dotted keys a Repository answers.

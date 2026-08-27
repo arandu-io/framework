@@ -15,6 +15,22 @@ import (
 // handler and returns it; installing it is the application wiring it, not a side
 // effect nobody can see.
 //
+// # Installing it
+//
+// Two lines in bootstrap/app.go, and Recover stays outermost because a panic
+// raised in any middleware above it escapes without a page:
+//
+//	h := bootstrap.HandleExceptions(fw, AppModule, app.Diagnose)
+//	app.Use(exception.Recover(h), middleware.Observe(...), ...)
+//
+// Keeping h is the point of returning it. The handler is what the application
+// registers its own answers on -- Error, Missing and Fatal for the failures it
+// wants to draw itself, Views for error pages of its own, DontReport for the
+// errors that must never reach the log -- and all of them are read on every
+// request afterwards. http/middleware.Recover builds a handler from three
+// fields and drops it, so none of that is reachable through it; it is the
+// bridge, and it goes in v1.0.0.
+//
 // # What the AppModule is for, and why it is not guessed
 //
 // The debug page separates the frames of your code from the frames of the

@@ -5,7 +5,12 @@
 // package installed.
 //
 // Absolute rule: nothing in this package may be reachable when Env is not dev.
-// The Recover middleware is the only caller, and it checks the flag first.
+// It is enforced here rather than trusted to a caller: both entry points build
+// their Handler with Dev set, so a page drawn through this package is a
+// development page whoever called it. The Recover middleware used to be the one
+// caller and used to be where the flag was checked; it now installs
+// hesape/exception.Recover directly, which decides between the debug page and
+// the status page from the flag it was built with.
 //
 // This package is a bridge. It is removed in v1.0.0; import github.com/arandu-io/hesape/exception directly.
 //
