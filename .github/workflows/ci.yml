@@ -12,7 +12,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The api diff step below reads the tags and checks the last release
           # out into a second worktree. The default checkout fetches one commit
@@ -22,7 +22,7 @@ jobs:
           # since it was written, across 52 releases.
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # Not go-version-file: go.mod declares the MINIMUM language version
           # ("go 1.25"), and setup-go installs exactly that -- 1.25.0, whose
