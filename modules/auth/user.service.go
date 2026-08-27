@@ -514,16 +514,19 @@ func (s *Service) Lookup(ctx context.Context, tenant, email string) (User, error
 	return s.repo.FindByEmail(ctx, security.SystemGrant(ActionUserView, tenant), email)
 }
 
-// Names resolves user ids to display names, for a screen that shows who wrote
-// something.
+// PublicNames resolves user ids to the names published beside their content.
 //
 // One query for the whole list. A comment thread that looked each author up
 // separately would be an N+1 on the page most likely to have twenty rows on it.
 //
 // A failure is the caller's to decide about: a thread is worth rendering with
 // ids in it, and not worth failing over.
-func (s *Service) Names(ctx context.Context, tenant string, ids []string) (map[string]string, error) {
-	return s.repo.NamesByID(ctx, security.SystemGrant(ActionUserView, tenant), ids)
+func (s *Service) PublicNames(ctx context.Context, reader security.Subject, ids []string) (map[string]string, error) {
+	g, err := security.Authorize(ctx, s.policy, reader, ActionUserNamesPublic, User{TenantID: reader.Tenant})
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.NamesByID(ctx, g, ids)
 }
 
 // ErrResetLinkSpent is a password reset link that no longer names a password

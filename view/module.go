@@ -2,8 +2,11 @@ package view
 
 import (
 	"github.com/arandu-io/framework/http"
+	internalroutes "github.com/arandu-io/framework/internal/routes"
 	"github.com/arandu-io/framework/kernel"
 )
+
+type reservedNamespace = internalroutes.ReservedNamespace
 
 // Module serves the embedded assets and wires the renderer.
 //
@@ -14,7 +17,7 @@ import (
 // A module appears in the Register call next to events, jobs and the scheduler,
 // which is where somebody reading main.go already looks to learn what an
 // application is made of.
-type Module struct{}
+type Module struct{ reservedNamespace }
 
 // NewModule returns the module.
 //

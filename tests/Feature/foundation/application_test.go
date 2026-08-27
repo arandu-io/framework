@@ -31,6 +31,23 @@ type stub struct {
 	closeOrder *[]string
 }
 
+type reloadTagModule struct {
+	name string
+}
+
+func (m *reloadTagModule) Name() string { return m.name }
+
+func (m *reloadTagModule) Routes(r *fhttp.Router) {
+	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<html><body>application</body></html>"))
+	})
+}
+
+func (m *reloadTagModule) ReloadTag(string) string {
+	return `<script data-reload-owner="` + m.name + `"></script>`
+}
+
 func (s *stub) Name() string { return s.name }
 
 func (s *stub) Routes(r *fhttp.Router) {
@@ -200,6 +217,31 @@ func TestDebugConsoleIsDevelopmentOnly(t *testing.T) {
 		if rec.Code != want {
 			t.Errorf("/_arandu/debug in %s = %d, want %d", env, rec.Code, want)
 		}
+	}
+}
+
+func TestDevelopmentReloadTagBelongsToItsApplication(t *testing.T) {
+	first := foundation.New(testConfig(config.EnvDev)).
+		Register(&reloadTagModule{name: "first"})
+	if err := first.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot first application: %v", err)
+	}
+	firstHandler := first.Handler()
+
+	second := foundation.New(testConfig(config.EnvDev)).
+		Register(&reloadTagModule{name: "second"})
+	if err := second.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot second application: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	firstHandler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-reload-owner="first"`) {
+		t.Errorf("the first application response does not contain its reload tag: %q", body)
+	}
+	if strings.Contains(body, `data-reload-owner="second"`) {
+		t.Errorf("the first application response contains the second application's reload tag: %q", body)
 	}
 }
 

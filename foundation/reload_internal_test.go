@@ -13,10 +13,9 @@ func serve(t *testing.T, handler http.HandlerFunc, req *http.Request) *httptest.
 	t.Helper()
 	// What Boot fills in from the module that brought it. Fixed here so these
 	// tests are about the injection and not about the asset pipeline.
-	reloadTag = []byte(`<script src="/_arandu/assets/abc/arandu-reload.js" defer></script>`)
-	t.Cleanup(func() { reloadTag = nil })
+	reloadTag := []byte(`<script src="/_arandu/assets/abc/arandu-reload.js" defer></script>`)
 	rec := httptest.NewRecorder()
-	liveReload(handler).ServeHTTP(rec, req)
+	liveReload(reloadTag, handler).ServeHTTP(rec, req)
 	return rec
 }
 
@@ -119,7 +118,7 @@ func TestAStreamIsNotHeld(t *testing.T) {
 
 	go func() {
 		defer close(done)
-		liveReload(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		liveReload([]byte(`<script src="/_arandu/assets/abc/arandu-reload.js" defer></script>`), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
 			_, _ = w.Write([]byte("<html><body>first"))
 			w.(http.Flusher).Flush()
@@ -165,7 +164,7 @@ func TestEveryProcessHasItsOwnIdentity(t *testing.T) {
 // unwraps or not.
 func TestAStreamingHandlerCanLiftTheWriteDeadlineThroughTheWrapper(t *testing.T) {
 	errc := make(chan error, 1)
-	srv := httptest.NewServer(liveReload(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(liveReload(nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		errc <- http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	})))
 	defer srv.Close()
@@ -183,10 +182,10 @@ func TestAStreamingHandlerCanLiftTheWriteDeadlineThroughTheWrapper(t *testing.T)
 
 // Nothing is mounted or injected outside development.
 func TestProductionHasNoneOfThis(t *testing.T) {
-	if devReload(false) != nil {
+	if devReload(false, nil) != nil {
 		t.Fatal("the injection middleware is in the production pipeline")
 	}
-	if len(devReload(true)) != 1 {
+	if len(devReload(true, nil)) != 1 {
 		t.Fatal("development did not get the middleware")
 	}
 }

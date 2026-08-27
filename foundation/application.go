@@ -19,6 +19,7 @@ import (
 	"github.com/arandu-io/framework/foundation/bootstrap"
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/http/middleware"
+	internalroutes "github.com/arandu-io/framework/internal/routes"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/config"
@@ -83,6 +84,10 @@ type Application struct {
 	flash *security.Flash
 
 	booted bool
+	// reloadTag comes from this application's view module. Keeping it on the
+	// application prevents another application in the same process from changing
+	// the markup injected into responses already served by this one.
+	reloadTag []byte
 	// recorder is the ring buffer behind the console. It exists in development
 	// and under a tracing secret, and is nil otherwise -- which is what makes
 	// the console cost nothing in production rather than cost little.
@@ -221,12 +226,33 @@ func (a *Application) Boot(ctx context.Context) error {
 			a.log.Info("module booted", "module", name, "duration", time.Since(start))
 		}
 
+		before := len(a.router.Routes())
 		m.Routes(a.router.ForModule(name))
+		if err := validateReservedRoutes(m, a.router.Routes()[before:]); err != nil {
+			return err
+		}
 		a.log.Debug("routes registered", "module", name)
 	}
 
 	a.mountInternalRoutes()
 	a.booted = true
+	return nil
+}
+
+// validateReservedRoutes keeps application and third-party modules out of the
+// HTTP namespace whose requests bypass the application's middleware. First-party
+// owners carry a marker from an internal package that external modules cannot
+// import.
+func validateReservedRoutes(module Module, registered []*fhttp.Route) error {
+	if internalroutes.OwnsReservedNamespace(module) {
+		return nil
+	}
+	for _, route := range registered {
+		if strings.HasPrefix(route.Pattern, internalPrefix) {
+			return fmt.Errorf("arandu: module %q registered route %q under the reserved %s namespace",
+				module.Name(), route.Pattern, internalPrefix)
+		}
+	}
 	return nil
 }
 
@@ -295,7 +321,7 @@ func (a *Application) mountInternalRoutes() {
 		internal.Get(reloadPath, a.handleReload).Name("arandu.reload")
 		for _, m := range a.modules {
 			if t, ok := m.(ReloadTagger); ok {
-				reloadTag = []byte(t.ReloadTag(reloadPath))
+				a.reloadTag = []byte(t.ReloadTag(reloadPath))
 				break
 			}
 		}
@@ -370,7 +396,7 @@ func (a *Application) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (a *Application) Handler() http.Handler {
 	// Live reload is outermost after the logger, so it sees the finished
 	// document rather than a handler's intention to write one.
-	outer := append([]fhttp.Middleware{observability.RootLogger(a.log)}, devReload(a.isDev())...)
+	outer := append([]fhttp.Middleware{observability.RootLogger(a.log)}, devReload(a.isDev(), a.reloadTag)...)
 
 	// The flash is consumed above the application's own pipeline and below the
 	// logger, and the Application installs it rather than bootstrap/app.go for
@@ -413,20 +439,11 @@ func (a *Application) Handler() http.Handler {
 // no data and holds no session; the console by its own secret, in constant time;
 // the reload by the environment; the assets by the hash in the path.
 //
-// The namespace has more than one owner, and that is the part still open. The
-// Application mounts the probe, the reload and the console; the view module
-// mounts the content-addressed asset route, from a prefix constant of its own.
-// So a route under here is not "one the framework registered" -- it is one
-// whoever registered it believed belonged to the framework, and exceptInternal
-// reads the path rather than the registration. A module that registers
-// /_arandu/anything gets a route with no Recover, no Observe, no
-// SecurityHeaders, no rate limit and no CSRF check, and the registration that
-// produced it looks like every other registration.
-//
-// Refusing that at boot needs a way to tell this framework's own surface from an
-// application's under the same prefix, and there is none today that is not
-// either a copy of another package's prefix constant or a module contract for
-// escaping the application's pipeline. Both are decisions rather than checks.
+// The namespace has more than one first-party owner. The Application mounts the
+// probe, reload and console; the view module mounts the content-addressed asset
+// route. validateReservedRoutes distinguishes those owners with a marker from a
+// Go internal package and refuses every other module at boot, before the handler
+// can be served.
 const internalPrefix = "/_arandu/"
 
 // exceptInternal runs an application's middleware everywhere except on the

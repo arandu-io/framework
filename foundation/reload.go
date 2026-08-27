@@ -141,20 +141,15 @@ func (a *Application) handleReload(w http.ResponseWriter, r *http.Request) {
 // this file is the endpoint it names and the middleware that injects what it
 // returns.
 
-// reloadTag is the markup injected into a document, filled at Boot from the
-// module that brought it. Empty means nothing is injected, which is every
-// arrangement outside development.
-var reloadTag []byte
-
 // liveReload injects the script into any full HTML document that leaves the
 // application.
-func liveReload(next http.Handler) http.Handler {
+func liveReload(reloadTag []byte, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == reloadPath {
 			next.ServeHTTP(w, r)
 			return
 		}
-		rec := &htmlRecorder{ResponseWriter: w}
+		rec := &htmlRecorder{ResponseWriter: w, reloadTag: reloadTag}
 		next.ServeHTTP(rec, r)
 		rec.finish()
 	})
@@ -171,10 +166,11 @@ type htmlRecorder struct {
 	// run: pre-seeding this with 200 meant WriteHeader was never reached, so
 	// nothing was ever classified and an SVG containing a <body> element was
 	// handed the script.
-	status  int
-	buf     bytes.Buffer
-	passing bool // decided: not a document, writing straight through
-	wrote   bool // the header has gone out
+	status    int
+	buf       bytes.Buffer
+	reloadTag []byte
+	passing   bool // decided: not a document, writing straight through
+	wrote     bool // the header has gone out
 }
 
 func (h *htmlRecorder) WriteHeader(status int) {
@@ -222,10 +218,10 @@ func (h *htmlRecorder) finish() {
 	body := h.buf.Bytes()
 	// The close tag is the test for a whole document. An HTMX fragment has no
 	// </body>, and injecting into one would add an EventSource per swap.
-	if at := bytes.LastIndex(body, []byte("</body>")); at >= 0 && len(reloadTag) > 0 {
-		out := make([]byte, 0, len(body)+len(reloadTag))
+	if at := bytes.LastIndex(body, []byte("</body>")); at >= 0 && len(h.reloadTag) > 0 {
+		out := make([]byte, 0, len(body)+len(h.reloadTag))
 		out = append(out, body[:at]...)
-		out = append(out, reloadTag...)
+		out = append(out, h.reloadTag...)
 		body = append(out, body[at:]...)
 	}
 	h.send(body)
@@ -248,9 +244,11 @@ func (h *htmlRecorder) send(body []byte) {
 }
 
 // devReload is the middleware, or nothing outside development.
-func devReload(isDev bool) []fhttp.Middleware {
+func devReload(isDev bool, reloadTag []byte) []fhttp.Middleware {
 	if !isDev {
 		return nil
 	}
-	return []fhttp.Middleware{liveReload}
+	return []fhttp.Middleware{func(next http.Handler) http.Handler {
+		return liveReload(reloadTag, next)
+	}}
 }

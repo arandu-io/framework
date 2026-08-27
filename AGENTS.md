@@ -11,11 +11,11 @@ the situation you are in.
 
 ## The first thing to know
 
-Nineteen packages, and fifteen of them are bridges.
+Twenty packages, and fifteen of them are bridges.
 
 ```sh
 export GOWORK=off
-go list ./... | grep -vc '/tests'                                 # 19
+go list ./... | grep -vc '/tests'                                 # 20
 grep -rl "This package is a bridge" --include='doc.go' . | wc -l  # 15
 ```
 
@@ -28,13 +28,14 @@ points one directory across at `foundation` rather than at hesape, and `config`
 is the one bridge that still holds an implementation, because what replaced it
 is not a rename.
 
-Four packages hold code, and they are what stays here for good:
+Five packages hold code, and they are what stays here for good:
 
 | package | what it owns |
 | --- | --- |
 | `foundation` | the `Application`: `New`, `Boot`, `Run`, `Shutdown`, the pipeline, the module contract |
 | `foundation/bootstrap` | `Configuration` and `LoadConfiguration` — the environment read once, typed |
 | `http/middleware` | the route guards, CSRF, the flash, rate limit, recover, security headers, the observability middleware |
+| `internal/routes` | the sealed capability that identifies first-party owners of the reserved HTTP namespace; Go refuses imports from application and third-party modules |
 | `modules/auth` | the first first-party module, and the canonical shape every generated module copies |
 
 **So the first question about any change is which repository it belongs to.**

@@ -17,6 +17,7 @@ import (
 	"github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/hesape/database/migrations"
+	"github.com/arandu-io/hesape/database/schema"
 )
 
 // Module brings the outbox table, and runs the relay when one is wired.
@@ -88,43 +89,35 @@ func (createOutboxTable) GetName() string { return "2026_07_31_000001_create_out
 // SQLite, Postgres and MySQL. jsonb would be one engine's spelling, and the
 // payload is written and read as JSON text either way.
 func (createOutboxTable) Up(ctx context.Context, conn migrations.Connection) error {
-	if _, err := conn.Statement(ctx, `CREATE TABLE outbox (
-    id            VARCHAR(255) PRIMARY KEY,
-    tenant_id     VARCHAR(255) NOT NULL,
-    event         TEXT NOT NULL,
-    aggregate     TEXT NOT NULL,
-    aggregate_id  TEXT NOT NULL,
-    payload       TEXT NOT NULL,
-    authorized_by TEXT NOT NULL,
-    action        TEXT NOT NULL,
-    occurred_at   TIMESTAMP NOT NULL,
-    published_at  TIMESTAMP,
-    attempts      INTEGER NOT NULL DEFAULT 0,
-    last_error    TEXT
-)`, nil); err != nil {
-		return err
-	}
+	return conn.Schema().Create(ctx, "outbox", func(table *schema.Blueprint) {
+		table.String("id").Primary()
+		table.String("tenant_id")
+		table.Text("event")
+		table.Text("aggregate")
+		table.Text("aggregate_id")
+		table.Text("payload")
+		table.Text("authorized_by")
+		table.Text("action")
+		table.Timestamp("occurred_at")
+		table.Timestamp("published_at").Nullable()
+		table.BigInteger("attempts").Default(0)
+		table.Text("last_error").Nullable()
 
-	// The relay reads unpublished events oldest first. A partial index would be
-	// tighter, and MySQL does not have one; the two leading columns give the
-	// same scan on every engine.
-	if _, err := conn.Statement(ctx,
-		`CREATE INDEX idx_outbox_pending ON outbox (published_at, occurred_at)`, nil); err != nil {
-		return err
-	}
+		// The relay reads unpublished events oldest first. A partial index would
+		// be tighter, and MySQL does not have one; the two leading columns give
+		// the same scan on every engine.
+		table.Index([]string{"published_at", "occurred_at"}, "idx_outbox_pending")
 
-	// Deduplication is the consumer's job, and the id is the key it
-	// deduplicates on. Delivery is at-least-once: the same event can arrive
-	// twice, and that is the price of never losing one.
-	_, err := conn.Statement(ctx,
-		`CREATE INDEX idx_outbox_tenant ON outbox (tenant_id, occurred_at)`, nil)
-	return err
+		// Deduplication is the consumer's job, and the id is the key it
+		// deduplicates on. Delivery is at-least-once: the same event can arrive
+		// twice, and that is the price of never losing one.
+		table.Index([]string{"tenant_id", "occurred_at"}, "idx_outbox_tenant")
+	})
 }
 
 // Down drops the table, which takes its indexes with it.
 func (createOutboxTable) Down(ctx context.Context, conn migrations.Connection) error {
-	_, err := conn.Statement(ctx, `DROP TABLE outbox`, nil)
-	return err
+	return conn.Schema().DropIfExists(ctx, "outbox")
 }
 
 // addOutboxDeadLetter is where an event goes after it has failed too often.
@@ -139,24 +132,24 @@ func (addOutboxDeadLetter) GetName() string { return "2026_07_31_000002_add_outb
 
 // Up adds the column and the index that reads around it.
 func (addOutboxDeadLetter) Up(ctx context.Context, conn migrations.Connection) error {
-	if _, err := conn.Statement(ctx, `ALTER TABLE outbox ADD COLUMN failed_at TIMESTAMP`, nil); err != nil {
-		return err
-	}
+	return conn.Schema().Table(ctx, "outbox", func(table *schema.Blueprint) {
+		// Nullable, and that is the rollout rule rather than a preference: a
+		// NOT NULL column added to a table that has rows fails on every row
+		// already there.
+		table.Timestamp("failed_at").Nullable()
 
-	// The relay reads pending events on every tick, and "pending" now means
-	// neither published nor parked.
-	_, err := conn.Statement(ctx,
-		`CREATE INDEX idx_outbox_unfinished ON outbox (failed_at, published_at, occurred_at)`, nil)
-	return err
+		// The relay reads pending events on every tick, and "pending" now means
+		// neither published nor parked.
+		table.Index([]string{"failed_at", "published_at", "occurred_at"}, "idx_outbox_unfinished")
+	})
 }
 
 // Down drops the index before the column it names.
 func (addOutboxDeadLetter) Down(ctx context.Context, conn migrations.Connection) error {
-	if _, err := conn.Statement(ctx, `DROP INDEX idx_outbox_unfinished`, nil); err != nil {
-		return err
-	}
-	_, err := conn.Statement(ctx, `ALTER TABLE outbox DROP COLUMN failed_at`, nil)
-	return err
+	return conn.Schema().Table(ctx, "outbox", func(table *schema.Blueprint) {
+		table.DropIndex("idx_outbox_unfinished")
+		table.DropColumn("failed_at")
+	})
 }
 
 // Start begins the relay loop, and only the process that serves calls it.

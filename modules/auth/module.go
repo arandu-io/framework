@@ -19,6 +19,7 @@ import (
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/hesape/database/migrations"
+	"github.com/arandu-io/hesape/database/schema"
 )
 
 // TenantResolver decides which tenant a request belongs to.
@@ -139,28 +140,25 @@ func (createUsers) GetName() string { return "20260729_0001_create_users" }
 // The email is stored lowercased by the repository, so a plain UNIQUE index is
 // enough and no database-specific case-insensitive collation is needed.
 func (createUsers) Up(ctx context.Context, conn migrations.Connection) error {
-	if _, err := conn.Statement(ctx, `CREATE TABLE users (
-    id          VARCHAR(255) PRIMARY KEY,
-    -- Indexed, so VARCHAR rather than TEXT: see data.KeyText.
-    tenant_id   VARCHAR(255) NOT NULL,
-    email       VARCHAR(255) NOT NULL,
-    password    TEXT NOT NULL,
-    roles       TEXT NOT NULL,
-    created_at  TIMESTAMP NOT NULL,
-    UNIQUE (tenant_id, email)
-)`, nil); err != nil {
-		return err
-	}
+	return conn.Schema().Create(ctx, "users", func(table *schema.Blueprint) {
+		table.String("id").Primary()
+		// String rather than Text for the keyed columns, and the Blueprint is
+		// what makes that a name rather than a rule to remember: MySQL refuses
+		// TEXT in a key without a prefix length, and the grammar knows it.
+		table.String("tenant_id")
+		table.String("email")
+		table.Text("password")
+		table.Text("roles")
+		table.Timestamp("created_at")
 
-	_, err := conn.Statement(ctx,
-		`CREATE INDEX users_tenant_created_idx ON users (tenant_id, created_at, id)`, nil)
-	return err
+		table.Unique([]string{"tenant_id", "email"})
+		table.Index([]string{"tenant_id", "created_at", "id"}, "users_tenant_created_idx")
+	})
 }
 
 // Down drops the table, which takes its index with it.
 func (createUsers) Down(ctx context.Context, conn migrations.Connection) error {
-	_, err := conn.Statement(ctx, `DROP TABLE users`, nil)
-	return err
+	return conn.Schema().DropIfExists(ctx, "users")
 }
 
 // addNameAndVerificationToUsers adds the display name and the verification
@@ -186,18 +184,18 @@ func (addNameAndVerificationToUsers) GetName() string {
 // Two statements rather than one with two clauses: MySQL accepts
 // `ADD COLUMN a, ADD COLUMN b`, SQLite does not.
 func (addNameAndVerificationToUsers) Up(ctx context.Context, conn migrations.Connection) error {
-	if _, err := conn.Statement(ctx, `ALTER TABLE users ADD COLUMN name VARCHAR(255)`, nil); err != nil {
-		return err
-	}
-	_, err := conn.Statement(ctx, `ALTER TABLE users ADD COLUMN verified_at TIMESTAMP NULL`, nil)
-	return err
+	return conn.Schema().Table(ctx, "users", func(table *schema.Blueprint) {
+		// Both nullable, and that is the rollout rule: a NOT NULL column added
+		// to a table that has rows fails on every row already there, and during
+		// a rollout the previous binary does not fill it in.
+		table.String("name").Nullable()
+		table.Timestamp("verified_at").Nullable()
+	})
 }
 
 // Down drops the two columns, one statement each for the reason Up gives.
 func (addNameAndVerificationToUsers) Down(ctx context.Context, conn migrations.Connection) error {
-	if _, err := conn.Statement(ctx, `ALTER TABLE users DROP COLUMN name`, nil); err != nil {
-		return err
-	}
-	_, err := conn.Statement(ctx, `ALTER TABLE users DROP COLUMN verified_at`, nil)
-	return err
+	return conn.Schema().Table(ctx, "users", func(table *schema.Blueprint) {
+		table.DropColumn("name", "verified_at")
+	})
 }
