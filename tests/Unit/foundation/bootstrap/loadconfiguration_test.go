@@ -141,9 +141,15 @@ func TestTheRepositoryAnswersWhatTheStructsHold(t *testing.T) {
 	}
 }
 
-// argon2id, not bcrypt. There are no previous Arandu hashes to be compatible
-// with, and argon2id is what the one third-party dependency is taken for.
-func TestTheDefaultHashDriverIsArgon2id(t *testing.T) {
+// There is no hash driver to publish, and that is the guarantee.
+//
+// This used to publish "argon2id" under hashing.driver and assert it, which
+// defended the right thing by the weaker means: a default is a default, and a
+// project could set another. The key is gone because the component behind it is
+// gone -- one function, parameters compiled in, nothing to select. So the check
+// is that the key is absent: a driver key coming back means somebody restored a
+// choice, and a choice is how a project silently writes weaker hashes.
+func TestNoHashDriverIsPublishedBecauseThereIsNothingToChoose(t *testing.T) {
 	env(t, "APP_KEY", testKey)
 
 	cfg, err := bootstrap.LoadConfiguration()
@@ -151,8 +157,10 @@ func TestTheDefaultHashDriverIsArgon2id(t *testing.T) {
 		t.Fatalf("LoadConfiguration: %v", err)
 	}
 
-	if got, _ := cfg.Repository.String("hashing.driver"); got != "argon2id" {
-		t.Errorf("the default hash driver is %q, want argon2id", got)
+	for _, key := range []string{"hashing.driver", "hashing.argon.memory", "hashing.argon.time", "hashing.argon.threads"} {
+		if got, err := cfg.Repository.String(key); err == nil && got != "" {
+			t.Errorf("%s is published as %q, and nothing reads it: the parameters are compiled in", key, got)
+		}
 	}
 }
 
