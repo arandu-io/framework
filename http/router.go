@@ -90,6 +90,13 @@ func (r *Router) WithFlash(f *security.Flash) *Router {
 // struct. The struct's third field, Name, has no counterpart in this signature
 // and is deliberately left unset: adding it would be a new way to name a route
 // alongside Route.Name, and this package is being removed rather than grown.
+//
+// This one has an exact replacement, and taking it is what makes Name
+// reachable again:
+//
+//	r.Group("/admin", mws...)
+//	// becomes
+//	r.Group(routing.Group{Prefix: "/admin", Middleware: mws})
 func (r *Router) Group(prefix string, mws ...Middleware) *Router {
 	g := *r
 	g.inner = r.inner.Group(routing.Group{Prefix: prefix, Middleware: mws})
@@ -105,6 +112,16 @@ func (r *Router) ForModule(name string) *Router {
 }
 
 // Get registers a GET route.
+//
+//	r.Get("/health", health).Name("health")
+//
+// This is the registration path that survives, and the five verb methods below
+// it are the same call under another method name. Migrating any of them is the
+// identical line: github.com/arandu-io/hesape/routing spells them the same way
+// and takes an http.Handler where this takes an http.HandlerFunc, which is a
+// widening -- every handler that satisfies this signature satisfies that one,
+// so the call moves unchanged. It does not move back: a handler that is an
+// http.Handler and not a func has no spelling here.
 func (r *Router) Get(pattern string, h http.HandlerFunc, mws ...Middleware) *Route {
 	return r.inner.Get(pattern, h, mws...)
 }
@@ -131,7 +148,24 @@ func (r *Router) Delete(pattern string, h http.HandlerFunc, mws ...Middleware) *
 
 // Action registers one controller action, for a route outside a resource.
 //
-//	Route.Action("GET", "/dashboard", dashboard.Index).Name("dashboard")
+//	r.Action("GET", "/dashboard", dashboard.Index).Name("dashboard")
+//
+// The receiver is the router. The line above read Route.Action until it was
+// found not to compile: Route is an alias for the route metadata type, which
+// has no Action method, so the example named a method expression on the wrong
+// type. ExampleRouter_Action compiles the corrected spelling.
+//
+// It is not a second way to route. Registration goes through the one path
+// every other verb method goes through, and what this adds is the handler:
+// Get takes an http.HandlerFunc, a controller action is a
+// func(*Context) error, and something has to turn one into the other. That
+// something is adapt, and it is a method rather than a free function because
+// it needs the renderer, the route table and the flash that this router holds
+// and github.com/arandu-io/hesape/routing deliberately does not.
+//
+// Which is why there is no line to migrate this to yet. Get and Group have
+// one; this does not, because the adapter it needs is unexported here and has
+// no exported counterpart to reach for.
 func (r *Router) Action(method, pattern string, h func(*Context) error, mws ...Middleware) *Route {
 	return r.inner.Match([]string{method}, pattern, r.adapt(h), mws...)
 }
@@ -150,9 +184,13 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) { r.inner.S
 // It is a routing.Adapter[hhttp.Context], which is the parameter hesape/routing
 // takes so that it can register an action without knowing what a request
 // context is -- the same reason hesape/http.Renderer is an interface. hesape
-// names the function it expects here hhttp.Action in the doc comment on
-// routing.Adapter, and that function does not exist: see the gap in the report.
-// So this is where it is written, once, for both Action and Resource.
+// names the function it expects here hhttp.Action, in the doc comment on
+// routing.Adapter and in four others, and no such function is declared in
+// hesape/http. Nor could it be in the shape those comments show, a unary
+// hhttp.Action(c.Show): the three values the body below closes over -- the
+// renderer, the route table and the flash -- reach it from the router, and a
+// free function taking only the action reaches none of them. So this is where
+// it is written, once, for both Action and Resource.
 //
 // An error reaching here is one the handler could not handle, so it goes to the
 // panic path: the error page in development, 500 in production. Swallowing it
