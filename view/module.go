@@ -18,6 +18,13 @@ type reservedNamespace = internalroutes.ReservedNamespace
 // A module appears in the Register call next to events, jobs and the scheduler,
 // which is where somebody reading main.go already looks to learn what an
 // application is made of.
+//
+// # Why this one is declared and not aliased
+//
+// hesape/view.Module answers Routes with a *routing.Router, and this one
+// answers it with a *http.Router. Those are two types while http.Router is an
+// envelope, so the hesape module does not satisfy the contract the kernel
+// collects and an alias here would stop this one satisfying it either.
 type Module struct{ reservedNamespace }
 
 // NewModule returns the module.

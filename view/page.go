@@ -21,6 +21,14 @@ import (
 // It is an interface rather than a struct so that pages with unrelated data
 // share one frame: the layout asks for behaviour, and Page below is the
 // implementation a page embeds to get it.
+//
+// # Why this one is declared and not aliased
+//
+// hesape/view.Layout asks for Any and All where this one asks for HasErrors
+// and ErrorSummary. They are the same two questions under different names, and
+// a layout is written against one spelling or the other -- so aliasing this
+// name would ask every delivered layout to be rewritten, which is the opposite
+// of what carrying the old name is for.
 type Layout interface {
 	// PageTitle is the document title, and what HTMX swaps on navigation.
 	PageTitle() string
@@ -93,6 +101,18 @@ type Layout interface {
 // no route() and no auth(): the controller fills these in, so a name that drifts
 // is a compile error rather than a blank link, and a form can never end up
 // carrying another session's token under load.
+//
+// # Why this one is declared and not aliased
+//
+// The struct is already the same type as hesape/view.Page, field for field --
+// Errors included, because Context and State are aliases here, so New fills
+// this one from exactly what fills that one. What is not the same is the
+// method set. The four error accessors were renamed on the way over --
+// FieldError to First, FieldErrors to Get, HasErrors to Any, ErrorSummary to
+// All -- and the component library calls FieldError from a module this one
+// does not compile, so an alias would build here and leave every field
+// component with no method to call. It would also drop LogValue and
+// MarshalJSON, which are declared here and have no counterpart there.
 type Page struct {
 	// Title is the document title.
 	Title string
