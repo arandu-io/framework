@@ -25,6 +25,15 @@ import (
 // It registers no routes: it exists so the table travels with the framework
 // rather than being copied into every project's migrations. Register it in
 // bootstrap/app.go next to the modules that store events.
+//
+// # Why this one is declared and not aliased
+//
+// hesape/events.Module answers neither Routes nor Migrations, so it is not the
+// contract the kernel collects and the outbox table would have to be copied
+// into every project instead of travelling with the module that owns it. Start
+// is the second reason: it hands the loop to Relay.Run, where the Locker this
+// framework still issues is driven, and the hesape module drives a relay that
+// has no field for one.
 type Module struct {
 	relay *Relay
 	// stop cancels the relay loop at shutdown.
