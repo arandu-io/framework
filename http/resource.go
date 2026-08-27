@@ -48,9 +48,10 @@ type (
 //
 //	r.Resource("invoices", InvoiceController{})
 //
-// The receiver is the router. This line read Route.Resource until it was found
-// not to compile: Route is an alias for the route metadata type, which has no
-// Resource method. ExampleRouter_Resource compiles the corrected spelling.
+// The receiver is the router. The line above read Route.Resource until it was
+// found not to compile: Route is an alias for the route metadata type, which
+// has no Resource method. ExampleRouter_Resource compiles the corrected
+// spelling.
 //
 // The seven, in the conventional order and with the conventional names:
 //
@@ -69,7 +70,20 @@ type (
 // It stays a method here and is a function there -- routing.Resource takes the
 // router first, because a Go method cannot take a type parameter and C has to
 // come from somewhere. The type parameter and the adapter are supplied by this
-// line, so no caller of Route.Resource changes.
+// line, so no caller of Router.Resource changes.
+//
+// Migrating this call is not a rename, and the trap is that the wrong reading
+// compiles. github.com/arandu-io/hesape/routing has a Router.Resource of its
+// own, and it is a different registration: it takes the controller as a
+// string, hands the name to a dispatcher, and returns a pending registration
+// that Register commits. Passing a controller value to it does not compile,
+// which is the good case; passing the controller's name does compile, and
+// every route it registers answers 500 until a dispatcher is wired.
+//
+// The counterpart to this method is the free function routing.Resource, which
+// takes the controller value and an adapter. As with Action, the adapter is
+// what there is no exported way to supply, so there is no line to migrate to
+// yet.
 func (r *Router) Resource(name string, controller any) []*Route {
 	return routing.Resource(r.inner, name, controller, r.adapt)
 }
