@@ -129,6 +129,11 @@ func envelopeFrom(e hmail.Envelope) Envelope {
 // A view name and its data, rather than a string: the message is drawn by the
 // same view layer as a page, so a field that does not exist is a compile error
 // and interpolation is escaped by construction.
+//
+// It is declared here rather than aliased because three of the four fields are
+// spelled differently in hesape -- TextView is Text there, Data is With, and
+// the literal Text below has no counterpart at all -- and a Content is written
+// as a struct literal by every mailable.
 type Content struct {
 	// View is the HTML part, by the name the view is registered under.
 	View string
@@ -152,6 +157,11 @@ type Content struct {
 }
 
 // Mailable is anything that knows how to describe itself as a message.
+//
+// It is declared here and not aliased because both of its methods answer types
+// that are declared here: an Envelope carrying this package's Address, and a
+// Content whose fields are spelled the old way. Every mailable in a project is
+// written against these two, so the interface follows them.
 type Mailable interface {
 	Envelope() Envelope
 	Content() Content

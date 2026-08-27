@@ -17,6 +17,15 @@ import (
 )
 
 // SMTP sends over SMTP, with STARTTLS.
+//
+// # Why this one is declared and not aliased
+//
+// The four fields below are already the same four as transport.SMTP, in the
+// same order and the same types. What keeps this a separate type is the one
+// method: Send answers an error here and (mail.SentMessage, error) there, and
+// it takes this package's Message rather than that one's. Aliasing the name
+// would swap a Transport for something the Transport interface does not
+// accept.
 type SMTP struct {
 	// Host and Port are the server. 587 is submission with STARTTLS, which is
 	// what a provider gives you; 25 is server-to-server and is usually blocked.
@@ -63,6 +72,11 @@ func (t SMTP) Send(ctx context.Context, m Message) error {
 // which package the context is asked: it is hesape/log now rather than
 // framework/observability, and framework/observability is a bridge over that
 // same package, so a request logger installed by either is the one found here.
+//
+// It is a shell over transport.Log rather than an alias, for the reason that
+// applies to all five transports here: hesape's Send answers a receipt as well
+// as an error, and this one has to satisfy the Transport interface that does
+// not.
 type Log struct{}
 
 // Name identifies the transport in a log line.
@@ -83,6 +97,8 @@ func (Log) Send(ctx context.Context, m Message) error {
 //
 // Its three readers were renamed on the way over -- Sent is Messages there and
 // Reset is Flush -- so the three below are the old names reaching the new ones.
+// That rename is one of the two reasons this is not an alias; the other is
+// Send, which answers an error here and a receipt as well there.
 type Array struct {
 	inner transport.Array
 }
