@@ -30,6 +30,10 @@ import (
 // The jar, the CSRF token read off the last page, and the rule that a second
 // Set-Cookie of a name replaces the first all live in
 // hesape/arandutest.Client. This type holds nothing but that one.
+//
+// It is declared here for one reason: Get and Post answer this package's
+// Response, which keeps the assertion names hesape renamed. It becomes an
+// alias the day Response does, and not before.
 type Client struct {
 	inner *arandutest.Client
 }
@@ -54,10 +58,12 @@ func (c *Client) Post(path string, form map[string]string) *Response {
 
 // Response is what came back, with the assertions worth having.
 //
-// Renamed on the way to hesape: every method below is spelled Assert* there.
-// The old names are kept because thirteen modules call them, and each one
-// forwards to exactly one hesape method -- the comparison, the failure message
-// and whether it stops the test are all decided by the code that runs there.
+// Renamed on the way to hesape: every method below is spelled Assert* there,
+// and Body is GetContent. The old names are kept because thirteen modules call
+// them, and each one forwards to exactly one hesape method -- the comparison,
+// the failure message and whether it stops the test are all decided by the code
+// that runs there. An alias would carry the new names and leave those thirteen
+// with nothing to call, which is why this is a declaration.
 type Response struct {
 	inner *arandutest.Response
 }
