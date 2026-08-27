@@ -28,6 +28,15 @@ import (
 // separate process from the same image. What this module owns is the schema and
 // the answer to "is anything draining this". Register it in bootstrap/app.go
 // next to the modules that push jobs.
+//
+// # Why this one is declared and not aliased
+//
+// One method stands in the way. hesape/queue.Module answers Routes with a
+// *routing.Router and this one answers it with a *http.Router, so the hesape
+// module does not satisfy the contract the kernel collects. Everything else is
+// the inner module's, down to the lag thresholds and the sentences the error
+// page prints, so there is one description of a stalled queue and not two that
+// can drift apart.
 type Module struct {
 	inner *hqueue.Module
 }
