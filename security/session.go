@@ -245,7 +245,10 @@ func (b handlerBackend) DeleteSubject(ctx context.Context, tenant, subjectID, ke
 // routed elsewhere -- use the kv adapter there.
 //
 // It is the same four renames as backendHandler, run the other way: the store
-// underneath is hesape/session.ArrayHandler, and nothing is kept here.
+// underneath is hesape/session.ArrayHandler, and nothing is kept here. Those
+// renames are why it is a declaration and not an alias -- Get, Put, Delete and
+// DeleteSubject are Read, Write, Destroy and DestroyIndex there, and a backend
+// outside this module implements the four names below.
 type MemoryBackend struct {
 	handler *session.ArrayHandler[Subject]
 }
