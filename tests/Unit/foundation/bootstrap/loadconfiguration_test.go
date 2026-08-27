@@ -3,6 +3,8 @@ package unit
 import (
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -304,6 +306,122 @@ func TestThePoolSettingsStayAtZeroWhenUnset(t *testing.T) {
 	}
 	if got := cfg.Database.ConnMaxLifetime; got != 0 {
 		t.Errorf("ConnMaxLifetime is %v with nothing set, want 0", got)
+	}
+}
+
+// A value that is there and cannot be used stops the boot, and the message has
+// to name the variable and quote what came.
+//
+// This is the only reader of these three variables in the collection now: the
+// skeletons parsed them too, and theirs refused a value that did not parse.
+// Falling back silently here would drop that refusal for everyone at once --
+// the operator sets DB_MAX_OPEN_CONNS=fifty, gets zero, zero is read as the
+// package default, and the pool is the default one while the .env says
+// otherwise. Nothing logs it, because nothing knows.
+//
+// The message is asserted and not merely the error, because an error that does
+// not name the variable sends somebody through six files looking for it.
+func TestAPoolSettingThatCannotBeReadStopsTheBoot(t *testing.T) {
+	for _, tc := range []struct {
+		key, value string
+		wants      []string
+	}{
+		{"DB_MAX_OPEN_CONNS", "fifty", []string{`DB_MAX_OPEN_CONNS is "fifty"`, "whole number of connections", "DB_MAX_OPEN_CONNS=50"}},
+		{"DB_MAX_IDLE_CONNS", "a few", []string{`DB_MAX_IDLE_CONNS is "a few"`, "whole number of connections", "DB_MAX_IDLE_CONNS=50"}},
+		{"DB_CONN_MAX_LIFETIME", "1h", []string{`DB_CONN_MAX_LIFETIME is "1h"`, "count of seconds", "DB_CONN_MAX_LIFETIME=900"}},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			env(t, "APP_KEY", testKey, tc.key, tc.value)
+
+			_, err := bootstrap.LoadConfiguration()
+			if err == nil {
+				t.Fatalf("%s=%q was accepted; it parses as nothing, and the fallback is the zero that means the default pool", tc.key, tc.value)
+			}
+			for _, want := range tc.wants {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the error does not say %q:\n%v", want, err)
+				}
+			}
+		})
+	}
+}
+
+// An explicit zero is refused rather than read as the default.
+//
+// It has two plausible meanings and only one is implemented: "give me the
+// default" and "take the bound off". Reading it as the default answers the
+// second person's question with the first person's answer and says nothing,
+// which is the failure this reader exists to remove. Leaving the variable out is
+// the way to ask for the default, and it is unambiguous.
+func TestAnExplicitZeroOrNegativePoolSettingIsRefused(t *testing.T) {
+	for _, tc := range []struct{ key, value string }{
+		{"DB_MAX_OPEN_CONNS", "0"},
+		{"DB_MAX_IDLE_CONNS", "0"},
+		{"DB_CONN_MAX_LIFETIME", "0"},
+		{"DB_MAX_OPEN_CONNS", "-1"},
+		{"DB_CONN_MAX_LIFETIME", "-30"},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			env(t, "APP_KEY", testKey, tc.key, tc.value)
+
+			_, err := bootstrap.LoadConfiguration()
+			if err == nil {
+				t.Fatalf("%s=%s was accepted; there is no unbounded pool to ask for, and unset is how the default is asked for", tc.key, tc.value)
+			}
+			if !strings.Contains(err.Error(), tc.key+" is "+strconv.Quote(tc.value)) {
+				t.Errorf("the error does not name the variable and the value:\n%v", err)
+			}
+			if !strings.Contains(err.Error(), "greater than zero") {
+				t.Errorf("the error does not say what is wrong with it:\n%v", err)
+			}
+		})
+	}
+}
+
+// A variable a template rendered to nothing is not somebody asking for a
+// number, so empty is absent and absent is the default.
+//
+// Refusing it would fail the boot of every deployment whose chart writes the key
+// unconditionally, over a value nobody chose. Both readers this replaced already
+// treated empty as absent, and so does config.String.
+func TestAnEmptyPoolSettingIsTreatedAsUnset(t *testing.T) {
+	env(t, "APP_KEY", testKey,
+		"DB_MAX_OPEN_CONNS", "",
+		"DB_MAX_IDLE_CONNS", "   ",
+		"DB_CONN_MAX_LIFETIME", "")
+
+	cfg, err := bootstrap.LoadConfiguration()
+	if err != nil {
+		t.Fatalf("an empty pool setting failed the boot: %v", err)
+	}
+	if cfg.Database.MaxOpenConns != 0 || cfg.Database.MaxIdleConns != 0 || cfg.Database.ConnMaxLifetime != 0 {
+		t.Errorf("an empty value became a number: %d/%d/%v",
+			cfg.Database.MaxOpenConns, cfg.Database.MaxIdleConns, cfg.Database.ConnMaxLifetime)
+	}
+}
+
+// A bad value written in .env is refused too, which is where it will be written.
+//
+// The refusal reads the process environment, and .env reaches it through
+// LoadDotenv earlier in the same function. Ordering those two the other way
+// round would leave the check in place and stop it applying to the file almost
+// every project actually keeps the setting in -- the refusal still there, still
+// green, and reaching nothing.
+func TestAPoolSettingFromTheDotenvFileIsRefusedAsWell(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeFile(dir+"/.env", "DB_MAX_OPEN_CONNS=lots\n"); err != nil {
+		t.Fatal(err)
+	}
+	chdir(t, dir)
+	env(t, "APP_KEY", testKey)
+	unset(t, "DB_MAX_OPEN_CONNS")
+
+	_, err := bootstrap.LoadConfiguration()
+	if err == nil {
+		t.Fatal("a bad DB_MAX_OPEN_CONNS in .env was accepted; the refusal has to run after the file is loaded")
+	}
+	if !strings.Contains(err.Error(), `DB_MAX_OPEN_CONNS is "lots"`) {
+		t.Errorf("the error does not name the variable and the value:\n%v", err)
 	}
 }
 
