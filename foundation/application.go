@@ -301,9 +301,10 @@ func (a *Application) startBackground(ctx context.Context) error {
 
 // mountInternalRoutes exposes the framework's own routes.
 //
-// /_arandu/health answers everywhere. The console answers in development, and
-// outside it only to a request carrying the tracing secret -- which is not the
-// same as "only when a tracing secret is configured".
+// /_arandu/health and /_arandu/live answer everywhere: the first says whether to
+// send this instance traffic, the second whether to restart it. The console
+// answers in development, and outside it only to a request carrying the tracing
+// secret -- which is not the same as "only when a tracing secret is configured".
 //
 // The distinction is a hole if it is missed. The recorder exists whenever the
 // secret is set, so mounting the routes on that condition alone puts them in
@@ -313,6 +314,7 @@ func (a *Application) startBackground(ctx context.Context) error {
 func (a *Application) mountInternalRoutes() {
 	internal := a.router.ForModule("arandu")
 	internal.Get(internalPrefix+"health", a.handleHealth).Name("arandu.health")
+	internal.Get(internalPrefix+"live", handleLive).Name("arandu.live")
 
 	// Development only, and mounted from the same condition that injects the
 	// script -- so there is no arrangement in which a production page listens
@@ -364,23 +366,67 @@ func requireTracingSecret(secret string, next http.HandlerFunc) http.HandlerFunc
 	}
 }
 
-// handleHealth answers 200 only when every module that implements Health is
-// healthy. It names the failing module in the body, because a load balancer
-// probe that only says "unhealthy" costs an hour of guessing.
+// handleHealth answers the readiness question: should this instance be sent
+// traffic right now.
+//
+// It answers 200 only when every module that implements Health is healthy and
+// every module that implements Ready is ready, and it names the first module
+// that is not, because a load balancer probe that only says "unavailable" costs
+// an hour of guessing.
+//
+// A module is asked both questions rather than one standing in for the other.
+// Health failing and Ready failing are different facts and both of them withhold
+// traffic, so consulting only whichever a module happens to implement last would
+// silently drop the other.
+//
+// Nothing this endpoint reports is a reason to restart the process. A cache that
+// cannot be reached and a backlog that has not drained both belong here, and a
+// restart brings back neither -- it discards the warm state and starts the same
+// backlog again. That is why liveness is a separate route: an orchestrator
+// pointed at this one for both questions kills a process for being behind.
 func (a *Application) handleHealth(w http.ResponseWriter, r *http.Request) {
 	for _, m := range a.modules {
-		h, ok := m.(Health)
-		if !ok {
-			continue
+		var err error
+		if h, ok := m.(Health); ok {
+			err = h.Health(r.Context())
 		}
-		if err := h.Health(r.Context()); err != nil {
-			observability.Log(r.Context()).Error("health check failed", "module", m.Name(), "error", err)
+		if err == nil {
+			if rd, ok := m.(Ready); ok {
+				err = rd.Ready(r.Context())
+			}
+		}
+		if err != nil {
+			observability.Log(r.Context()).Error("readiness check failed", "module", m.Name(), "error", err)
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			fmt.Fprintf(w, "module %s unavailable", m.Name())
 			return
 		}
 	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
+}
+
+// handleLive answers the liveness question: is this process wedged, and is
+// restarting it the repair.
+//
+// It answers 200 unconditionally, and that is the complete answer rather than an
+// unfinished one. An Arandu application is a single binary: if this handler runs
+// at all, the process is scheduled, the listener is accepting, and the router is
+// dispatching -- which is the whole of what killing and restarting a process can
+// fix. The failures that do warrant a restart, an accept loop that no longer
+// accepts or a runtime that can no longer schedule, are exactly the ones that
+// leave this route unanswered, so the probe times out and the orchestrator acts
+// on the timeout. Answering is the assertion.
+//
+// It is a function and not a method, so it cannot reach the modules. No module
+// is consulted here and there is no interface for one to implement, because
+// every condition a module can report is a reason to stop sending it traffic and
+// none of them is a reason to kill the process. A module able to fail this probe
+// would be a module able to crash-loop the whole deployment over a dependency
+// that is merely slow.
+func handleLive(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
@@ -428,19 +474,20 @@ func (a *Application) Handler() http.Handler {
 	return fhttp.Chain(a.router, append(outer, app...)...)
 }
 
-// internalPrefix is what this framework mounts for itself: the health probe,
-// the debug console, the development reload.
+// internalPrefix is what this framework mounts for itself: the readiness probe,
+// the liveness probe, the debug console, the development reload.
 //
 // It is declared surface rather than a hole in the inventory: every route under
 // it is registered on the router like any other, so `aru routes` prints it and
 // the error page names it. What it does not answer to is the application's
 // policy. exceptInternal takes every application middleware off it, and the
-// framework gates each endpoint itself -- the probe by nothing, because it reads
-// no data and holds no session; the console by its own secret, in constant time;
-// the reload by the environment; the assets by the hash in the path.
+// framework gates each endpoint itself -- the two probes by nothing, because
+// they read no data and hold no session; the console by its own secret, in
+// constant time; the reload by the environment; the assets by the hash in the
+// path.
 //
 // The namespace has more than one first-party owner. The Application mounts the
-// probe, reload and console; the view module mounts the content-addressed asset
+// probes, reload and console; the view module mounts the content-addressed asset
 // route. validateReservedRoutes distinguishes those owners with a marker from a
 // Go internal package and refuses every other module at boot, before the handler
 // can be served.
@@ -449,8 +496,9 @@ const internalPrefix = "/_arandu/"
 // exceptInternal runs an application's middleware everywhere except on the
 // framework's own routes.
 //
-// The framework's endpoints answer to the framework: the health probe must not
-// be rate limited by the application it reports on, the debug console is gated
+// The framework's endpoints answer to the framework: neither probe must be rate
+// limited by the application it reports on -- a throttled liveness probe is a
+// restart loop caused by traffic -- the debug console is gated
 // by its own secret, and the reload is a question the page asks about the
 // process rather than a request the visitor made. None of them touch the
 // database, hold a session, or write anything.

@@ -99,6 +99,7 @@ func TestTheRouteTableIsTheFullExpectedInventory(t *testing.T) {
 		authLogout = `POST /auth/logout [auth] "auth.logout"`
 		assets     = `GET /_arandu/assets/{hash}/{name} [view] "view.asset"`
 		health     = `GET /_arandu/health [arandu] "arandu.health"`
+		live       = `GET /_arandu/live [arandu] "arandu.live"`
 		reload     = `GET /_arandu/reload [arandu] "arandu.reload"`
 		console    = `GET /_arandu/debug [arandu] "arandu.debug.index"`
 		consoleOne = `GET /_arandu/debug/{id} [arandu] "arandu.debug.show"`
@@ -113,18 +114,18 @@ func TestTheRouteTableIsTheFullExpectedInventory(t *testing.T) {
 		{
 			name: "production without a tracing secret",
 			env:  config.EnvProd,
-			want: []string{health, authLogin, authSubmit, authLogout, assets},
+			want: []string{health, live, authLogin, authSubmit, authLogout, assets},
 		},
 		{
 			name:   "production with a tracing secret",
 			env:    config.EnvProd,
 			secret: "secret",
-			want:   []string{health, console, consoleOne, authLogin, authSubmit, authLogout, assets},
+			want:   []string{health, live, console, consoleOne, authLogin, authSubmit, authLogout, assets},
 		},
 		{
 			name: "development",
 			env:  config.EnvDev,
-			want: []string{health, reload, console, consoleOne, authLogin, authSubmit, authLogout, assets},
+			want: []string{health, live, reload, console, consoleOne, authLogin, authSubmit, authLogout, assets},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

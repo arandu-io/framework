@@ -67,7 +67,10 @@ func TestTheApplicationsInternalSurfaceIsInTheInventory(t *testing.T) {
 		{
 			name: "production without a tracing secret",
 			env:  config.EnvProd,
-			want: []string{internalPrefix + "health [arandu]"},
+			want: []string{
+				internalPrefix + "health [arandu]",
+				internalPrefix + "live [arandu]",
+			},
 		},
 		{
 			name:   "production with a tracing secret",
@@ -75,6 +78,7 @@ func TestTheApplicationsInternalSurfaceIsInTheInventory(t *testing.T) {
 			secret: "secret",
 			want: []string{
 				internalPrefix + "health [arandu]",
+				internalPrefix + "live [arandu]",
 				observability.ConsolePath + " [arandu]",
 				observability.ConsolePath + "/{id} [arandu]",
 			},
@@ -84,6 +88,7 @@ func TestTheApplicationsInternalSurfaceIsInTheInventory(t *testing.T) {
 			env:  config.EnvDev,
 			want: []string{
 				internalPrefix + "health [arandu]",
+				internalPrefix + "live [arandu]",
 				reloadPath + " [arandu]",
 				observability.ConsolePath + " [arandu]",
 				observability.ConsolePath + "/{id} [arandu]",
