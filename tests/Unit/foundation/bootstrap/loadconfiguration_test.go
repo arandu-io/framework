@@ -425,6 +425,62 @@ func TestAPoolSettingFromTheDotenvFileIsRefusedAsWell(t *testing.T) {
 	}
 }
 
+// The retired DB_* block stops the boot instead of being quietly ignored.
+//
+// The connection comes from one URL. A project whose .env still spells it out in
+// parts connects to DATABASE_URL -- or, with none set, to the default SQLite
+// file -- while six correct-looking values sit in the file configuring nothing.
+// Every one of them is individually plausible, which is what makes the failure
+// so slow to find: there is nothing wrong to see.
+//
+// The refusal was written for this and lived on a code path no application
+// reaches. framework/config is a bridge no project imports; what every project
+// calls is LoadConfiguration, and it parsed the URL without ever looking for the
+// block it replaced.
+func TestTheRetiredConnectionVariablesAreRefusedAtBoot(t *testing.T) {
+	for _, key := range []string{
+		"DB_CONNECTION", "DB_HOST", "DB_PORT", "DB_USERNAME", "DB_PASSWORD", "DB_DATABASE",
+	} {
+		t.Run(key, func(t *testing.T) {
+			env(t, "APP_KEY", testKey, key, "pgsql")
+
+			_, err := bootstrap.LoadConfiguration()
+			if err == nil {
+				t.Fatalf("%s was set and the boot went ahead; the application connects somewhere else and the file says otherwise", key)
+			}
+			for _, want := range []string{key + " is set", strconv.Quote("pgsql"), "DATABASE_URL=postgres://"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the error does not say %q:\n%v", want, err)
+				}
+			}
+		})
+	}
+}
+
+// And it is refused when it comes from .env, which is where it will be.
+//
+// The check reads the process environment, and .env reaches it through
+// LoadDotenv earlier in the same function. Ordering those two the other way
+// round leaves the refusal in place, green, and reaching the one file that
+// carries the block in every project that still has it.
+func TestARetiredConnectionVariableFromTheDotenvFileIsRefusedAsWell(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeFile(dir+"/.env", "DB_CONNECTION=pgsql\nDB_HOST=127.0.0.1\n"); err != nil {
+		t.Fatal(err)
+	}
+	chdir(t, dir)
+	env(t, "APP_KEY", testKey)
+	unset(t, "DB_CONNECTION", "DB_HOST")
+
+	_, err := bootstrap.LoadConfiguration()
+	if err == nil {
+		t.Fatal("a retired DB_* block in .env was accepted; the refusal has to run after the file is loaded")
+	}
+	if !strings.Contains(err.Error(), "DB_CONNECTION is set") {
+		t.Errorf("the error does not name the variable:\n%v", err)
+	}
+}
+
 func writeFile(path, body string) error { return os.WriteFile(path, []byte(body), 0o600) }
 
 // unset removes variables for the duration of one test, and puts back whatever

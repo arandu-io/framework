@@ -316,6 +316,15 @@ func loadFilesystem() filesystem.Config {
 // thirty-two states of which one is right, and a URL either parses or says
 // where it stopped.
 //
+// The six it replaced -- DB_CONNECTION and the rest of the DB_* block -- are
+// refused rather than ignored, and the refusal is the database package's. That
+// is why there is no list of retired names here: reading the variable and
+// knowing which ones it retired are one decision, so this asks Load for both
+// rather than keeping a second copy to fall out of step with. Ignoring them is
+// the failure the refusal exists for -- an .env spelling the connection out in
+// parts, an application connected somewhere else entirely, and every value in
+// the file individually correct.
+//
 // The pool is three more, and they are deliberately not part of that URL. How
 // many connections to hold is a property of the process rather than of the
 // database: two deployments of one application behind different traffic want
@@ -333,10 +342,13 @@ func loadFilesystem() filesystem.Config {
 // swallows a typo hands the operator the default pool while the .env says
 // something else -- with nothing, anywhere, saying the number was dropped.
 func loadDatabase() (database.Config, error) {
-	raw := config.String("DATABASE_URL", database.DefaultURL)
-	cfg, err := database.ParseURL(raw)
+	// Load and not ParseURL: the two differ by the refusal above, and reaching
+	// for the parser directly is what left it unreachable. Returned unwrapped,
+	// because every error it gives already names the variable it is about --
+	// and the retired-block one is about DB_CONNECTION, not about DATABASE_URL.
+	cfg, err := database.Load()
 	if err != nil {
-		return database.Config{}, fmt.Errorf("DATABASE_URL: %w", err)
+		return database.Config{}, err
 	}
 
 	if cfg.MaxOpenConns, err = poolSize("DB_MAX_OPEN_CONNS"); err != nil {
