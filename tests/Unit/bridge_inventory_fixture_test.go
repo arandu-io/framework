@@ -164,8 +164,13 @@ var allowedHesapeImports = bridgeSurface{
 		github.com/arandu-io/hesape/http github.com/arandu-io/hesape/pipeline
 		github.com/arandu-io/hesape/routing github.com/arandu-io/hesape/validation
 	`),
+	// exception is here because Recover installs hesape/exception.Recover
+	// rather than writing the panic path a second time. It is the one
+	// implementation of that job in the collection, and this package is the
+	// bridge that reaches it until v1.0.0.
 	"http/middleware": inventoryItems(`
-		github.com/arandu-io/hesape/http/middleware github.com/arandu-io/hesape/routing/middleware
+		github.com/arandu-io/hesape/exception github.com/arandu-io/hesape/http/middleware
+		github.com/arandu-io/hesape/routing/middleware
 	`),
 	"jobs": inventoryItems(`
 		github.com/arandu-io/hesape/queue github.com/arandu-io/hesape/queue/jobs

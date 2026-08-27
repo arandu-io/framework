@@ -85,8 +85,12 @@ func TestPanicInProductionLeaksNothing(t *testing.T) {
 			t.Errorf("the production response leaks %q: %s", leak, body)
 		}
 	}
-	if !strings.Contains(body, "request_id:") {
-		t.Error("the production response must carry the request id, or the log cannot be found")
+	// The id itself, and not the punctuation around it: what the operator needs
+	// is the value that also went to the log line, and asserting the exact
+	// spelling of the label pinned the page's wording rather than the guarantee.
+	id := rec.Header().Get("X-Request-ID")
+	if id == "" || !strings.Contains(body, id) {
+		t.Errorf("the production response must carry the request id %q, or the log cannot be found", id)
 	}
 }
 
