@@ -68,6 +68,60 @@ func TestHandleExceptionsRendersTheDebugPage(t *testing.T) {
 	}
 }
 
+// TestHandleExceptionsFollowsDebugAndNotTheEnvironment pins the one thing that
+// is NOT the same across the swap from http/middleware.Recover.
+//
+// That middleware takes the flag as an argument, so the caller decides; this
+// bootstrapper reads Configuration.App.Debug and nothing else. The two agree
+// only while APP_DEBUG is left unset, because its default is whether the
+// environment is development -- and every application still on the middleware
+// passes "the environment is development" rather than the field.
+//
+// So the case below is the one that parts them: an environment that is not
+// development, with the debug flag set. hesape/config.App.Validate allows that
+// pair anywhere but production, and Debug is the field documented as the switch
+// that turns the page on, which is why this asserts the page is drawn rather
+// than that it is refused.
+func TestHandleExceptionsFollowsDebugAndNotTheEnvironment(t *testing.T) {
+	cfg := bootstrap.Configuration{
+		App:           config.App{Env: config.EnvStaging, Debug: true},
+		Observability: bootstrap.Observability{Editor: "vscode"},
+	}
+	handler := bootstrap.HandleExceptions(cfg, "example.test/loja", nil)
+	h := fhttp.Chain(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("a failure in an environment that is not development")
+	}), exception.Recover(handler))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/invoices", nil))
+
+	if body := rec.Body.String(); !strings.Contains(body, "a failure in an environment that is not development") {
+		t.Errorf("the debug page was not drawn for Debug=true outside development: %s", body)
+	}
+}
+
+// TestHandleExceptionsDrawsTheStatusPageWhenDebugIsOff is the other half of the
+// pair, and it is the half that costs somebody a page they had: development with
+// the debug flag turned off draws the status page here, where passing "the
+// environment is development" to the middleware drew the stack.
+func TestHandleExceptionsDrawsTheStatusPageWhenDebugIsOff(t *testing.T) {
+	cfg := bootstrap.Configuration{
+		App:           config.App{Env: config.EnvDev, Debug: false},
+		Observability: bootstrap.Observability{Editor: "vscode"},
+	}
+	handler := bootstrap.HandleExceptions(cfg, "example.test/loja", nil)
+	h := fhttp.Chain(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("a failure in development with the debug flag off")
+	}), exception.Recover(handler))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/invoices", nil))
+
+	if body := rec.Body.String(); strings.Contains(body, "a failure in development with the debug flag off") {
+		t.Errorf("the debug page was drawn for Debug=false in development: %s", body)
+	}
+}
+
 // TestHandleExceptionsKeepsTheHandlerTheApplicationRegistersOn is the reason the
 // bootstrapper returns the handler rather than the middleware, and the whole
 // difference from http/middleware.Recover: that one builds a handler from three
