@@ -28,8 +28,11 @@ import (
 // it is unreachable outside development. The translation is below, and it is
 // three fields wide.
 type Options struct {
-	// Editor is the target of the "open in IDE" links: vscode, cursor, goland
-	// or zed.
+	// Editor is the target of the "open in IDE" links, spelled the way the link
+	// table names it -- vscode, goland, phpstorm, emacs and the rest of it.
+	//
+	// A name the table does not know draws the frames without links, rather
+	// than with links into a scheme nothing is registered to open.
 	Editor string
 	// AppModule is the module path of the application, used to tell app frames
 	// from framework and stdlib frames.
