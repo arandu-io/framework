@@ -24,7 +24,7 @@ const StatusCSRFExpired = 419
 // form backs -- hx-delete on a button, hx-patch on a toggle. Those carry the
 // token only where the markup puts it, either once on the layout
 //
-//	<body hx-headers='{"X-CSRF-Token": "{{ .CSRFToken() }}"}'>
+//	<body hx-headers='{"X-CSRF-Token": "{{ .CSRFToken }}"}'>
 //
 // or on the element that sends the request.
 //
