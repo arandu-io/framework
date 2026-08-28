@@ -59,9 +59,20 @@ func Authorize[T any](ctx context.Context, p Policy[T], s Subject, a Action, res
 // Guest is a reader with no session, declared on purpose.
 func Guest(tenant string) Subject { return auth.Guest(tenant) }
 
-// Tenant returns the tenant the Grant was issued for. Every tenant-scoped
-// statement, cache key, storage path and lock name takes this value, never one
-// that arrived with the request.
+// Tenant returns the tenant the Grant was issued for.
+//
+// Tenant-scoped SQL, every cache key and every storage path is built from this
+// value, never from one that arrived with the request.
+//
+// Three keys are deliberately not, and the reason is different in each. A lock
+// name is used as given: a lock is taken so that one replica runs the work, and
+// one lock per tenant would let every replica take a different one and run the
+// same task, once for each customer, which is the duplicate work the lock
+// exists to prevent. A rate limit key is built from the address or the session
+// id, because the limiter runs before authentication on the routes where it
+// matters most, and there is no Grant there to read anything off. A session id
+// is what says which tenant a request belongs to, so it cannot be built from
+// the answer it carries.
 //
 // The zero Grant carries no tenant and answers the empty string.
 func Tenant(g Grant) string { return auth.Tenant(g) }
