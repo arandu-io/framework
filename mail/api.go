@@ -21,6 +21,10 @@ import (
 //
 // It is the default recommendation for an application that has outgrown the log
 // transport: a domain, a DNS record and an API key, and no server to run.
+//
+// The fields are already the same as transport.Resend. What keeps this a
+// separate type is Send: it answers an error here and a receipt as well there,
+// so an alias would no longer satisfy the Transport interface.
 type Resend struct {
 	// Key is the API key, `re_...`. It comes from the environment and never from
 	// a literal -- a key in source is a key in every clone of the repository.
@@ -59,6 +63,9 @@ func (t Resend) Send(ctx context.Context, m Message) error {
 //
 // The second provider rather than the only one, because a transport with one
 // implementation is an interface nobody has proved is an interface.
+//
+// The fields are already the same as transport.SendGrid, and Send is the one
+// difference: an error here, a receipt as well there.
 type SendGrid struct {
 	// Key is the API key, `SG....`.
 	Key string

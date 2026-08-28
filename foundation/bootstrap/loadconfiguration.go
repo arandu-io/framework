@@ -77,9 +77,8 @@ type Configuration struct {
 	Observability Observability
 
 	// Repository answers the components that read configuration through an
-	// interface rather than a struct -- hashing.Config is one, and it is three
-	// keys and one method by design, so that hesape/hashing does not import a
-	// configuration package to read them.
+	// interface rather than a struct: three keys and one method by design, so
+	// that a component does not import a configuration package to read them.
 	//
 	// It is a reader over the same settings, never a second store. Nothing the
 	// framework depends on is read through it, and a key set here and nowhere
@@ -482,20 +481,6 @@ func (c Configuration) asMap() map[string]any {
 			"env":    string(c.App.Env),
 			"debug":  c.App.Debug,
 			"locale": c.App.Locale,
-		},
-		"hashing": map[string]any{
-			// argon2id, and not bcrypt.
-			//
-			// bcrypt is a compatibility default, and there are no previous
-			// hashes to stay compatible with. argon2id is what
-			// golang.org/x/crypto carries -- the one third-party dependency the
-			// core takes, and it takes it for this.
-			"driver": config.String("HASH_DRIVER", "argon2id"),
-			"argon": map[string]any{
-				"memory":  config.Int("ARGON_MEMORY", 65536),
-				"time":    config.Int("ARGON_TIME", 4),
-				"threads": config.Int("ARGON_THREADS", 1),
-			},
 		},
 		"session": map[string]any{
 			"driver":   c.Session.Driver,

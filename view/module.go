@@ -12,11 +12,19 @@ type reservedNamespace = internalroutes.ReservedNamespace
 //
 // It is a kernel.Module and not a plain Mount function an application calls: a
 // function has to be remembered, and a screen that emits three tags against a
-// server nobody mounted gets three 404s -- no stylesheet, no HTMX, no Alpine.
+// server nobody mounted gets three 404s -- no stylesheet, no HTMX, no client
+// behaviour.
 //
 // A module appears in the Register call next to events, jobs and the scheduler,
 // which is where somebody reading main.go already looks to learn what an
 // application is made of.
+//
+// # Why this one is declared and not aliased
+//
+// hesape/view.Module answers Routes with a *routing.Router, and this one
+// answers it with a *http.Router. Those are two types while http.Router is an
+// envelope, so the hesape module does not satisfy the contract the kernel
+// collects and an alias here would stop this one satisfying it either.
 type Module struct{ reservedNamespace }
 
 // NewModule returns the module.

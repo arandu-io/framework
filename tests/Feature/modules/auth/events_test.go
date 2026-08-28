@@ -254,9 +254,10 @@ func TestAVerificationLinkStopsWorkingWhenTheAddressChanges(t *testing.T) {
 
 // TestAPayloadCannotBorrowTheAddressesFirstCharacter.
 //
-// security.Signer writes the purpose with its length in front of it so that a
-// purpose of "verify" with a body of "x.y" cannot produce the same bytes as a
-// purpose of "verifyx" with a body of ".y". The payload inside the token needs
+// security.Signer writes the purpose with its length in front of it so that
+// nothing on either side of the separator can move the boundary between them: a
+// purpose of "a|b" with a body of "c" and a purpose of "a" with a body of "b|c"
+// are the byte string "a|b|c" either way. The payload inside the token needs
 // the same property, or the fix for one token confusion builds another: an id of
 // "a" with an address of "b|c" and an id of "a|b" with an address of "c" would
 // be the same string, and one account's link would verify another's.

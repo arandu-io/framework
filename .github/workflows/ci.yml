@@ -163,8 +163,41 @@ jobs:
             echo "Write what somebody has to change, and why. That file is the whole mechanism."
             exit 1
           fi
+
+          # And the entry has to be about THESE breaks.
+          #
+          # "Touched since the tag" stops testing anything the moment the file has
+          # been touched once: a release writes its entry, and every incompatible
+          # change after it rides in unwritten until the next tag. In a sibling
+          # repository two packages were removed hours after an entry was written,
+          # and the check passed them.
+          #
+          # apidiff writes two shapes, and both have to be read:
+          #   - ./http/middleware.Limiter: removed
+          #   - package github.com/arandu-io/framework/x: removed
+          # The needle goes after `--`, because a symbol that still began with a
+          # dash was read by grep as an option -- a usage line, and a quiet match
+          # of nothing.
+          added=$(git diff "$latest" -- UPGRADE.md | grep '^+' || true)
+          named=0
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            symbol=${line#- }
+            symbol=${symbol#package }
+            symbol=${symbol#./}
+            symbol=${symbol%%:*}
+            [ -n "$symbol" ] || continue
+            if printf '%s' "$added" | grep -qF -- "$symbol"; then named=1; break; fi
+          done <<< "$broke"
+
+          if [ "$named" -eq 0 ]; then
+            echo
+            echo "UPGRADE.md moved since $latest, and names none of the symbols above."
+            echo "An entry written for an earlier change is not an entry for this one."
+            exit 1
+          fi
           echo
-          echo "incompatible changes, and UPGRADE.md was updated. Read the entry in review."
+          echo "incompatible changes, and UPGRADE.md names them. Read the entry in review."
 
       # Required by doc 24: a known vulnerability blocks the merge rather than
       # showing up in a report nobody reads.

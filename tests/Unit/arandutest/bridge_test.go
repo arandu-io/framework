@@ -136,7 +136,15 @@ var _ func(*testing.T, context.Context, *events.Outbox, events.Publisher) = hesa
 
 // The hesape client answers the assertions this envelope forwards to. If any of
 // them is renamed again, this fails at compile time in the package that has to
-// change, rather than at the thirteen call sites that must not.
+// change, rather than at the call sites that must not.
+//
+// Measured on 27/08/2026, because the number this comment used to carry --
+// thirteen -- was never a number of anything: the six names below are called
+// 126 times, in six files, all of them in examples/tests. arandu, arandu.io and
+// community.arandu.io import Client and never call a method on it; in
+// community.arandu.io/tests/Feature/Search_test.go it is `_ = client` three
+// times. So the import rewrite is mechanical everywhere except examples, and
+// that is where the renames are.
 var (
 	_ func(int) *hesapetest.Response    = (*hesapetest.Response)(nil).AssertStatus
 	_ func() *hesapetest.Response       = (*hesapetest.Response)(nil).AssertOk

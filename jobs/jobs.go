@@ -124,6 +124,10 @@ type Handler interface {
 }
 
 // HandlerFunc adapts a function to Handler.
+//
+// Declared here for the same reason Handler is: it names this package's Job,
+// which is a value where hesape's is a pointer with a driver behind it. A
+// function written for one is not a value of the other.
 type HandlerFunc func(ctx context.Context, g security.Grant, j Job) error
 
 // Handle calls f.

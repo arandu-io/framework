@@ -33,6 +33,10 @@ const mailerName = "default"
 var errNoSubject = errors.New("mail: the envelope has no subject")
 
 // Mailer sends a Mailable through a Transport.
+//
+// It is an envelope over hesape/mail.Mailer and not an alias: that constructor
+// takes a mailer name and an event dispatcher this package has no argument
+// for, and its To takes one polymorphic argument where this one takes strings.
 type Mailer struct {
 	inner *hmail.Mailer
 
@@ -66,6 +70,10 @@ func (m *Mailer) ToAddress(addresses ...Address) *Pending {
 func (m *Mailer) Transport() Transport { return m.transport }
 
 // Pending is a message being addressed.
+//
+// PendingMail in hesape, with a fluent surface this one never had, and its Send
+// answers a receipt as well as an error. Three methods rather than an alias to
+// all of them: a bridge carries the old surface across and does not grow one.
 type Pending struct {
 	inner *hmail.PendingMail
 }

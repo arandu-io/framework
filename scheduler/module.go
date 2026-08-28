@@ -21,6 +21,14 @@ import (
 // registered before it -- which is why it goes last in the Register call. A
 // module never starts its own goroutine; it declares work, and this is what
 // runs it.
+//
+// # Why this one is declared and not aliased
+//
+// hesape/console/scheduling.Module takes a *scheduling.Schedule and answers
+// Boot, Start and Close. This one takes []kernel.Task, answers Routes with a
+// *http.Router and answers Diagnose as well, which is the kernel's side of the
+// contract rather than hesape's. The tasks come from kernel.Tasks(), so this
+// half stays here.
 type Module struct {
 	tasks     []kernel.Task
 	opts      Options

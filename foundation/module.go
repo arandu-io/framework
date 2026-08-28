@@ -2,9 +2,9 @@
 //
 // Everything a module declares -- the optional interfaces, the scheduled task,
 // the migration -- is an alias to the hesape declaration, so a module written
-// against either name is one type to the compiler. Three names are declared
-// here instead, and each has a reason recorded on it: Module, RendererProvider
-// and Locker.
+// against either name is one type to the compiler. Four names are declared
+// here instead, and each has a reason recorded on it: Module, RendererProvider,
+// Locker and Ready.
 
 package foundation
 
@@ -185,6 +185,35 @@ type Migration = hfoundation.Migration
 
 // Health is optional and feeds `aru doctor` and the /_arandu/health endpoint.
 type Health = hfoundation.Health
+
+// Ready is optional: the module reports whether this instance should be sent
+// traffic right now.
+//
+// It is the second half of a distinction Health cannot express on its own.
+// Health asks whether something the module depends on is working. Ready asks
+// whether this particular process is in a state to serve -- a module still
+// warming a cache, still waiting to win a leader election, or holding a queue it
+// has not caught up on is working exactly as intended and must not receive
+// requests yet. There is no error it can return from Health that says that
+// without also claiming something is broken.
+//
+// Both feed the readiness endpoint, and a module that implements both must pass
+// both. Ready adds a condition and never replaces the one Health already
+// carries: a module that lost a check by gaining a method would be a hole
+// nothing reports, and the module author who added Ready is the last person who
+// would notice the database check had stopped counting.
+//
+// A module that implements only Health keeps the behaviour it has always had --
+// a Health failure withholds traffic -- so nothing written against the older
+// contract changes meaning.
+//
+// Neither interface feeds the liveness endpoint, and no module can ask for a
+// restart. That is the point of the pair rather than an omission: the conditions
+// reported here are the ones a restart does not fix and usually worsens. See the
+// liveness handler for what a restart can honestly be asked to repair.
+type Ready interface {
+	Ready(ctx context.Context) error
+}
 
 // ReloadTagger is what a module implements to supply the development
 // live-reload tag.

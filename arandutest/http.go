@@ -3,9 +3,9 @@
 // -- by github.com/arandu-io/hesape/auth.
 //
 // This is where the design diverged, so this is where the envelopes are. Every
-// assertion on Response was renamed on the way to hesape, and thirteen modules
-// call the old names, so Response keeps them and forwards. Client is an envelope
-// for one reason only: its Get and Post answer that Response.
+// assertion on Response was renamed on the way to hesape, so Response keeps the
+// old names and forwards. Client is an envelope for one reason only: its Get and
+// Post answer that Response.
 
 package arandutest
 
@@ -30,6 +30,10 @@ import (
 // The jar, the CSRF token read off the last page, and the rule that a second
 // Set-Cookie of a name replaces the first all live in
 // hesape/arandutest.Client. This type holds nothing but that one.
+//
+// It is declared here for one reason: Get and Post answer this package's
+// Response, which keeps the assertion names hesape renamed. It becomes an
+// alias the day Response does, and not before.
 type Client struct {
 	inner *arandutest.Client
 }
@@ -54,10 +58,17 @@ func (c *Client) Post(path string, form map[string]string) *Response {
 
 // Response is what came back, with the assertions worth having.
 //
-// Renamed on the way to hesape: every method below is spelled Assert* there.
-// The old names are kept because thirteen modules call them, and each one
-// forwards to exactly one hesape method -- the comparison, the failure message
-// and whether it stops the test are all decided by the code that runs there.
+// Renamed on the way to hesape: every method below is spelled Assert* there,
+// and Body is GetContent. Each one forwards to exactly one hesape method -- the
+// comparison, the failure message and whether it stops the test are all decided
+// by the code that runs there.
+//
+// It is a declaration rather than an alias because of what an alias would carry:
+// the new names, and only those. Every existing call of Status, OK, See,
+// DontSee, RedirectsTo and Body would stop compiling on the day this type
+// changed shape, which is the one thing a bridge exists to prevent. That is the
+// condition, not a count of callers -- one call left anywhere is enough for it
+// to hold, and it stops holding only when there are none.
 type Response struct {
 	inner *arandutest.Response
 }
@@ -134,14 +145,17 @@ func (r *Response) Header(name string) string { return r.inner.Header(name) }
 // hesape/arandutest.Client.ActingAs, which puts the subject on the outgoing
 // request.
 //
-// Deleted on the way to hesape, and this is the one behaviour the bridge
-// changes on purpose. The old implementation wrote a context key of its own
-// that no policy, no repository and no middleware ever read: it authenticated
-// nothing, so a test written against it passed while proving the opposite of
-// what it said. It now writes auth.WithSubject, which is the key the edge
-// middleware writes and every policy reads. The signature is untouched --
-// security.Subject is an alias for auth.Subject -- so nothing recompiles
-// differently.
+// Deleted on the way to hesape: there is no package-level form there, and a
+// subject goes under auth.WithSubject -- the key the edge middleware writes and
+// every policy reads. This is one call to it and nothing else, so the name is
+// the only thing left here that hesape does not spell the same way. The
+// signature is untouched, because security.Subject is an alias for auth.Subject.
+//
+// It used to hold a context key of its own that no policy, no repository and no
+// middleware ever read, which authenticated nothing: a test written against it
+// passed while proving the opposite of what it said. Naming that is worth a line
+// because it is the reason to reach for auth.WithSubject and not for a key that
+// looks equivalent.
 func ActingAs(ctx context.Context, s security.Subject) context.Context {
 	return auth.WithSubject(ctx, s)
 }

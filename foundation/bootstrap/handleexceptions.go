@@ -31,6 +31,16 @@ import (
 // fields and drops it, so none of that is reachable through it; it is the
 // bridge, and it goes in v1.0.0.
 //
+// # Which page it draws
+//
+// The debug page is drawn when App.Debug is set, and that is the only thing
+// read -- the environment is not consulted here. An application arriving from
+// the middleware, which takes the flag as an argument, was most likely passing
+// whether the environment is development. The two answer the same only while
+// APP_DEBUG is left unset, so a deployment that sets it sees the page move: not
+// development with APP_DEBUG set now draws the stack, and development with
+// APP_DEBUG=false now draws the status page.
+//
 // # What the AppModule is for, and why it is not guessed
 //
 // The debug page separates the frames of your code from the frames of the

@@ -209,6 +209,82 @@ What is importable and new beside it is `github.com/arandu-io/framework/tests`,
 which is the base the suites build on. It exports `ModuleRoot`, it imports
 `testing`, and no code that ships should reach it.
 
+### The rate limit counts in a store, not in this process
+
+`apidiff` reports four removals from `http/middleware`:
+
+```
+- ./http/middleware.Limiter: removed
+- ./http/middleware.MemoryLimiter: removed
+- ./http/middleware.NewMemoryLimiter: removed
+- ./http/middleware.RateLimit: removed
+```
+
+`MemoryLimiter` counted in process memory, so `N` replicas allowed `N` times the
+limit — on the endpoints a limit is put there for. `Limiter` was the interface it
+was meant to be swapped through, and the distributed implementation it named
+never existed: `MemoryLimiter` was the only type in the collection with that
+method, so the interface stood in front of one implementation declared beside it.
+
+The limit is now `hesape/routing/middleware.Throttle` over a
+`hesape/cache.RateLimiter`, which counts in a `cache.Store`. Two replicas over
+one store are one budget.
+
+`KeyByIP` and `KeyBySession` stay here, unchanged and byte-for-byte compatible.
+A counter in a shared store is keyed by the string they return, so they are the
+one part of this that must not move.
+
+Where the wiring read:
+
+```go
+limiter := middleware.NewMemoryLimiter()
+
+app.Use(
+	middleware.RateLimit(limiter, 300, time.Minute, middleware.KeyBySession(sessions.IDFromRequest)),
+)
+```
+
+it becomes:
+
+```go
+import (
+	fhttp "github.com/arandu-io/framework/http"
+	"github.com/arandu-io/framework/http/middleware"
+	"github.com/arandu-io/hesape/cache"
+	hmiddleware "github.com/arandu-io/hesape/routing/middleware"
+)
+
+limiter := cache.NewRateLimiter(store)
+
+app.Use(
+	hmiddleware.Throttle(limiter, cache.PerMinute(300),
+		middleware.KeyBySession(sessions.IDFromRequest), fhttp.Refuse),
+)
+```
+
+Four things changed and each is doing work:
+
+- **`store`** is the `cache.Store` the counter lives in. `cache.NewArrayStore()`
+  is in process and behaves exactly as `MemoryLimiter` did, which makes it the
+  honest choice for one instance and the wrong one for two;
+  `redis.NewRedisStore(conn)` is the shared one.
+- **`cache.PerMinute(300)`** replaces the `300, time.Minute` pair. The budget and
+  the window are one value now, which is what a named limiter registered with
+  `RateLimiter.For` resolves to.
+- **`fhttp.Refuse`** is passed rather than assumed. `Throttle` takes the refusal
+  as a parameter because how a 4xx is written belongs to the request layer — this
+  one adds `HX-Refresh`, without which a person over the limit presses the button
+  and the screen does not change.
+- **The store can fail, and `Allow` could not say so.** `Throttle` lets the
+  request through and logs at `ERROR`: a rate limiter that is down must not
+  become an outage. A caller whose budget is the security control rather than a
+  guard against volume — a sign-in — checks in the handler against the same
+  limiter, where it can fail closed on the same error.
+
+`Throttle` also panics when it is built with a limit no request could satisfy —
+`PerMinute(0)`, a zero window, a nil limiter or key. That case used to be a route
+that silently carried no limit at all.
+
 ---
 
 ## v0.13.3 — everything published so far

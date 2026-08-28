@@ -1,6 +1,14 @@
-// Package view is the view layer: kyse for markup, HTMX for interaction,
-// Alpine for ephemeral client state, Tailwind for style. It is a binary and it
-// is never Node.
+// Package view is the view layer: kyse for markup, HTMX for interaction, ui.js
+// for client behaviour, Tailwind for style. It is a binary and it is never
+// Node.
+//
+// ui.js is delegation rather than a reactive runtime: it binds once on the
+// document, dispatches on data- attributes and evaluates nothing an attribute
+// carries. Markup that HTMX swaps in is therefore live the moment it lands,
+// with nothing to initialise, and open, active and selected are read from the
+// ARIA the markup already carries rather than from a second copy of the state.
+// It is also what lets the pages run under a script-src of 'self' with no
+// unsafe-eval, which a runtime that compiles directive expressions cannot do.
 //
 // A project that uses it still runs with `git clone && aru dev`: no
 // node_modules, no package.json, no lockfile of JavaScript, nothing installed
@@ -35,19 +43,21 @@
 // Two files here still hold an implementation, because the hesape design
 // diverged in a way no envelope can absorb without breaking a caller:
 //
-//	Page, Layout, New  hesape/view renamed the four error accessors --
-//	                   FieldError became First, FieldErrors became Get,
-//	                   HasErrors became Any and ErrorSummary became All, and
-//	                   the Layout interface followed. github.com/arandu-io/kyse
-//	                   declares a two-method interface asking for FieldError,
-//	                   in a separate module, so an alias compiles here and
-//	                   breaks the component library in silence. An envelope cannot
-//	                   stand in either: Page is written as a composite literal
-//	                   across the skeleton and the published screens, and
-//	                   promoted fields are not addressable in one. hesape's New
-//	                   also takes a *hesape/http.Context and its Errors field
-//	                   is a hesape/validation.Errors, neither of which this
-//	                   module's http and validation reach yet.
+//	Page, Layout, New  the divergence is the method set alone: the two Page
+//	                   structs are the same type field for field, Errors
+//	                   included, because Context and State are aliases here and
+//	                   New is handed the same State the hesape one is. What
+//	                   differs is the four error accessors, which hesape/view
+//	                   renamed -- FieldError became First, FieldErrors became
+//	                   Get, HasErrors became Any and ErrorSummary became All --
+//	                   and the Layout interface followed them. The component
+//	                   library calls Page.FieldError from a separate module, so
+//	                   an alias compiles here and breaks it in silence, and it
+//	                   would drop LogValue and MarshalJSON as well, which this
+//	                   Page has and that one does not. An envelope cannot stand
+//	                   in either: Page is written as a composite literal across
+//	                   the skeleton and the published screens, and promoted
+//	                   fields are not addressable in one.
 //	Module             hesape/view.Module takes a *hesape/routing.Router and
 //	                   answers a hesape/http.Renderer, and it deliberately
 //	                   drops the compile-time assertion against the module

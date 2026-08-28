@@ -82,6 +82,12 @@ type entry struct {
 }
 
 // Scheduler fires tasks on their schedule.
+//
+// It is declared here rather than aliased because the two designs collect
+// different things. A schedule is declared through Schedule.Call in hesape and
+// carried as an Event; here it is collected as a kernel.Task, and the task
+// carries a Timeout, a Recorder and a kernel.Locker that an Event has no field
+// for.
 type Scheduler struct {
 	entries  []*entry
 	schedule *scheduling.Schedule

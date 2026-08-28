@@ -21,8 +21,8 @@ import (
 // on purpose: a configurable cookie name buys nothing and breaks the CSRF
 // binding when two parts of a project disagree about it.
 //
-// Renamed on the way to hesape: it is session.CookieName there, because the
-// package name already says which cookie it is.
+// It is session.CookieName under a name that repeats the package: one constant
+// with two spellings, so a cookie written through either is read by the other.
 const SessionCookieName = session.CookieName
 
 // Errors returned by SessionStore.
@@ -34,10 +34,10 @@ var (
 	// ErrSessionExpired means the session id is well formed but the backend no
 	// longer holds it -- expired, or destroyed by a logout elsewhere.
 	//
-	// Renamed on the way to hesape: it is session.ErrExpired there. The alias
-	// is what keeps a backend correct without a line changing -- it returns
-	// this value, and hesape/session.Handler requires that one, and they are
-	// the same value.
+	// It is session.ErrExpired, and being the same value rather than an equal
+	// one is what keeps a backend correct without a line changing: the backend
+	// returns this name, hesape/session.Handler requires that one, and there is
+	// only ever one value to match.
 	ErrSessionExpired = session.ErrExpired
 
 	// ErrConfirmationNotStored means the backend accepted the password
@@ -53,8 +53,6 @@ const RememberLifetime = session.RememberLifetime
 const PasswordConfirmationWindow = session.PasswordConfirmationWindow
 
 // SessionOption adjusts how a session is started.
-//
-// Renamed on the way to hesape: it is session.Option there.
 type SessionOption = session.Option
 
 // Remember asks for a session that survives closing the browser, for
@@ -245,7 +243,10 @@ func (b handlerBackend) DeleteSubject(ctx context.Context, tenant, subjectID, ke
 // routed elsewhere -- use the kv adapter there.
 //
 // It is the same four renames as backendHandler, run the other way: the store
-// underneath is hesape/session.ArrayHandler, and nothing is kept here.
+// underneath is hesape/session.ArrayHandler, and nothing is kept here. Those
+// renames are why it is a declaration and not an alias -- Get, Put, Delete and
+// DeleteSubject are Read, Write, Destroy and DestroyIndex there, and a backend
+// outside this module implements the four names below.
 type MemoryBackend struct {
 	handler *session.ArrayHandler[Subject]
 }
@@ -285,13 +286,15 @@ func (m *MemoryBackend) DeleteSubject(ctx context.Context, tenant, subjectID, ke
 // SessionStore issues and validates sessions.
 //
 // It is an envelope over hesape/session.RecordStore[Subject] and
-// hesape/http.Intended, because the design diverged in three ways at once:
-// four methods were renamed, Load's return type changed from a Subject to a
-// Record that wraps one, and the intended destination left the session package
-// altogether -- it is an address, and hesape/session never validates a URL.
+// hesape/http.Intended rather than an alias of either, because the two shapes
+// diverge in three ways at once: four methods answer to different names there,
+// Load returns the Subject where RecordStore.All returns the Record that wraps
+// one, and the intended destination belongs to neither -- it is an address, and
+// hesape/session never validates a URL.
 //
-// The cookie is unchanged. hesape/session signs the same name with the same
-// key, so a browser holding a session issued by the old code is still signed in.
+// The cookie is the same cookie. hesape/session signs the same name with the
+// same key, so a browser holding a session issued through either is signed in
+// for both.
 type SessionStore struct {
 	store    *session.RecordStore[Subject]
 	intended *hhttp.Intended
@@ -317,16 +320,23 @@ func (s *SessionStore) Start(ctx context.Context, w http.ResponseWriter, sub Sub
 // Rotate issues a new session id for the same subject and destroys the old one.
 //
 // It MUST be called on login: keeping the pre-login id is session fixation.
-// Renamed on the way to hesape: it is RecordStore.Regenerate there.
+//
+// It is session.RecordStore.Regenerate -- one operation under two names, one
+// layer apart -- and oldID is the whole of what separates it from Start. Start
+// takes no id to replace, so a login written with it cannot destroy the record
+// the visitor arrived holding: the destruction is not skipped there, it is
+// unsayable. Regenerate with an empty oldID is byte for byte what Start does,
+// so a sign-in on a request that carries no session is written with this name
+// too.
 func (s *SessionStore) Rotate(ctx context.Context, w http.ResponseWriter, oldID string, sub Subject, opts ...SessionOption) (string, error) {
 	return s.store.Regenerate(ctx, w, oldID, recordFor(sub), opts...)
 }
 
 // Load returns the subject bound to the request's session cookie.
 //
-// Renamed on the way to hesape, and its return type changed with it:
-// RecordStore.All answers a Record that wraps the payload with the tenant, the
-// account and the two fields that decide the lifetime. This unwraps it.
+// It is session.RecordStore.All with the wrapper taken off: that one answers a
+// Record carrying the tenant, the account and the two fields that decide the
+// lifetime, and this returns the Subject inside it.
 func (s *SessionStore) Load(ctx context.Context, r *http.Request) (Subject, error) {
 	rec, err := s.store.All(ctx, r)
 	if err != nil {
@@ -361,12 +371,10 @@ func (s *SessionStore) DestroyOthers(ctx context.Context, sub Subject, keepID st
 // IntendedLifetime: whoever signs in next is carried to the page the previous
 // person was refused.
 //
-// The two halves are two calls now, because the address moved to hesape/http:
-// RecordStore.Invalidate ends the session and hhttp.Intended.Clear drops the
-// address. Keeping them together here is what stops the second one from being
-// forgotten at each call site.
-//
-// Renamed on the way to hesape: it is RecordStore.Invalidate there.
+// The two halves are two calls, because the address is not the session's to
+// hold: session.RecordStore.Invalidate ends the session and hhttp.Intended.Clear
+// drops the address. Keeping them together here is what stops the second one
+// from being forgotten at each call site.
 func (s *SessionStore) Destroy(ctx context.Context, w http.ResponseWriter, id string) error {
 	if err := s.store.Invalidate(ctx, w, id); err != nil {
 		return err
@@ -378,23 +386,21 @@ func (s *SessionStore) Destroy(ctx context.Context, w http.ResponseWriter, id st
 // IDFromRequest returns the session id when the cookie signature is valid, and
 // the empty string otherwise. It is the function to hand to the CSRF
 // middleware, which binds its token to this id.
-//
-// Renamed on the way to hesape: it is RecordStore.ID there.
 func (s *SessionStore) IDFromRequest(r *http.Request) string { return s.store.ID(r) }
 
 // RememberIntended records where this request was going, so that the sign-in
 // screen it is about to be sent to can finish the journey.
 //
-// Moved on the way to hesape: it is hhttp.Intended.Remember there, wired once
-// at boot beside the store rather than hanging off it. This store builds one
-// over the same application key, so the two are interchangeable in a browser.
+// It is hhttp.Intended.Remember, which is otherwise wired once at boot rather
+// than hanging off a session store. This store builds one over the same
+// application key, so an address written through either is read by the other.
 func (s *SessionStore) RememberIntended(w http.ResponseWriter, r *http.Request) {
 	s.intended.Remember(w, r)
 }
 
 // TakeIntended returns the address RememberIntended stored, and clears it.
 //
-// Moved on the way to hesape: it is hhttp.Intended.Take there.
+// It is hhttp.Intended.Take, over the same Intended RememberIntended writes to.
 func (s *SessionStore) TakeIntended(w http.ResponseWriter, r *http.Request, fallback string) string {
 	return s.intended.Take(w, r, fallback)
 }

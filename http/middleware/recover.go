@@ -27,12 +27,25 @@ import (
 //	app.Use(exception.Recover(h), ...)
 //
 // Both spellings end in the same exception.Recover, so they catch the same
-// things and draw the same pages. What differs is what is left afterwards: this
-// one builds the Handler from three fields and drops it, so there is no object
-// to register an Error, Missing or Fatal callback on, none to hand the
-// application's own error views to, and none to name the errors that must never
-// reach the log. HandleExceptions returns that Handler, and the application
-// keeps it.
+// things. Two differences survive the swap, and the second one changes what a
+// client sees.
+//
+// The first is what is left afterwards: this one builds the Handler from three
+// fields and drops it, so there is no object to register an Error, Missing or
+// Fatal callback on, none to hand the application's own error views to, and none
+// to name the errors that must never reach the log. HandleExceptions returns
+// that Handler, and the application keeps it.
+//
+// The second is where the debug flag comes from, which is what decides between
+// the debug page and the status page. This function takes it as an argument, so
+// the caller decides; HandleExceptions reads Configuration.App.Debug. The two
+// answer the same only while APP_DEBUG is left unset, because its default is
+// whether the environment is development. Pass anything else here -- "the
+// environment is development" is the usual one -- and the swap moves the page:
+// an environment that is not development with APP_DEBUG set starts drawing the
+// stack, the request and the environment, and development with APP_DEBUG=false
+// stops drawing them. Passing cfg.App.Debug is what makes the two draw the same
+// page before the swap and after it.
 //
 // The death date above is what keeps this from being a second way to install
 // one middleware.
