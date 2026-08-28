@@ -4,11 +4,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/arandu-io/framework/foundation/bootstrap"
 	hconfig "github.com/arandu-io/hesape/config"
 )
 
@@ -31,7 +33,13 @@ const (
 // appKeyLen is the required length of the application key, in bytes.
 const appKeyLen = 32
 
-// Config is a struct, not a map. Every field is validated at boot.
+// Config is a struct, not a map: a wrong field name is a compile error rather
+// than a zero value discovered on the first request that needed it.
+//
+// Validate reaches every field but AppName, which is free-form because any
+// string is a name for an application. Two of the checks are conditional, and
+// the condition is the environment: the log level and the listen address are
+// only constrained outside development.
 type Config struct {
 	AppName  string
 	Env      Env
@@ -53,10 +61,14 @@ type Config struct {
 	// TracingSecret enables the request Collector outside development for
 	// requests carrying it in the X-Arandu-Trace header. Empty disables it,
 	// which is the default: tracing must be opt-in, per deployment.
+	//
+	// A value too short to survive guessing is refused. See Validate.
 	TracingSecret string
 
-	// Editor is the target of the "open in IDE" links on the error page.
-	// One of vscode, cursor, goland, zed.
+	// Editor is the target of the "open in IDE" links on the error page, named
+	// the way the editor link table names it.
+	//
+	// A name the table does not carry is refused. See Validate.
 	Editor string
 }
 
@@ -116,6 +128,42 @@ func (c Config) Validate() error {
 	}
 	if c.Env != EnvDev && c.HTTPAddr == "" {
 		return fmt.Errorf("HTTP_ADDR is required outside development")
+	}
+	if c.SessionTTL <= 0 {
+		return fmt.Errorf("SESSION_TTL is %v, and it is a count of seconds greater than zero: a session that expires as it is written signs everybody out on the next request", c.SessionTTL)
+	}
+	if c.CSRFTTL <= 0 {
+		return fmt.Errorf("CSRF_TTL is %v, and it is a count of seconds greater than zero: a token that expires as it is issued answers 419 on every form", c.CSRFTTL)
+	}
+	if err := validateRedisURL(c.RedisURL); err != nil {
+		return err
+	}
+	// The two observability settings are checked by the package that owns what
+	// reads them, so this bridge does not carry a second copy of either rule.
+	return bootstrap.Observability{TracingSecret: c.TracingSecret, Editor: c.Editor}.Validate()
+}
+
+// validateRedisURL refuses an address that cannot be dialled.
+//
+// Empty is not an error. The variable is only read by an application that asked
+// for a Redis-backed store, and leaving it out is how the other stores are
+// selected -- so an empty value is a configuration rather than an omission.
+func validateRedisURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("REDIS_URL is not a URL: %w", err)
+	}
+	switch u.Scheme {
+	case "redis", "rediss":
+	default:
+		return fmt.Errorf("REDIS_URL has scheme %q, and it is redis:// or rediss:// for the encrypted one", u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("REDIS_URL names no host: %q", raw)
 	}
 	return nil
 }

@@ -92,6 +92,112 @@ func TestDebugLogIsForbiddenInProduction(t *testing.T) {
 	}
 }
 
+// TestValidateRejectsANonPositiveTTL covers the two durations.
+//
+// Zero is what a variable that failed to parse leaves behind, and both zeros
+// are invisible until traffic arrives: a session that expires as it is written
+// signs everybody out on their next request, and a token that expires as it is
+// issued answers 419 on every form.
+func TestValidateRejectsANonPositiveTTL(t *testing.T) {
+	for name, broken := range map[string]func(*config.Config){
+		"SESSION_TTL": func(c *config.Config) { c.SessionTTL = 0 },
+		"CSRF_TTL":    func(c *config.Config) { c.CSRFTTL = -time.Second },
+	} {
+		cfg := validConfig()
+		broken(&cfg)
+
+		err := cfg.Validate()
+		if err == nil {
+			t.Errorf("%s was accepted at zero or below", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("the message does not name %s: %v", name, err)
+		}
+	}
+}
+
+// TestValidateRejectsARedisURLThatCannotBeDialled covers the address that
+// parses as a URL and is not one of these.
+func TestValidateRejectsARedisURLThatCannotBeDialled(t *testing.T) {
+	for _, raw := range []string{
+		"http://127.0.0.1:6379",  // the wrong protocol entirely
+		"redis://",               // a scheme and nothing to connect to
+		"127.0.0.1:6379",         // the host without a scheme, which parses as one
+		"redis://%zz@host:6379/", // not parseable at all
+	} {
+		cfg := validConfig()
+		cfg.RedisURL = raw
+
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("REDIS_URL=%q was accepted; the failure would arrive on the first cache read", raw)
+		}
+	}
+}
+
+// TestValidateAcceptsRedisURLsThatWork, because a check that refuses everything
+// refuses the working configuration too.
+func TestValidateAcceptsRedisURLsThatWork(t *testing.T) {
+	for _, raw := range []string{
+		"redis://127.0.0.1:6379",
+		"redis://:password@cache.example.com:6379/1",
+		"rediss://:password@cache.example.com:6380",
+		"", // no Redis at all: the other stores are selected by leaving it out
+	} {
+		cfg := validConfig()
+		cfg.RedisURL = raw
+
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("REDIS_URL=%q was refused: %v", raw, err)
+		}
+	}
+}
+
+// TestValidateRejectsAnEditorTheLinkTableDoesNotKnow: an unknown name draws
+// every stack frame on the error page without its link, and draws it that way
+// silently.
+func TestValidateRejectsAnEditorTheLinkTableDoesNotKnow(t *testing.T) {
+	cfg := validConfig()
+	cfg.Editor = "vim"
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("ARANDU_EDITOR=vim was accepted")
+	}
+	if !strings.Contains(err.Error(), "ARANDU_EDITOR") {
+		t.Errorf("the message does not name the variable to fix: %v", err)
+	}
+}
+
+// TestValidateRejectsATracingSecretTooShortToKeep: the secret is the whole gate
+// on the debug console outside development, and its length is the only cost of
+// guessing it.
+func TestValidateRejectsATracingSecretTooShortToKeep(t *testing.T) {
+	cfg := validConfig()
+	cfg.TracingSecret = "x"
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("a one-character tracing secret was accepted")
+	}
+	if !strings.Contains(err.Error(), "ARANDU_TRACING_SECRET") {
+		t.Errorf("the message does not name the variable to fix: %v", err)
+	}
+}
+
+// TestValidateAcceptsAnEmptyTracingSecretAndEditor: empty is the default of
+// both, and it means the console is off and the frames carry no links. Refusing
+// it would refuse every application that never asked for either.
+func TestValidateAcceptsAnEmptyTracingSecretAndEditor(t *testing.T) {
+	cfg := validConfig()
+	cfg.TracingSecret = ""
+	cfg.Editor = ""
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("an unconfigured console and editor were refused: %v", err)
+	}
+}
+
 func TestIsDev(t *testing.T) {
 	for env, want := range map[config.Env]bool{
 		config.EnvDev:     true,
