@@ -260,6 +260,54 @@ func TestTheEditorIsReadOnceAndHandedOn(t *testing.T) {
 	}
 }
 
+// TestAnEditorTheLinkTableDoesNotKnowStopsTheBoot covers the typo whose only
+// other symptom is an error page where nothing is clickable.
+//
+// A name outside the table draws every stack frame without its link, and it
+// does that silently -- on the page somebody opened because something else was
+// already wrong. Boot is the moment to say so.
+func TestAnEditorTheLinkTableDoesNotKnowStopsTheBoot(t *testing.T) {
+	env(t, "APP_KEY", testKey)
+	t.Setenv("ARANDU_EDITOR", "vim")
+
+	_, err := bootstrap.LoadConfiguration()
+	if err == nil {
+		t.Fatal("ARANDU_EDITOR=vim was accepted: every frame on the error page would be drawn without a link")
+	}
+	if !strings.Contains(err.Error(), "ARANDU_EDITOR") {
+		t.Errorf("the message does not name the variable to fix: %v", err)
+	}
+}
+
+// TestAnEmptyEditorIsAllowed: no editor is a configuration, not a mistake.
+// EditorLink answers "" for it, and the frames are drawn without links, which
+// is what somebody who set nothing asked for.
+func TestAnEmptyEditorIsAllowed(t *testing.T) {
+	if err := (bootstrap.Observability{}).Validate(); err != nil {
+		t.Fatalf("an unset editor and an unset tracing secret were refused: %v", err)
+	}
+}
+
+// TestATracingSecretTooShortToKeepStopsTheBoot covers the value that switches
+// the console on without protecting it.
+//
+// The secret is the whole gate on the debug console outside development, and it
+// is compared against a header on a route that answers 404 to everything else:
+// no session, no throttle, unlimited attempts. Its length is the only cost of
+// guessing it.
+func TestATracingSecretTooShortToKeepStopsTheBoot(t *testing.T) {
+	env(t, "APP_KEY", testKey)
+	t.Setenv("ARANDU_TRACING_SECRET", "x")
+
+	_, err := bootstrap.LoadConfiguration()
+	if err == nil {
+		t.Fatal("a one-character tracing secret was accepted: it opens the console to anybody who tries a few headers")
+	}
+	if !strings.Contains(err.Error(), "ARANDU_TRACING_SECRET") {
+		t.Errorf("the message does not name the variable to fix: %v", err)
+	}
+}
+
 // The three pool settings reach the Config.
 //
 // Until they were read they had nowhere to arrive: DATABASE_URL says where the

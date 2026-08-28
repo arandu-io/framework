@@ -115,11 +115,56 @@ type Observability struct {
 	// Empty is the default and disables it. Tracing is opt-in per deployment: a
 	// console that answers because nobody set a variable is a buffer of SQL,
 	// bound arguments and dumps, across every tenant, reachable with no session.
+	//
+	// A value too short to survive guessing is refused at boot. See Validate.
 	TracingSecret string
 
 	// Editor is what the "open in IDE" links on the error page and the console
-	// open. One of vscode, cursor, goland, zed.
+	// open, named the way the editor link table names it.
+	//
+	// A name the table does not carry is refused at boot. See Validate.
 	Editor string
+}
+
+// minTracingSecretLen is the shortest tracing secret worth having, in bytes.
+//
+// The secret is compared against a header, on a route that answers 404 to
+// everything else. There is no session to expire and no throttle in front of
+// it, so guessing it is an online attack with unlimited attempts, and the only
+// thing standing in the way is its length. Below this the value is a switch
+// somebody flipped, not a secret.
+const minTracingSecretLen = 16
+
+// Validate reports the first observability setting that cannot be used.
+//
+// LogLevel is not among them. Whether debug is allowed depends on the
+// environment, which this struct does not carry, so that refusal is made in
+// loadObservability, where the environment is in hand.
+func (o Observability) Validate() error {
+	if o.TracingSecret != "" && len(o.TracingSecret) < minTracingSecretLen {
+		return fmt.Errorf(`ARANDU_TRACING_SECRET is %d bytes, and it has to be at least %d.
+
+It is compared against the tracing header on a route with no session in front
+of it and no limit on attempts, so a short one is guessed rather than kept.
+Leave the variable empty to keep the console off, which is the default.`,
+			len(o.TracingSecret), minTracingSecretLen)
+	}
+
+	// The link table is not exported, and EditorLink answers "" for exactly the
+	// names it does not carry -- so asking it for a link is how membership is
+	// tested without a second copy of the list here. A list written here would
+	// be a list that refuses a name the table accepts, the first time one is
+	// added on the other side.
+	if o.Editor != "" && log.EditorLink(o.Editor, "/x", 1) == "" {
+		return fmt.Errorf(`ARANDU_EDITOR is %q, and the editor link table has no entry for it.
+
+Every stack frame on the error page and in the console would be drawn without
+its "open in IDE" link, silently. The names are the editors' own -- vscode,
+vscode_insiders, cursor, goland, phpstorm and emacs among them. Leave the
+variable empty to ask for no links at all.`, o.Editor)
+	}
+
+	return nil
 }
 
 // LoadConfiguration reads the environment once and answers every component's
@@ -266,13 +311,17 @@ func loadObservability(app config.App, level string) (Observability, error) {
 		return Observability{}, fmt.Errorf("LOG_LEVEL=debug is forbidden in production: it leaks request data into the log")
 	}
 
-	return Observability{
+	o := Observability{
 		LogLevel:      parsed,
 		TracingSecret: config.String("ARANDU_TRACING_SECRET", ""),
 		// vscode by default because it is what most people have. The link is
 		// only ever built where the debug surface exists.
 		Editor: config.String("ARANDU_EDITOR", "vscode"),
-	}, nil
+	}
+	if err := o.Validate(); err != nil {
+		return Observability{}, err
+	}
+	return o, nil
 }
 
 // loadLog answers the logging settings.
