@@ -209,6 +209,39 @@ What is importable and new beside it is `github.com/arandu-io/framework/tests`,
 which is the base the suites build on. It exports `ModuleRoot`, it imports
 `testing`, and no code that ships should reach it.
 
+---
+
+## v0.41.0 — configuration fails closed, and rate limits are shared
+
+Configuration that would expire a credential as it is issued or defer a broken
+Redis address until the first request now stops the process during `config.Load`
+or `Config.Validate`. An absent optional value still keeps its documented
+default; only an explicitly unusable value is refused.
+
+### TTLs are positive whole seconds
+
+`SESSION_TTL` and `CSRF_TTL` are counts of seconds. When set, each must be a
+positive whole number that fits in a `time.Duration`. Text such as `12h`, zero,
+negative values and overflow now return an error instead of silently falling
+back to 12 hours for sessions or 2 hours for CSRF tokens.
+
+Remove the variable to keep the default, or write the duration in seconds:
+
+```dotenv
+SESSION_TTL=43200
+CSRF_TTL=7200
+```
+
+Code that constructs `config.Config` directly is checked by `Config.Validate`
+as well: both `SessionTTL` and `CSRFTTL` must be greater than zero.
+
+### A configured Redis URL must name a Redis host
+
+An empty `REDIS_URL` remains valid for applications that do not select a
+Redis-backed store. When it is set, it must parse as a URL, use `redis://` or
+`rediss://`, and name a host. Invalid values fail during startup, and the error
+does not repeat the URL or any credential it carries.
+
 ### The rate limit counts in a store, not in this process
 
 `apidiff` reports four removals from `http/middleware`:
