@@ -93,6 +93,14 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	sessionTTL, err := duration("SESSION_TTL", 12*time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
+	csrfTTL, err := duration("CSRF_TTL", 2*time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
 		AppName:       env("APP_NAME", "arandu-app"),
 		Env:           Env(env("APP_ENV", string(EnvDev))),
@@ -100,8 +108,8 @@ func Load() (Config, error) {
 		AppKey:        key,
 		Database:      database,
 		RedisURL:      env("REDIS_URL", ""),
-		SessionTTL:    duration("SESSION_TTL", 12*time.Hour),
-		CSRFTTL:       duration("CSRF_TTL", 2*time.Hour),
+		SessionTTL:    sessionTTL,
+		CSRFTTL:       csrfTTL,
 		TracingSecret: env("ARANDU_TRACING_SECRET", ""),
 		Editor:        env("ARANDU_EDITOR", "vscode"),
 		LogLevel:      level(env("LOG_LEVEL", "info")),
@@ -155,15 +163,15 @@ func validateRedisURL(raw string) error {
 
 	u, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("REDIS_URL is not a URL: %w", err)
+		return fmt.Errorf("REDIS_URL is not a valid URL")
 	}
 	switch u.Scheme {
 	case "redis", "rediss":
 	default:
-		return fmt.Errorf("REDIS_URL has scheme %q, and it is redis:// or rediss:// for the encrypted one", u.Scheme)
+		return fmt.Errorf("REDIS_URL must use redis:// or rediss://")
 	}
-	if u.Host == "" {
-		return fmt.Errorf("REDIS_URL names no host: %q", raw)
+	if u.Hostname() == "" {
+		return fmt.Errorf("REDIS_URL names no host")
 	}
 	return nil
 }
@@ -197,13 +205,21 @@ func env(k, def string) string {
 
 // duration reads a value in seconds. Seconds, not a Go duration string,
 // because this is read by deployment tooling as often as by people.
-func duration(k string, def time.Duration) time.Duration {
-	if v, ok := os.LookupEnv(k); ok {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return time.Duration(n) * time.Second
-		}
+func duration(k string, def time.Duration) (time.Duration, error) {
+	v, ok := os.LookupEnv(k)
+	if !ok {
+		return def, nil
 	}
-	return def
+
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("%s must be a whole number of seconds greater than zero", k)
+	}
+	const maxDurationSeconds = int64((1<<63 - 1) / time.Second)
+	if n > maxDurationSeconds {
+		return 0, fmt.Errorf("%s exceeds the largest supported duration in seconds", k)
+	}
+	return time.Duration(n) * time.Second, nil
 }
 
 func level(s string) slog.Level {

@@ -135,6 +135,61 @@ func TestValidateRejectsARedisURLThatCannotBeDialled(t *testing.T) {
 	}
 }
 
+// TestValidateNeverReturnsRedisCredentials keeps every validation branch from
+// turning a boot-time configuration error into a credential disclosure.
+func TestValidateNeverReturnsRedisCredentials(t *testing.T) {
+	tests := []struct {
+		name   string
+		raw    string
+		secret string
+		defect string
+	}{
+		{
+			name:   "malformed URL",
+			raw:    "redis://:parse-secret@cache.example/%zz",
+			secret: "parse-secret",
+			defect: "URL",
+		},
+		{
+			name:   "unsupported scheme",
+			raw:    "http://:scheme-secret@cache.example:6379",
+			secret: "scheme-secret",
+			defect: "redis:// or rediss://",
+		},
+		{
+			name:   "missing host",
+			raw:    "redis://:host-secret@",
+			secret: "host-secret",
+			defect: "host",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfig()
+			cfg.RedisURL = tt.raw
+
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatal("a broken REDIS_URL was accepted")
+			}
+			message := err.Error()
+			if !strings.Contains(message, "REDIS_URL") {
+				t.Errorf("the message does not name REDIS_URL: %v", err)
+			}
+			if !strings.Contains(message, tt.defect) {
+				t.Errorf("the message does not identify the defect %q: %v", tt.defect, err)
+			}
+			if strings.Contains(message, tt.raw) {
+				t.Errorf("the message reproduces the credential-bearing URL: %v", err)
+			}
+			if strings.Contains(message, tt.secret) {
+				t.Errorf("the message exposes the Redis password: %v", err)
+			}
+		})
+	}
+}
+
 // TestValidateAcceptsRedisURLsThatWork, because a check that refuses everything
 // refuses the working configuration too.
 func TestValidateAcceptsRedisURLsThatWork(t *testing.T) {
@@ -262,6 +317,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.SessionTTL != 12*time.Hour {
 		t.Errorf("default SessionTTL = %v, want 12h", cfg.SessionTTL)
 	}
+	if cfg.CSRFTTL != 2*time.Hour {
+		t.Errorf("default CSRFTTL = %v, want 2h", cfg.CSRFTTL)
+	}
 	if cfg.Editor != "vscode" {
 		t.Errorf("default Editor = %q, want vscode", cfg.Editor)
 	}
@@ -270,10 +328,11 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadReadsTTLInSeconds(t *testing.T) {
+func TestLoadReadsTTLsInSeconds(t *testing.T) {
 	t.Setenv("APP_KEY", strings.Repeat("k", appKeyLen))
 	t.Setenv("DATABASE_URL", "sqlite://database/database.sqlite")
 	t.Setenv("SESSION_TTL", "60")
+	t.Setenv("CSRF_TTL", "90")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -282,5 +341,41 @@ func TestLoadReadsTTLInSeconds(t *testing.T) {
 
 	if cfg.SessionTTL != time.Minute {
 		t.Fatalf("SessionTTL = %v, want 1m", cfg.SessionTTL)
+	}
+	if cfg.CSRFTTL != 90*time.Second {
+		t.Fatalf("CSRFTTL = %v, want 1m30s", cfg.CSRFTTL)
+	}
+}
+
+func TestLoadRejectsInvalidTTLEnvironmentValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "malformed session TTL", key: "SESSION_TTL", value: "one hour"},
+		{name: "zero session TTL", key: "SESSION_TTL", value: "0"},
+		{name: "negative session TTL", key: "SESSION_TTL", value: "-1"},
+		{name: "malformed CSRF TTL", key: "CSRF_TTL", value: "one hour"},
+		{name: "zero CSRF TTL", key: "CSRF_TTL", value: "0"},
+		{name: "negative CSRF TTL", key: "CSRF_TTL", value: "-1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("APP_KEY", strings.Repeat("k", appKeyLen))
+			t.Setenv("DATABASE_URL", "sqlite://database/database.sqlite")
+			t.Setenv("SESSION_TTL", "60")
+			t.Setenv("CSRF_TTL", "60")
+			t.Setenv(tt.key, tt.value)
+
+			_, err := config.Load()
+			if err == nil {
+				t.Fatalf("%s=%q was replaced by a default", tt.key, tt.value)
+			}
+			if !strings.Contains(err.Error(), tt.key) {
+				t.Errorf("the message does not name %s: %v", tt.key, err)
+			}
+		})
 	}
 }
