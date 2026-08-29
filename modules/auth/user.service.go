@@ -60,10 +60,9 @@ func (e TooManyAttemptsError) Error() string {
 
 // The domain events this module publishes.
 //
-// They are the moments another part of the system has to react to: a new
-// account, an address that is now real, a credential that changed, and each
-// change to what it takes to sign in. Anything else about a user is a row
-// somebody can read.
+// They are the three moments another part of the system has to react to: a new
+// account, an address that is now real, and a credential that changed. Anything
+// else about a user is a row somebody can read.
 //
 // The names are past tense and in the vocabulary of the domain, which is what
 // events.Event asks for: a consumer that had to diff two user rows to learn what
@@ -78,23 +77,6 @@ const (
 	EventEmailVerified = "auth.email.verified"
 	// EventPasswordReset is the password being replaced out of band.
 	EventPasswordReset = "auth.password.reset"
-	// EventTwoFactorEnabled is the second factor being confirmed, and it is
-	// published by the confirmation and never by the enrolment before it: a
-	// secret nobody has scanned gates nothing, and an event saying otherwise
-	// would have consumers report an account as protected while it is not.
-	EventTwoFactorEnabled = "auth.two_factor.enabled"
-	// EventTwoFactorDisabled is the second factor being removed. It is a
-	// security control coming off, which is the kind of change somebody wants
-	// told about while it is still worth acting on.
-	EventTwoFactorDisabled = "auth.two_factor.disabled"
-	// EventRecoveryCodesRegenerated is a fresh set of recovery codes being
-	// issued, which is also the previous set being invalidated. A consumer that
-	// listed how many codes were left has to hear about it.
-	EventRecoveryCodesRegenerated = "auth.two_factor.recovery_codes.regenerated"
-	// EventRecoveryCodeUsed is somebody getting past the second factor without
-	// the device it requires. It is the one event here that is as likely to be
-	// read by a fraud review as by a mailer.
-	EventRecoveryCodeUsed = "auth.two_factor.recovery_code.used"
 )
 
 // aggregateUser is what all three events happened to.
@@ -102,16 +84,14 @@ const aggregateUser = "user"
 
 // UserEvent is the payload of every event this module publishes.
 //
-// One shape for all of them, because they answer the same question -- which
+// One shape for the three, because they answer the same question -- which
 // account, in which tenant, at which address -- and a consumer that already
 // switches on the name should not also have to switch on the shape.
 //
 // The hash is not in it and must never be added: an outbox row is read by the
 // relay, by whoever is looking at the dead letter queue, and by whatever the
 // application publishes to. That is three places a credential would travel to
-// for no reason. The same sentence closes the same door on the second factor's
-// secret and on a recovery code, which travel the same way and are worth the
-// same to whoever reads them.
+// for no reason.
 type UserEvent struct {
 	UserID string `json:"user_id"`
 	Tenant string `json:"tenant_id"`
@@ -126,17 +106,6 @@ type Service struct {
 	policy  UserPolicy
 	session *security.SessionStore
 	csrf    *security.CSRF
-
-	// secondFactor is the store behind the second factor, and twoFactorPolicy
-	// decides who may reach it.
-	//
-	// Like the outbox below, the store is built from the repository's handle
-	// rather than passed in: the enrolment lives in this module's own tables,
-	// next to the users table, so there is nothing for an application to wire
-	// and nothing for it to wire wrongly. The policy is a zero-size value and
-	// needs no construction, which is why nothing sets it here.
-	secondFactor    *twoFactorRepo
-	twoFactorPolicy TwoFactorPolicy
 	// outbox is where the domain events go. It is built from the repository's
 	// handle rather than passed in, because there is nothing to decide: an
 	// application does not get to configure whether authentication emits its
@@ -163,12 +132,11 @@ type Service struct {
 // NewService wires the module.
 func NewService(repo *UserRepo, session *security.SessionStore, csrf *security.CSRF) *Service {
 	return &Service{
-		repo:         repo,
-		session:      session,
-		csrf:         csrf,
-		outbox:       events.NewOutbox(repo.db),
-		throttle:     security.NewMemoryThrottle(),
-		secondFactor: newTwoFactorRepo(repo.db),
+		repo:     repo,
+		session:  session,
+		csrf:     csrf,
+		outbox:   events.NewOutbox(repo.db),
+		throttle: security.NewMemoryThrottle(),
 	}
 }
 

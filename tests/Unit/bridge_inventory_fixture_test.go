@@ -184,19 +184,9 @@ var allowedHesapeImports = bridgeSurface{
 	"mail": inventoryItems(`
 		github.com/arandu-io/hesape/mail github.com/arandu-io/hesape/mail/transport
 	`),
-	// 2fa and otp are here because the second factor is computed there and
-	// stored here: this module owns the users table, so the secret, the
-	// recovery codes and the memory of which time steps were spent are its
-	// schema, and the two contracts that state what a store has to guarantee
-	// are implemented against it. Neither import is a bridge -- nothing here
-	// re-exports them -- and neither is incidental: 2fa declares the interfaces
-	// this module satisfies, and otp is what turns a secret and an instant into
-	// a code.
 	"modules/auth": inventoryItems(`
-		github.com/arandu-io/hesape/2fa
 		github.com/arandu-io/hesape/database/migrations
 		github.com/arandu-io/hesape/database/schema
-		github.com/arandu-io/hesape/otp
 	`),
 	"observability": inventoryItems(`
 		github.com/arandu-io/hesape/log
