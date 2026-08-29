@@ -1,5 +1,21 @@
 # Release Notes
 
+## [v0.40.0](https://github.com/arandu-io/framework/compare/v0.39.0...v0.40.0) - 2026-08-27
+
+**Full Changelog**: https://github.com/arandu-io/framework/compare/v0.39.0...v0.40.0
+
+## [v0.39.0](https://github.com/arandu-io/framework/compare/v0.38.1...v0.39.0) - 2026-08-27
+
+**Full Changelog**: https://github.com/arandu-io/framework/compare/v0.38.1...v0.39.0
+
+## [v0.38.1](https://github.com/arandu-io/framework/compare/v0.38.0...v0.38.1) - 2026-08-27
+
+**Full Changelog**: https://github.com/arandu-io/framework/compare/v0.38.0...v0.38.1
+
+## [v0.38.0](https://github.com/arandu-io/framework/compare/v0.37.0...v0.38.0) - 2026-08-26
+
+**Full Changelog**: https://github.com/arandu-io/framework/compare/v0.37.0...v0.38.0
+
 ## [v0.37.0](https://github.com/arandu-io/framework/compare/v0.35.0...v0.37.0) - 2026-08-23
 
 **Full Changelog**: https://github.com/arandu-io/framework/compare/v0.35.0...v0.37.0
