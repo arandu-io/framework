@@ -19,6 +19,22 @@ names the situation you are in rather than the topic it covers.
 | `framework-grant` | anything that reaches stored data, or a signature that will not compile without a Grant |
 | `framework-view` | the runtime a compiled view calls, the registries, or `view.Page` |
 
+## Ownership comes before procedure
+
+Route the requested code before applying any skill:
+
+- reusable native capability goes in `hesape/<component>`
+- application-owned Model, Policy and Service go in the starter application's
+  `app/` tree
+- application-owned migrations go in the starter application's
+  `database/migrations` tree
+- `framework/modules` is reserved exclusively for external community packages
+  originating from `package-skeleton`
+
+`modules/auth` still contains implementation, but it is migration debt, never a
+precedent or a fifth permanent Framework package. Do not add native surface to
+it.
+
 ## Why these exist
 
 This is a library, and every change compiles into every project that imports it.

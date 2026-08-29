@@ -16,11 +16,20 @@ go list ./... | grep -vc '/tests'                                 # 20
 grep -rl "This package is a bridge" --include='doc.go' . | wc -l  # 15
 ```
 
-The five that hold code are `foundation`, `foundation/bootstrap`,
-`http/middleware`, `internal/routes` and `modules/auth`. Everything else on that list — `security`,
-`data`, `http`, `view`, `jobs`, `events`, `mail`, `observability`,
-`observability/errorpage`, `scheduler`, `storage`, `validation`, `arandutest`,
-`config`, `kernel` — is a bridge.
+The four permanent implementation packages are `foundation`,
+`foundation/bootstrap`, `http/middleware` and `internal/routes`. Everything
+else on the bridge list — `security`, `data`, `http`, `view`, `jobs`, `events`,
+`mail`, `observability`, `observability/errorpage`, `scheduler`, `storage`,
+`validation`, `arandutest`, `config`, `kernel` — is a bridge.
+
+`modules/auth` is the remaining implementation package in the current tree,
+but it is migration debt, never a precedent or permanent Framework ownership.
+Reusable native capability belongs in `hesape/<component>`; application-owned
+Model, Policy and Service belong in the starter application's `app/` tree;
+application-owned migrations belong in its `database/migrations` tree; and
+`framework/modules` is reserved exclusively for external community packages
+originating from `package-skeleton`. Do not add native surface to
+`modules/auth`.
 
 ## The procedure
 

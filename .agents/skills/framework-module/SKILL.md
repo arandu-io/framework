@@ -6,10 +6,27 @@ license: MIT
 
 # The module contract and the boot sequence
 
-`foundation` is one of the five packages in this module that hold code rather
-than forward to `github.com/arandu-io/hesape`, and it is the one that will still
-be here after v1.0.0 removes the bridges. What it owns is the `Application`:
-the object that composes the process exactly once, at start, never per request.
+`foundation` is one of the four packages that hold permanent Framework code,
+rather than forward to `github.com/arandu-io/hesape`, and it is the one that
+will still be here after v1.0.0 removes the bridges. What it owns is the
+`Application`: the object that composes the process exactly once, at start,
+never per request.
+
+## Classify ownership before composition
+
+The module contract does not decide where a feature belongs. Route it first:
+
+- reusable native capability goes in `hesape/<component>`
+- application-owned Model, Policy and Service go in the starter application's
+  `app/` tree
+- application-owned migrations go in the starter application's
+  `database/migrations` tree
+- `framework/modules` is reserved exclusively for external community packages
+  originating from `package-skeleton`
+
+`modules/auth` is migration debt, never a precedent or permanent Framework
+ownership. A request to add native surface there must be rerouted before this
+composition procedure is applied.
 
 ## The contract
 
