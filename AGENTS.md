@@ -28,7 +28,7 @@ points one directory across at `foundation` rather than at hesape, and `config`
 is the one bridge that still holds an implementation, because what replaced it
 is not a rename.
 
-Five packages hold code, and they are what stays here for good:
+Four packages hold permanent Framework code:
 
 | package | what it owns |
 | --- | --- |
@@ -36,7 +36,12 @@ Five packages hold code, and they are what stays here for good:
 | `foundation/bootstrap` | `Configuration` and `LoadConfiguration` — the environment read once, typed |
 | `http/middleware` | the route guards, CSRF, the flash, rate limit, recover, security headers, the observability middleware |
 | `internal/routes` | the sealed capability that identifies first-party owners of the reserved HTTP namespace; Go refuses imports from application and third-party modules |
-| `modules/auth` | the first first-party module, and the canonical shape every generated module copies |
+
+`modules/auth` is legacy migration debt, not permanent ownership and never a
+precedent. Native reusable capabilities belong in `hesape/<component>`, while
+application-owned domain code belongs in the starter application's `app/`
+tree. `framework/modules` is reserved exclusively for external community
+packages originating from `package-skeleton`; no native feature is added there.
 
 **So the first question about any change is which repository it belongs to.**
 A behaviour fix inside `security`, `data`, `view`, `jobs`, `events`, `mail`,
@@ -108,8 +113,8 @@ that failed for an unrelated reason would prove nothing.
 
 **The tenant comes from the Grant.** `data.Tenant(g)`, never from a path
 segment, a body, a query or a header. The one place a tenant is decided
-elsewhere is login, where there is no session yet, and `modules/auth` states
-that asymmetry on `TenantResolver`.
+elsewhere is login, where there is no session yet, and the legacy
+`modules/auth` code states that asymmetry on `TenantResolver`.
 
 ## Where a change goes
 

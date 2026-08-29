@@ -14,5 +14,8 @@ filesystem = true
 # never calls .Do or http.NewRequest on its own.
 network = false
 exec = false
-# modules/auth owns the users table.
+# Legacy modules/auth currently owns users-related migrations. This is
+# migration debt, not a precedent: native code belongs in hesape or the starter
+# application, and framework/modules is reserved for external community
+# packages originating from package-skeleton.
 migrations = true

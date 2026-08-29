@@ -1,4 +1,4 @@
-// The doc examples of the router, compiled.
+// The router documentation examples, compiled.
 //
 // Router.Action and Router.Resource each carried an example spelled against
 // Route, which is an alias for the route metadata type and has neither method.
