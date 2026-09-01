@@ -19,6 +19,34 @@ down here fails the build.
 
 ---
 
+## v0.42.0 — the CSRF form field is read as `_token`
+
+`CSRFProtect` read the hidden field as `_csrf`. The form builder in `hesape`
+wrote `_token`, and the session has always stored the token under that key, so a
+form built rather than hand-written came back 419 with a message telling the
+developer to add a field the form already had.
+
+One spelling survives, and it is `_token`. The `X-CSRF-Token` header did not
+move, so a request that sends the token as a header is unaffected.
+
+A view that uses the `@csrf` directive needs no change — the directive writes
+the new spelling as of `hesape` v0.21.0, which this release requires. A form or
+an HTMX request that writes the field by hand does:
+
+```html
+<input type="hidden" name="_csrf" value="{{ .CSRFToken }}">   <!-- before -->
+<input type="hidden" name="_token" value="{{ .CSRFToken }}">  <!-- now -->
+```
+
+The refusal message changed with it. It named the spelling it was about to stop
+reading, which is the first thing a person sees when a form fails.
+
+`apidiff` reports nothing here: the name of a form field is a string literal
+inside a function body, not part of the exported surface. This entry is the
+record, and a test in `hesape` is the guard.
+
+---
+
 ## Unreleased — the components move out, and `httpx` becomes `http`
 
 Four changes, and the first two are import paths rather than behaviour. Only the
