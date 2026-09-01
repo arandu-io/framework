@@ -3,10 +3,13 @@ package auth
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
 )
@@ -42,7 +45,7 @@ func TestAWrongPasswordIsAnsweredWithTheSignInScreenAndNotABareFragment(t *testi
 	body := rec.Body.String()
 	for _, want := range []string{
 		// A page, not a fragment: there is somewhere to type again.
-		"<form", `name="password"`, `name="_csrf"`,
+		"<form", `name="password"`, `name="_token"`,
 		// And it says what went wrong.
 		"invalid email or password",
 	} {
@@ -78,12 +81,44 @@ func TestTheSignInFormPostsInAWayThatCanShowARefusal(t *testing.T) {
 	if !strings.Contains(body, `<form method="post" action="/auth/login" hx-boost="false"`) {
 		t.Error("the form is boosted, so htmx discards every refusal it answers and the screen does not change")
 	}
-	// The token still has to travel: the native post carries the hidden field,
-	// not the hx-headers attribute.
-	if !strings.Contains(body, `<input type="hidden" name="_csrf"`) {
-		t.Error("the form posts natively and carries no _csrf field, so every sign-in fails the CSRF check")
+}
+
+// The token still has to travel: a native post carries it in the hidden field
+// and not in the hx-headers attribute, so the field is submitted back through
+// the middleware that reads it.
+//
+// Submitted rather than matched against a name written out here, because the
+// markup and the middleware are the two sides that have to agree. This markup
+// once named the field one way and the middleware read another, and every
+// sign-in was refused as though the token had expired -- a test comparing this
+// screen against a name of its own agreed with neither of them.
+func TestTheSignInFormCarriesATokenTheCSRFMiddlewareAccepts(t *testing.T) {
+	m := signInScreen()
+
+	rec := httptest.NewRecorder()
+	m.renderLogin(rec, httptest.NewRequest(http.MethodGet, "/auth/login", nil), http.StatusOK, "", nil)
+
+	field := hiddenFieldPattern.FindStringSubmatch(rec.Body.String())
+	if field == nil {
+		t.Fatalf("the form posts natively and carries no hidden field, so it has nowhere to put the token:\n%s", rec.Body.String())
+	}
+
+	reached := false
+	guarded := middleware.CSRFProtect(m.svc.csrf, m.svc.session.IDFromRequest)(
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+
+	post := httptest.NewRequest(http.MethodPost, middleware.SignInPath,
+		strings.NewReader(url.Values{field[1]: {field[2]}}.Encode()))
+	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	guarded.ServeHTTP(httptest.NewRecorder(), post)
+
+	if !reached {
+		t.Errorf("the form carries %q and the middleware reads another name, so every sign-in is refused", field[1])
 	}
 }
+
+// hiddenFieldPattern reads the name and the value off the form's hidden input.
+var hiddenFieldPattern = regexp.MustCompile(`<input type="hidden" name="([^"]+)" value="([^"]+)">`)
 
 // The first visit is a plain page with no error box on it. A screen that greets
 // everybody with "that did not work" teaches people to ignore the box.

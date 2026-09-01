@@ -199,7 +199,7 @@ func redirect(w http.ResponseWriter, r *http.Request, to string) {
 // sign-in screen throws away both the message and the address that was typed.
 // So the form posts natively -- a full navigation, exactly what a browser with
 // scripts off already does -- and the answer is this same page with the error on
-// it, in every client, at the status the handler chose. The hidden _csrf field
+// it, in every client, at the status the handler chose. The hidden _token field
 // is what carries the token on that post, which is why it is in the markup
 // beside the hx-headers attribute rather than instead of it.
 //
@@ -279,7 +279,7 @@ var loginForm = template.Must(template.New("login").Parse(`<!doctype html>
   </div>
 {{end}}
   <form method="post" action="{{.Action}}" hx-boost="false">
-    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    <input type="hidden" name="_token" value="{{.CSRFToken}}">
     <div class="field">
       <label class="label" for="email">Email</label>
       <input class="input" type="email" id="email" name="email" value="{{.Email}}" autocomplete="username" required autofocus>

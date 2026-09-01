@@ -3,6 +3,8 @@ package feature
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +12,7 @@ import (
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/html"
 )
 
 var appKey = []byte("0123456789abcdef0123456789abcdef")
@@ -49,13 +52,77 @@ func TestCSRFAcceptsTheFormField(t *testing.T) {
 		t.Fatalf("Issue: %v", err)
 	}
 
-	r := httptest.NewRequest(http.MethodPost, "/invoices", strings.NewReader("_csrf="+token))
+	r := httptest.NewRequest(http.MethodPost, "/invoices", strings.NewReader("_token="+token))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, r)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 with a valid form token", rec.Code)
+	}
+}
+
+// tokenField renders the hidden field a form ships with, exactly as the form
+// builder writes it, and reads the name and the value back off the markup.
+//
+// Reading the name off the markup rather than writing it out here is the whole
+// point of the test below: the name is the one thing the builder and this
+// middleware have to agree on, and a test that spells it a second time only
+// ever agrees with itself.
+//
+// The builder is given no URL generator because this field needs none -- a
+// hidden input resolves no address -- and no session, because the token is
+// passed to the constructor instead.
+func tokenField(t *testing.T, token string) (name, value string) {
+	t.Helper()
+
+	field, err := html.NewFormBuilder(html.NewHtmlBuilder(nil), nil, token).Token()
+	if err != nil {
+		t.Fatalf("FormBuilder.Token: %v", err)
+	}
+
+	attributes := map[string]string{}
+	for _, pair := range attributePattern.FindAllStringSubmatch(string(field), -1) {
+		attributes[pair[1]] = pair[2]
+	}
+
+	name, value = attributes["name"], attributes["value"]
+	if name == "" || value != token {
+		t.Fatalf("read %q=%q off %q, want the token under a name of its own", name, value, field)
+	}
+	return name, value
+}
+
+// attributePattern reads one name="value" pair off a tag.
+var attributePattern = regexp.MustCompile(`([a-zA-Z-]+)="([^"]*)"`)
+
+// TestCSRFAcceptsTheFieldAFormActuallyCarries submits what the form builder
+// writes, rather than a field name this file spells for a second time.
+//
+// The builder and this middleware are in different modules, and each was
+// internally consistent about a different name: the builder wrote the field the
+// session keys the token under, and the middleware read another one. Every form
+// built that way was refused as though it carried no token at all, and no test
+// on either side could see it -- both posted their own spelling and read it
+// back.
+func TestCSRFAcceptsTheFieldAFormActuallyCarries(t *testing.T) {
+	h, csrf := csrfHandler("session-1")
+	token, err := csrf.Issue("session-1")
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	name, value := tokenField(t, token)
+	r := httptest.NewRequest(http.MethodPost, "/invoices",
+		strings.NewReader(url.Values{name: {value}}.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: the form carried %q and this middleware reads another name, "+
+			"so every form the builder writes is refused", rec.Code, name)
 	}
 }
 
@@ -194,7 +261,7 @@ func TestAnExpiredTokenTellsHtmxToReloadRatherThanLeavingTheScreenUnchanged(t *t
 	for name, r := range map[string]*http.Request{
 		"no token at all": httptest.NewRequest(http.MethodPost, "/invoices", nil),
 		"a token from another session": httptest.NewRequest(http.MethodPost, "/invoices",
-			strings.NewReader("_csrf=not-this-sessions-token")),
+			strings.NewReader("_token=not-this-sessions-token")),
 	} {
 		t.Run(name, func(t *testing.T) {
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -225,7 +292,11 @@ func TestAPlainFormPostIsNotToldToReload(t *testing.T) {
 	if got := rec.Header().Get("HX-Refresh"); got != "" {
 		t.Errorf("HX-Refresh = %q on a request no htmx sent", got)
 	}
-	if !strings.Contains(rec.Body.String(), "_csrf") {
-		t.Errorf("the refusal does not say what is missing: %q", rec.Body.String())
+	// And it has to name the field a form actually carries. A refusal that
+	// spells it any other way is the first thing somebody reads when a form
+	// fails, and it sends them to add a field nothing here reads.
+	name, _ := tokenField(t, "a-token-this-test-does-not-submit")
+	if !strings.Contains(rec.Body.String(), name) {
+		t.Errorf("the refusal does not name %q, the field a form carries: %q", name, rec.Body.String())
 	}
 }

@@ -17,9 +17,14 @@ const StatusCSRFExpired = 419
 //
 // THE TRAP THIS SOLVES: with HTMX the token does not always arrive in a form
 // field, it arrives in a header. Both sources are read, the X-CSRF-Token header
-// first and the _csrf form field after it.
+// first and the _token form field after it.
 //
-// A form carries the hidden _csrf field, so a submission is covered whether it
+// The field is named for the session key the token is stored under, which is
+// the one name a form builder, a view and this middleware can all arrive at
+// without agreeing on a second one first. A field spelled any other way is read
+// by nothing here and the request is refused as though it carried no token.
+//
+// A form carries the hidden _token field, so a submission is covered whether it
 // posts natively or through hx-post. What that does not cover is a request no
 // form backs -- hx-delete on a button, hx-patch on a toggle. Those carry the
 // token only where the markup puts it, either once on the layout
@@ -73,7 +78,7 @@ func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) fun
 
 			token := r.Header.Get("X-CSRF-Token")
 			if token == "" {
-				token = r.PostFormValue("_csrf")
+				token = r.PostFormValue("_token")
 			}
 
 			// A missing token and an expired one are different mistakes and get
@@ -89,7 +94,7 @@ func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) fun
 			// one of the two would leave the framework refusing an HTMX request
 			// in two different ways.
 			if token == "" {
-				fhttp.Refuse(w, r, StatusCSRFExpired, "this request carried no CSRF token: add the hidden _csrf field to the form, or send it as the X-CSRF-Token header")
+				fhttp.Refuse(w, r, StatusCSRFExpired, "this request carried no CSRF token: add the hidden _token field to the form, or send it as the X-CSRF-Token header")
 				return
 			}
 			if err := c.Validate(sessionIDFrom(r), token); err != nil {
