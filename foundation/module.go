@@ -2,9 +2,9 @@
 //
 // Everything a module declares -- the optional interfaces, the scheduled task,
 // the migration -- is an alias to the hesape declaration, so a module written
-// against either name is one type to the compiler. Four names are declared
-// here instead, and each has a reason recorded on it: Module, RendererProvider,
-// Locker and Ready.
+// against either name is one type to the compiler. The names declared here each
+// have a reason recorded on them: Module, RendererProvider,
+// Locker, OccurrenceClaimer, OccurrenceClaimOutcome and Ready.
 
 package foundation
 
@@ -133,8 +133,39 @@ type Diagnostic = hfoundation.Diagnostic
 // rather than the duplication.
 //
 // It moved with the rest of the package instead, and stays one declaration.
+//
+// [NewLocker] returns this compatibility shape and also satisfies
+// [OccurrenceClaimer] dynamically. Keeping the durable claim out of this
+// interface preserves every custom Locker used for transient work; callers
+// that promise once-per-occurrence semantics must require the added capability.
 type Locker interface {
 	Run(ctx context.Context, name string, ttl time.Duration, fn func(context.Context) error) error
+}
+
+// OccurrenceClaimOutcome says whether a durable occurrence claim was acquired.
+//
+// The zero value is invalid so a custom claimer cannot accidentally authorize
+// work by returning an uninitialized outcome. Callers must handle both valid
+// outcomes explicitly and reject every other value.
+type OccurrenceClaimOutcome uint8
+
+const (
+	_ OccurrenceClaimOutcome = iota
+	// OccurrenceClaimAcquired means this caller created the claim and owns the
+	// occurrence.
+	OccurrenceClaimAcquired
+	// OccurrenceAlreadyClaimed means another caller created the same claim.
+	OccurrenceAlreadyClaimed
+)
+
+// OccurrenceClaimer claims named work until its ttl expires.
+//
+// Unlike [Locker.Run], ClaimOccurrence does not release the claim when work
+// finishes. It is an additive capability: callers discover it dynamically on a
+// Locker when they need once-per-occurrence semantics, while transient-lock
+// consumers continue to use Run unchanged.
+type OccurrenceClaimer interface {
+	ClaimOccurrence(ctx context.Context, name string, ttl time.Duration) (OccurrenceClaimOutcome, error)
 }
 
 // Scope says whether a task runs once or once per tenant.

@@ -189,3 +189,89 @@ func TestTheNameIsTheWholeIdentity(t *testing.T) {
 	close(release)
 	<-done
 }
+
+// TestNewLockerAlsoClaimsAnOccurrenceOnce holds the additive half of the
+// locker contract. Run remains a transient lock for existing consumers, while
+// a scheduler can claim one occurrence without releasing it when the work
+// returns.
+func TestNewLockerAlsoClaimsAnOccurrenceOnce(t *testing.T) {
+	locker := newTestLocker()
+	claimer, ok := locker.(foundation.OccurrenceClaimer)
+	if !ok {
+		t.Fatal("NewLocker returned a Locker without the occurrence claim capability")
+	}
+
+	first, err := claimer.ClaimOccurrence(context.Background(), "scheduler:billing.close:tenant-1:20260803T1300Z", time.Minute)
+	if err != nil {
+		t.Fatalf("first claim: %v", err)
+	}
+	if first != foundation.OccurrenceClaimAcquired {
+		t.Fatalf("first claim = %v, want OccurrenceClaimAcquired", first)
+	}
+
+	second, err := claimer.ClaimOccurrence(context.Background(), "scheduler:billing.close:tenant-1:20260803T1300Z", time.Minute)
+	if err != nil {
+		t.Fatalf("second claim: %v", err)
+	}
+	if second != foundation.OccurrenceAlreadyClaimed {
+		t.Fatalf("second claim = %v, want OccurrenceAlreadyClaimed", second)
+	}
+}
+
+// TestAnOccurrenceClaimExpiresAtItsTTL proves the durable claim is bounded.
+// Claims are not released when work finishes, but a crashed process must not
+// reserve an occurrence key forever.
+func TestAnOccurrenceClaimExpiresAtItsTTL(t *testing.T) {
+	claimer := newTestLocker().(foundation.OccurrenceClaimer)
+	const ttl = 20 * time.Millisecond
+	const name = "scheduler:reports.daily:20260803T1300Z"
+
+	if outcome, err := claimer.ClaimOccurrence(context.Background(), name, ttl); err != nil {
+		t.Fatalf("first claim: %v", err)
+	} else if outcome != foundation.OccurrenceClaimAcquired {
+		t.Fatalf("first claim = %v", outcome)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		outcome, err := claimer.ClaimOccurrence(context.Background(), name, ttl)
+		if err != nil {
+			t.Fatalf("claim after expiry: %v", err)
+		}
+		if outcome == foundation.OccurrenceClaimAcquired {
+			return
+		}
+		if outcome != foundation.OccurrenceAlreadyClaimed {
+			t.Fatalf("claim before expiry = %v", outcome)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the occurrence claim did not expire")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// TestOccurrenceClaimDoesNotClassifyStoreErrorsByText keeps acquisition state
+// on the typed channel. A backend failure remains an error even if its message
+// happens to contain wording once used for lock contention.
+func TestOccurrenceClaimDoesNotClassifyStoreErrorsByText(t *testing.T) {
+	boom := errors.New("database lock is held during claim")
+	locker := foundation.NewLocker(cache.NewLocks(failingLockStore{err: boom}))
+	claimer := locker.(foundation.OccurrenceClaimer)
+
+	outcome, err := claimer.ClaimOccurrence(context.Background(), "reports.monthly", time.Minute)
+	if outcome != 0 {
+		t.Errorf("failed claim outcome = %v, want the invalid zero value", outcome)
+	}
+	if !errors.Is(err, boom) {
+		t.Fatalf("failed claim error = %v, want %v", err, boom)
+	}
+}
+
+type failingLockStore struct{ err error }
+
+func (s failingLockStore) AcquireLock(context.Context, string, string, time.Duration) (bool, error) {
+	return false, s.err
+}
+
+func (failingLockStore) ReleaseLock(context.Context, string, string) error { return nil }
