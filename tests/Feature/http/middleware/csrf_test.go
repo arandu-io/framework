@@ -1,6 +1,7 @@
 package feature
 
 import (
+	stdhtml "html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/html"
+	hesapemiddleware "github.com/arandu-io/hesape/http/middleware"
 )
 
 var appKey = []byte("0123456789abcdef0123456789abcdef")
@@ -300,3 +302,106 @@ func TestAPlainFormPostIsNotToldToReload(t *testing.T) {
 		t.Errorf("the refusal does not name %q, the field a form carries: %q", name, rec.Body.String())
 	}
 }
+
+// TestAFormSubmissionIsCheckedBeforeItsMethodIsOverridden exercises the public
+// seam from FormBuilder's HTML to the final HTTP handler. The simulated browser
+// reads its method, target and fields from the markup, so this test cannot stay
+// green when a writer and a reader merely repeat the same field name.
+func TestAFormSubmissionIsCheckedBeforeItsMethodIsOverridden(t *testing.T) {
+	const sessionID = "session-1"
+	csrf := security.NewCSRF(appKey, time.Hour)
+	token, err := csrf.Issue(sessionID)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	for _, method := range []string{http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		t.Run(method, func(t *testing.T) {
+			form := html.NewFormBuilder(html.NewHtmlBuilder(formURLStub{}), formURLStub{}, token)
+			markup, err := form.Open(html.OpenOptions{Method: method, URL: []string{"/invoices/42"}})
+			if err != nil {
+				t.Fatalf("FormBuilder.Open: %v", err)
+			}
+
+			r := nativeFormRequest(t, string(markup))
+			if r.Method != http.MethodPost {
+				t.Fatalf("browser method = %s, want POST from the form markup", r.Method)
+			}
+
+			checkedMethod := ""
+			reachedMethod := ""
+			reached := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				reachedMethod = r.Method
+				w.WriteHeader(http.StatusNoContent)
+			})
+			h := fhttp.Chain(reached,
+				middleware.CSRFProtect(csrf, func(r *http.Request) string {
+					checkedMethod = r.Method
+					return sessionID
+				}),
+				hesapemiddleware.OverrideMethod(),
+			)
+
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, r)
+
+			if rec.Code != http.StatusNoContent {
+				t.Fatalf("status = %d, want 204 from the handler", rec.Code)
+			}
+			if checkedMethod != http.MethodPost {
+				t.Errorf("CSRF checked method = %s, want the POST the browser sent", checkedMethod)
+			}
+			if reachedMethod != method {
+				t.Errorf("handler method = %s, want %s from the form's hidden field", reachedMethod, method)
+			}
+		})
+	}
+}
+
+var formTagPattern = regexp.MustCompile(`<form\b[^>]*>`)
+var inputTagPattern = regexp.MustCompile(`<input\b[^>]*>`)
+
+func nativeFormRequest(t *testing.T, markup string) *http.Request {
+	t.Helper()
+
+	formTag := formTagPattern.FindString(markup)
+	if formTag == "" {
+		t.Fatalf("no form tag in %q", markup)
+	}
+	formAttributes := tagAttributes(formTag)
+	method := strings.ToUpper(formAttributes["method"])
+	if method == "" {
+		method = http.MethodGet
+	}
+	action := stdhtml.UnescapeString(formAttributes["action"])
+
+	fields := url.Values{}
+	for _, inputTag := range inputTagPattern.FindAllString(markup, -1) {
+		attributes := tagAttributes(inputTag)
+		if name := stdhtml.UnescapeString(attributes["name"]); name != "" {
+			fields.Add(name, stdhtml.UnescapeString(attributes["value"]))
+		}
+	}
+
+	r := httptest.NewRequest(method, action, strings.NewReader(fields.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return r
+}
+
+func tagAttributes(tag string) map[string]string {
+	attributes := map[string]string{}
+	for _, pair := range attributePattern.FindAllStringSubmatch(tag, -1) {
+		attributes[pair[1]] = pair[2]
+	}
+	return attributes
+}
+
+type formURLStub struct{}
+
+func (formURLStub) To(path string, _ ...string) string                { return path }
+func (formURLStub) Secure(path string, _ ...string) string            { return path }
+func (formURLStub) Asset(path string) string                          { return path }
+func (formURLStub) SecureAsset(path string) string                    { return path }
+func (formURLStub) Route(name string, _ ...string) (string, error)    { return name, nil }
+func (formURLStub) Action(action string, _ ...string) (string, error) { return action, nil }
+func (formURLStub) Current() string                                   { return "/" }
