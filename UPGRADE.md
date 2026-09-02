@@ -43,7 +43,10 @@ reading, which is the first thing a person sees when a form fails.
 
 `apidiff` reports nothing here: the name of a form field is a string literal
 inside a function body, not part of the exported surface. This entry is the
-record, and a test in `hesape` is the guard.
+record. A public integration test in this module renders Hesape's real
+`FormBuilder`, derives the browser submission from that HTML and crosses
+`CSRFProtect → OverrideMethod → handler`; it fails if either side changes the
+field or if the middleware order changes.
 
 ---
 
