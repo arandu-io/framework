@@ -18,9 +18,9 @@ go 1.26
 // and storage -- were folded into hesape by ADR 0048. The heavy driver still
 // sits in a submodule with its own go.mod, because Go has no optional
 // dependency, so a project still pays in go.sum only for what it imports.
-require github.com/arandu-io/hesape v0.21.0
+require github.com/arandu-io/hesape v0.21.1
 
 require (
-	golang.org/x/crypto v0.53.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 )
