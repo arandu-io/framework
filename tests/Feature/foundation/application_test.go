@@ -676,3 +676,133 @@ func TestTheFrameworksOwnRoutesDoNotSpendTheApplicationsBudget(t *testing.T) {
 		t.Errorf("the application's middleware ran %d times for one request to /, want 1", counted)
 	}
 }
+
+// hangingModule is a dependency that stopped answering rather than one that
+// failed: its check returns only once the context it was given is done.
+type hangingModule struct{ name string }
+
+func (m *hangingModule) Name() string { return m.name }
+
+func (*hangingModule) Routes(*fhttp.Router) {}
+
+func (*hangingModule) Health(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// TestReadinessDoesNotWaitForACheckThatStoppedAnswering.
+//
+// A dependency that hangs is the failure a check cannot report by returning: it
+// never returns. Without a bound of its own the handler waits exactly as long as
+// the dependency does, whoever is probing gives up first, and the record is an
+// unanswered request -- which is what a dead process also looks like, and the
+// two call for opposite actions. Bounded, the same outage is a 503 naming the
+// module, which withholds traffic and leaves the process alone.
+//
+// The wait here is the regression guard, not the assertion: it exists so that a
+// handler which reverts to waiting forever fails this test instead of hanging
+// the suite.
+func TestReadinessDoesNotWaitForACheckThatStoppedAnswering(t *testing.T) {
+	k := foundation.New(testConfig(config.EnvProd)).Register(&hangingModule{name: "billing"})
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	handler := k.Handler()
+
+	// Liveness first, and it must answer while the dependency is still hanging:
+	// a wedged dependency is the case where restarting is most tempting and least
+	// useful, and an endpoint that blocks on it asks for exactly that restart.
+	live := httptest.NewRecorder()
+	handler.ServeHTTP(live, httptest.NewRequest(http.MethodGet, "/_arandu/live", nil))
+	if live.Code != http.StatusOK {
+		t.Fatalf("liveness = %d while a dependency hangs, want 200", live.Code)
+	}
+
+	rec := httptest.NewRecorder()
+	answered := make(chan struct{})
+	go func() {
+		defer close(answered)
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/_arandu/health", nil))
+	}()
+
+	select {
+	case <-answered:
+	case <-time.After(30 * time.Second):
+		t.Fatal("readiness never answered: a dependency that hangs holds the endpoint open, so the probe records a timeout instead of the 503 that names the module")
+	}
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "billing") {
+		t.Errorf("body = %q, want it to name the module that stopped answering", rec.Body.String())
+	}
+}
+
+// probeSecrets is what a driver puts in an error and what an anonymous caller
+// must not be able to read back off a probe.
+var probeSecrets = []string{
+	"db-primary.internal",
+	"5432",
+	"billing_production",
+	"s3cret-password",
+	"PostgreSQL 16.2",
+}
+
+// leakyModule fails the way a real driver fails: naming the host, the port, the
+// database, the credential and the server version.
+type leakyModule struct{ name string }
+
+func (m *leakyModule) Name() string { return m.name }
+
+func (*leakyModule) Routes(*fhttp.Router) {}
+
+func (*leakyModule) Health(context.Context) error {
+	return errors.New(`dial tcp db-primary.internal:5432: connect: connection refused ` +
+		`(database "billing_production", user "arandu", password "s3cret-password", server "PostgreSQL 16.2")`)
+}
+
+// TestTheProbesRevealNothingButTheModuleName.
+//
+// Both probes are reachable with no session, no cookie and no header -- a load
+// balancer carries none of those, which is why nothing gates them -- so whatever
+// they write is what an anonymous caller learns. The error a check returns is
+// the tempting thing to write, and it is a map of the infrastructure: the host,
+// the port, the database name, sometimes the credential and the version.
+//
+// So the check is the whole response and not the body alone: a header is as
+// readable as a body, and something copied into one is copied just as easily
+// into the other.
+func TestTheProbesRevealNothingButTheModuleName(t *testing.T) {
+	k := foundation.New(testConfig(config.EnvProd)).Register(&leakyModule{name: "billing"})
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	handler := k.Handler()
+
+	for _, path := range []string{"/_arandu/health", "/_arandu/live"} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+
+		var response strings.Builder
+		response.WriteString(rec.Body.String())
+		for name, values := range rec.Header() {
+			response.WriteString(" " + name + ": " + strings.Join(values, " "))
+		}
+
+		for _, secret := range probeSecrets {
+			if strings.Contains(response.String(), secret) {
+				t.Errorf("%s answered with %q, which an unauthenticated caller must not learn: %q",
+					path, secret, response.String())
+			}
+		}
+	}
+
+	// And the module name still gets through, or this test would pass on an
+	// endpoint that answers nothing at all.
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/_arandu/health", nil))
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "billing") {
+		t.Fatalf("status = %d, body = %q: the probe must still name the failing module", rec.Code, rec.Body.String())
+	}
+}
