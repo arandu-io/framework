@@ -18,8 +18,8 @@
 // ReloadTagger are the hesape types under the same names. A module written
 // against either name is one type to the compiler.
 //
-// Three names are declared here, each for a reason recorded on the declaration
-// in module.go:
+// The names declared here each have a reason recorded on the declaration in
+// module.go:
 //
 //	Module            names a *http.Router, and hesape/foundation.Module names
 //	                  a *routing.Router -- http.Router is the one envelope the
@@ -29,6 +29,14 @@
 //	Locker            it is retired, and the events bridge kept it --
 //	                  hesape/cache.Locks cannot be built from a Locker, and it
 //	                  is a *cache.Locks that hesape/events asks for
+//	OccurrenceClaimer
+//	                  the additive durable capability the scheduler discovers
+//	                  dynamically on a Locker
+//	OccurrenceClaimOutcome
+//	                  separates acquired and already-claimed from storage errors
+//	                  without inspecting their text
+//	Ready             reports whether this process should receive traffic and
+//	                  has no hesape/foundation counterpart
 //
 // [FormatRoutes] is neither: it is a call through to
 // hesape/routing.FormatRoutes, which the alias on http.Route makes possible

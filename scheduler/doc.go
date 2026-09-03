@@ -33,8 +33,21 @@
 //	           another package's type
 //	Scheduler  a schedule there is declared through Schedule.Call and carried
 //	           as an Event; here it is collected as a kernel.Task, and the task
-//	           carries a Timeout, a Recorder and a kernel.Locker that a hesape
-//	           Event has no field for
+//	           carries a Timeout, a Recorder and a durable occurrence claim that
+//	           a hesape Event has no field for
 //	Module     it consumes kernel.Task and answers the kernel module contract,
 //	           which is the framework's and not hesape's
+//
+// # Singleton occurrences
+//
+// A nil Options.Locker keeps the single-replica behavior. With a non-nil
+// Locker, New requires the additive foundation.OccurrenceClaimer capability
+// for every Singleton task. The typed outcome distinguishes an already-claimed
+// occurrence from a storage failure, so task errors are never classified by
+// their message.
+//
+// The persisted identity remains sched:<tenant>:<task-id>:<UTC-minute-epoch>.
+// Task ID is the explicit identity for captured parameters and actions: declare
+// a distinct ID for each variant. A claim is not released when the run returns
+// and expires after at least one hour, or the task timeout when that is longer.
 package scheduler

@@ -47,6 +47,10 @@ func FormatRoutes(routes []*http.Route) string { return foundation.FormatRoutes(
 //
 //	sched.Locker = kernel.NewLocker(cache.NewLocks(store))
 //
+// The returned Locker also satisfies foundation.OccurrenceClaimer dynamically,
+// which lets the scheduler retain an occurrence claim without widening this
+// compatibility package's public surface.
+//
 // A wrapper for the same reason New is.
 func NewLocker(locks *cache.Locks) Locker { return foundation.NewLocker(locks) }
 
