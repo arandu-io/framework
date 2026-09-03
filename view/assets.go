@@ -1,11 +1,10 @@
 // The served assets, answered by github.com/arandu-io/hesape/view.
 //
 // The go:embed moved with them: the bytes a browser receives are hesape's, and
-// they are byte-identical to the ones embedded here. The copy under assets/ in
-// this repository is no longer compiled into anything. It is left in place
-// deliberately -- THIRD_PARTY.md at the root of this module is the copyright
-// notice for exactly those file names, third_party_test.go is what keeps that
-// notice from rotting, and neither is inside this package to fix.
+// this module keeps no copy of them. There is one file to change when a script
+// or the stylesheet is upgraded, and it is not here. A copy that lived here
+// would be compiled into nothing, served to nobody and read as the real thing
+// by the next person who opened it.
 //
 // Like the view registry, the asset table is package-level state, and the same
 // argument applies: a framework that kept its own would have kyse/fonts
