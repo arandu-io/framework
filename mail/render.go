@@ -12,4 +12,8 @@ import hmail "github.com/arandu-io/hesape/mail"
 //
 // A wrapper and not an alias: a plain function has no alias form, and the
 // argument is this package's Message rather than hesape's.
-func Render(m Message) string { return hmail.Render(m.hesape()) }
+//
+// The error is a refusal rather than a failure to write: a message carrying a
+// header value that would end the header early is not rendered at all, because
+// what came back would be a different message than the caller wrote.
+func Render(m Message) (string, error) { return hmail.Render(m.hesape()) }

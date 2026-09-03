@@ -179,7 +179,7 @@ func TestTheArrayTransportKeepsTheOldNames(t *testing.T) {
 // TestRenderReachesTheWireFormat is the one function in this package that is a
 // wrapper rather than a type.
 func TestRenderReachesTheWireFormat(t *testing.T) {
-	raw := mail.Render(mail.Message{
+	raw, err := mail.Render(mail.Message{
 		Envelope: mail.Envelope{
 			From:    mail.Address{Email: "app@example.test", Name: "Arandu"},
 			To:      []mail.Address{{Email: "reader@example.test"}},
@@ -188,6 +188,9 @@ func TestRenderReachesTheWireFormat(t *testing.T) {
 		},
 		Text: "hello",
 	})
+	if err != nil {
+		t.Fatalf("Render refused a message with no smuggled header: %v", err)
+	}
 	if !strings.Contains(raw, "To: reader@example.test") {
 		t.Errorf("the recipient is not in the headers:\n%s", raw)
 	}
