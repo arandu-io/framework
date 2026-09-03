@@ -97,26 +97,32 @@ comment, and add the round trip to `tests/Unit/view/bridge_test.go` —
 `TestTheOldNamesStillEscapeAndInterpolate` (`:236`) is where the interpolation
 functions are proven to reach through.
 
-## The assets directory is compiled into nothing
+## There is no assets directory here
 
-There is no `go:embed` directive left in this module:
+There is no `go:embed` directive left in this module, and nothing for one to
+point at:
 
 ```sh
-grep -rn "go:embed" --include='*.go' .    # three hits, all inside comments
+grep -rn "go:embed" --include='*.go' .    # hits inside comments only
+ls view/assets                            # no such file or directory
 ```
 
-The bytes a browser receives are hesape's, byte-identical to the six files under
-`view/assets/`. That copy is left in place deliberately: `THIRD_PARTY.md` at the
-root of this module is the copyright notice for exactly those file names, and
-`tests/Unit/view/third_party_test.go` is what keeps the notice from rotting —
-`TestEveryEmbeddedAssetIsCredited` (`:36`), `TestTheCreditedVersionsAreTheEmbeddedOnes`
-(`:61`), `TestTheLicenseTextsAreComplete` (`:93`). Neither the notice nor the
-test is inside the package, so neither can be fixed from there.
+The bytes a browser receives are embedded by `github.com/arandu-io/hesape/view`,
+in its `view/assets/`. This module used to keep a copy of the same six names.
+The copy drifted — its `ui.js` was 428 lines against hesape's 773, missing the
+`ui.define`/`ui.action` registration entirely — and because nothing compiled it,
+nothing said so. A team read it, concluded the registration did not exist
+anywhere in the project, and published that.
 
-If you add or replace a file under `view/assets/`, update `THIRD_PARTY.md` in
-the same change. The repositories are public and the assets ship inside every
-user's binary, which makes this the one item in the project with actual legal
-exposure.
+`TestNoAssetFileLivesInThisModule` (`tests/Unit/view/no_assets_test.go:25`) is
+what makes the copy come back as a failed build. If you are upgrading a script
+or the stylesheet, the file to change is in `hesape`, and `view/THIRD_PARTY.md`
+there is the copyright notice beside it. `THIRD_PARTY.md` at the root here
+covers what binaries built with this framework redistribute;
+`TestTheLicenseTextsAreComplete`
+(`tests/Unit/view/third_party_test.go:35`) keeps its licence texts whole. The
+repositories are public and the assets ship inside every user's binary, which
+makes this the one item in the project with actual legal exposure.
 
 `TestNoNodeAnywhere` (`tests/Unit/view/no_node_test.go:22`) is the other
 standing rule: no `package.json`, no lockfile, no `node_modules`, no

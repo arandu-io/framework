@@ -1,9 +1,9 @@
 # Third-party notices
 
 Arandu is MIT licensed (see `LICENSE.md`). This file covers the third-party
-work that is **embedded** in `view/assets/` and therefore redistributed inside
-every binary built with this framework — including binaries built by people who
-never downloaded any of it.
+work that is **embedded** by `github.com/arandu-io/hesape/view` and therefore
+redistributed inside every binary built with this framework — including
+binaries built by people who never downloaded any of it.
 
 That is what makes this file necessary rather than polite. `go:embed` puts these
 bytes in the executable, so every user of Arandu becomes a redistributor, and a
@@ -11,14 +11,23 @@ redistributor of MIT-licensed code owes the copyright notice. There is no CDN
 and no `node_modules` to point at instead (RULE 13): the notice has to travel
 with the repository.
 
-Keeping it current is checked, not remembered: `TestEveryEmbeddedAssetIsCredited`
-in `view/third_party_test.go` fails when a file appears in `view/assets/`
-without an entry here, and when the version recorded here stops matching the
-version inside the file.
+**No copy of these files lives in this repository.** They are `view/assets/` in
+the `hesape` release recorded in `go.mod`, and that module carries the same
+notice in `view/THIRD_PARTY.md`, beside the bytes. The versions below describe
+the files that release embeds; `view/third_party_test.go` there is what checks
+each version against the file it was read from, which is a question only the
+module holding the file can answer.
+
+What is checked here is what this repository can answer for on its own:
+`TestTheLicenseTextsAreComplete` in `tests/Unit/view/third_party_test.go` fails
+when a required licence text goes missing from this file, and
+`TestNoAssetFileLivesInThisModule` in `tests/Unit/view/no_assets_test.go` fails
+if an asset file reappears under `view/assets/` here — where nothing would embed
+it, and where a reader would take it for the file a browser receives.
 
 ---
 
-## htmx — `view/assets/htmx.min.js`
+## htmx — `htmx.min.js`
 
 | | |
 |---|---|
@@ -50,7 +59,7 @@ OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ---
 
 
-## Tailwind CSS — `view/assets/app.css`
+## Tailwind CSS — `app.css`
 
 | | |
 |---|---|
@@ -60,8 +69,8 @@ OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 | License | MIT |
 
 `app.css` is compiled output, not a copy of the distribution: the Arandu source
-in `view/assets/app.src.css` goes through the standalone `tailwindcss` binary,
-and what comes out contains Tailwind's own preflight and utility declarations.
+in `app.src.css` goes through the standalone `tailwindcss` binary, and what
+comes out contains Tailwind's own preflight and utility declarations.
 The compiler preserves its banner at the top of the file, which is the version
 recorded above:
 
@@ -95,7 +104,7 @@ SOFTWARE.
 
 ---
 
-## Basecoat — `view/assets/basecoat.bundle.js`
+## Basecoat — `basecoat.bundle.js`
 
 | | |
 |---|---|
@@ -142,19 +151,19 @@ SOFTWARE.
 
 ## Arandu's own files
 
-Listed so that every file in `view/assets/` is accounted for, and so that
-adding one is a decision somebody wrote down rather than an omission.
+Listed so that every embedded file is accounted for, and so that adding one is
+a decision somebody wrote down rather than an omission.
 
-- `view/assets/theme.js` — Arandu, MIT, covered by `LICENSE.md`. It reads the
-  theme somebody chose out of localStorage and applies it before the first
-  paint. It contains no third-party code.
-- `view/assets/ui.js` — Arandu, MIT, covered by `LICENSE.md`. It is the
-  delegated client behaviour: copy buttons, the theme toggle, the combobox, the
-  command palette and the range slider, all dispatched from `data-*` attributes
-  read as data. It contains no third-party code, and it is why no directive
-  framework is embedded here — compiling an attribute into a function needs
-  `unsafe-eval`, and the Content-Security-Policy this framework sets is
-  `script-src 'self'`.
-- `view/assets/app.src.css` — Arandu, MIT, covered by `LICENSE.md`. It is the
-  Tailwind input this project wrote; it contains no third-party code, only
-  `@import "tailwindcss"`, which is a build instruction.
+- `theme.js` — Arandu, MIT, covered by `LICENSE.md`. It reads the theme somebody
+  chose out of localStorage and applies it before the first paint. It contains
+  no third-party code.
+- `ui.js` — Arandu, MIT, covered by `LICENSE.md`. It is the delegated client
+  behaviour: copy buttons, the theme toggle, the combobox, the command palette
+  and the range slider, all dispatched from `data-*` attributes read as data. It
+  contains no third-party code, and it is why no directive framework is embedded
+  here — compiling an attribute into a function needs `unsafe-eval`, and the
+  Content-Security-Policy this framework sets is `script-src 'self'`.
+- `app.src.css` — Arandu, MIT, covered by `LICENSE.md`. It is the Tailwind input
+  this project wrote; it contains no third-party code, only
+  `@import "tailwindcss"`, which is a build instruction. It is the one file here
+  that is not itself served: `app.css` is what it compiles to.
