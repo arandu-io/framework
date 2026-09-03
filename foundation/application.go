@@ -311,6 +311,14 @@ func (a *Application) startBackground(ctx context.Context) error {
 // production with the secret checked only by the middleware that decides whether
 // to RECORD -- and anyone can then read the buffer: SQL with bound arguments,
 // dumps, event payloads, across every tenant, with no session and no header.
+//
+// The two probes take no setting and cannot be switched off. There is nothing to
+// withhold: they read no data, hold no session, write nothing, and say only
+// whether to route to this instance plus the name of a module. A setting would
+// have a wrong value, and it is the value that turns readiness off on the
+// instance standing behind a load balancer -- which then keeps sending traffic
+// to a replica that has just said it cannot serve. Where the paths are reachable
+// from is a question for whatever publishes the process, not for the process.
 func (a *Application) mountInternalRoutes() {
 	internal := a.router.ForModule("arandu")
 	internal.Get(internalPrefix+"health", a.handleHealth).Name("arandu.health")
@@ -366,6 +374,32 @@ func requireTracingSecret(secret string, next http.HandlerFunc) http.HandlerFunc
 	}
 }
 
+// readinessTimeout bounds one pass over the module checks.
+//
+// A dependency that hangs and a dependency that is down are the same fact to
+// whatever reads this endpoint -- neither instance can serve -- but only one of
+// them says so in time to be read as that. Without a deadline the handler waits
+// exactly as long as the dependency does, the caller's own probe timeout fires
+// first, and what gets recorded is an unanswered request rather than the 503
+// that names the module.
+//
+// It bounds the whole pass and not each module, so the answer arrives inside
+// this budget however many modules are registered. Per-module budgets multiply:
+// ten modules at five seconds each is a fifty-second endpoint.
+//
+// The value is short on purpose. It has to sit under the probe timeout the
+// caller configured, or the 503 is written after the caller stopped reading and
+// the bound buys nothing; and it has to stay well under writeTimeout, or the
+// server deadline cuts off the answer instead. What it must not cut short is a
+// dependency that is merely busy -- a reachable database answers a ping in
+// milliseconds, so seconds is already generous.
+//
+// The deadline reaches a check through its context, so a check that ignores its
+// context is not bounded by it. Running such a check on a goroutine and
+// abandoning it is the only alternative and it is worse: the goroutine outlives
+// the request, and a probe that repeats every few seconds leaks one per probe.
+const readinessTimeout = 2 * time.Second
+
 // handleHealth answers the readiness question: should this instance be sent
 // traffic right now.
 //
@@ -373,6 +407,17 @@ func requireTracingSecret(secret string, next http.HandlerFunc) http.HandlerFunc
 // every module that implements Ready is ready, and it names the first module
 // that is not, because a load balancer probe that only says "unavailable" costs
 // an hour of guessing.
+//
+// The checks run under readinessTimeout, so a dependency that stops answering
+// turns into a 503 naming the module rather than into a request that never
+// finishes.
+//
+// The body carries the module name and nothing else. This endpoint is reachable
+// without a session, a header or a credential -- a load balancer has none of
+// them -- so what it says is what an anonymous caller learns. The error a check
+// returns is written to the log instead, because a driver names the host, the
+// port and often the database it failed to reach, and those together are a map
+// of the infrastructure drawn for whoever asked.
 //
 // A module is asked both questions rather than one standing in for the other.
 // Health failing and Ready failing are different facts and both of them withhold
@@ -385,14 +430,17 @@ func requireTracingSecret(secret string, next http.HandlerFunc) http.HandlerFunc
 // backlog again. That is why liveness is a separate route: an orchestrator
 // pointed at this one for both questions kills a process for being behind.
 func (a *Application) handleHealth(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), readinessTimeout)
+	defer cancel()
+
 	for _, m := range a.modules {
 		var err error
 		if h, ok := m.(Health); ok {
-			err = h.Health(r.Context())
+			err = h.Health(ctx)
 		}
 		if err == nil {
 			if rd, ok := m.(Ready); ok {
-				err = rd.Ready(r.Context())
+				err = rd.Ready(ctx)
 			}
 		}
 		if err != nil {
