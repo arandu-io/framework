@@ -10,8 +10,15 @@
 package unit
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -331,6 +338,132 @@ func TestConcurrentReplicasClaimOneSingletonOccurrence(t *testing.T) {
 	defer runsMu.Unlock()
 	if runs != 1 {
 		t.Fatalf("%d concurrent replicas ran the occurrence, want 1", runs)
+	}
+}
+
+// TestReplicasInSeparateProcessesRunOneOccurrence is the one test here whose
+// claim is about a server rather than about this code.
+//
+// Every other proof of the claim runs against a store inside this process,
+// where the winner is decided by a mutex this repository owns. Production
+// decides it in Redis, and the shape of the decision is different there: the
+// claim survives because SET NX PX writes the key and its expiry in one
+// command, and the losers learn they lost from a null reply rather than from a
+// map lookup. A correction can pass against every in-process store and still
+// be wrong about that, so this one spawns real processes -- separate address
+// spaces, separate schedulers, one server between them -- and counts the runs
+// in the server.
+//
+// Without REDIS_ADDRESS it skips, and skipping is the honest answer: a proof
+// about a server that quietly passes without one proves nothing.
+func TestReplicasInSeparateProcessesRunOneOccurrence(t *testing.T) {
+	addr := os.Getenv("REDIS_ADDRESS")
+	if addr == "" {
+		t.Skip("REDIS_ADDRESS is not set: start a RESP server and set it, e.g. REDIS_ADDRESS=127.0.0.1:6379")
+	}
+
+	// A child re-enters this same function. It is the parent's own binary, so
+	// the scheduler it builds is the one under test and not a copy of it.
+	if prefix := os.Getenv(replicaPrefixEnv); prefix != "" {
+		runOneReplicaProcess(t, addr, prefix)
+		return
+	}
+
+	prefix := fmt.Sprintf("arandu-test:%s:%d:%d:", t.Name(), os.Getpid(), time.Now().UnixNano())
+
+	server, err := dialRESP(addr, prefix)
+	if err != nil {
+		t.Fatalf("connecting to %s: %v", addr, err)
+	}
+	// Registered before the cleanup that needs the connection, because cleanups
+	// run in reverse: a deferred Close here would run first and leave every
+	// delete below talking to a closed socket.
+	t.Cleanup(func() { _ = server.Close() })
+	t.Cleanup(func() {
+		// The claim is deliberately never released, so the keys this run wrote
+		// would otherwise sit in somebody's development server for an hour.
+		// The name is spelled out rather than read back, because reading it
+		// back would mean asking the server which keys exist and believing the
+		// answer -- and this test is the one that does not do that.
+		claim := fmt.Sprintf("lock:sched::%s:%d", replicaTaskID, at(replicaWindow).Unix())
+		if _, _, err := server.do("DEL", prefix+"runs", prefix+claim); err != nil {
+			t.Errorf("clearing the keys this run wrote: %v", err)
+		}
+	})
+
+	replica := func(i int) {
+		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$")
+		cmd.Env = append(os.Environ(), replicaPrefixEnv+"="+prefix)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Errorf("replica %d: %v\n%s", i, err, out)
+		}
+	}
+
+	// Two waves, because they fail differently and only one of them is the
+	// defect this test was written for.
+	//
+	// The first wave asks at once, and a lock held for the length of the run
+	// already answers it: the losers are refused while the winner is still
+	// working. The second wave starts after every process in the first has
+	// exited, so a lock released when its function returned is gone and the
+	// key is free -- which is how the same occurrence used to be executed
+	// twice, and why one wave alone would have proved nothing.
+	const together = 6
+	var wave sync.WaitGroup
+	for i := range together {
+		wave.Add(1)
+		go func() {
+			defer wave.Done()
+			replica(i)
+		}()
+	}
+	wave.Wait()
+
+	for i := range 2 {
+		replica(together + i)
+	}
+
+	ran, ok, err := server.do("GET", prefix+"runs")
+	if err != nil {
+		t.Fatalf("counting the runs: %v", err)
+	}
+	if !ok {
+		t.Fatal("no replica ran the occurrence at all, so nothing was proved about running it once")
+	}
+	if ran != "1" {
+		t.Fatalf("%s processes ran the same occurrence, want 1", ran)
+	}
+}
+
+// runOneReplicaProcess is the child half: one replica, claiming the occurrence
+// every other replica is claiming, counting its run in the server so the
+// parent can read a number no child could have inflated on its own.
+func runOneReplicaProcess(t *testing.T, addr, prefix string) {
+	t.Helper()
+
+	server, err := dialRESP(addr, prefix)
+	if err != nil {
+		t.Fatalf("connecting to %s: %v", addr, err)
+	}
+	defer func() { _ = server.Close() }()
+
+	tk := task(replicaTaskID, func(context.Context, security.Grant) error {
+		if _, _, err := server.do("INCR", prefix+"runs"); err != nil {
+			return err
+		}
+		return nil
+	})
+	tk.Singleton = true
+
+	s, err := scheduler.New([]kernel.Task{tk}, scheduler.Options{
+		Locker: foundation.NewLocker(cache.NewLocks(server)),
+		Now:    func() time.Time { return at(replicaWindow) },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := s.RunNow(context.Background(), tk.ID, ""); err != nil {
+		t.Fatalf("RunNow: %v", err)
 	}
 }
 
@@ -1074,6 +1207,134 @@ func (l fixedOutcomeLocker) Run(ctx context.Context, _ string, _ time.Duration, 
 
 func (l fixedOutcomeLocker) ClaimOccurrence(context.Context, string, time.Duration) (foundation.OccurrenceClaimOutcome, error) {
 	return l.outcome, l.err
+}
+
+const (
+	// replicaPrefixEnv carries the key namespace from the parent process to
+	// its children, and its presence is also how a process knows it is a
+	// child. One variable rather than two, so a child can never be started
+	// against a namespace the parent will not clean up.
+	replicaPrefixEnv = "ARANDU_SCHEDULER_REPLICA_PREFIX"
+	replicaTaskID    = "billing.close"
+	replicaWindow    = "2026-08-03T13:00:00Z"
+)
+
+// resp is the smallest RESP client that can answer cache.Locking.
+//
+// Written here rather than taken from a driver for two reasons. The framework
+// depends on one thing it did not write, and a Redis client is not going to be
+// the second. And what this proves is a claim about the server -- that SET NX
+// PX refuses the second caller -- so putting a driver between the test and that
+// command would add a layer the proof would then also be about.
+//
+// One connection behind one mutex. A lock issuer is called from several
+// goroutines, and a RESP connection carries one reply at a time.
+type resp struct {
+	mu     sync.Mutex
+	prefix string
+	conn   net.Conn
+	reader *bufio.Reader
+}
+
+// dialRESP opens the connection and proves it is a server that answers.
+//
+// The prefix namespaces every key to one run, so two runs of this test -- or a
+// run against a server somebody else is using -- cannot see each other's
+// claims.
+func dialRESP(addr, prefix string) (*resp, error) {
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	s := &resp{prefix: prefix, conn: conn, reader: bufio.NewReader(conn)}
+	if _, _, err := s.do("PING"); err != nil {
+		_ = s.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *resp) Close() error { return s.conn.Close() }
+
+// do sends one command and reads one reply.
+//
+// The second return says whether the server answered with a value at all. A
+// null bulk string is how SET NX reports that somebody else holds the key, and
+// that is an answer rather than a failure -- which is the same distinction the
+// claim outcome makes one layer up.
+func (s *resp) do(args ...string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var out strings.Builder
+	fmt.Fprintf(&out, "*%d\r\n", len(args))
+	for _, arg := range args {
+		fmt.Fprintf(&out, "$%d\r\n%s\r\n", len(arg), arg)
+	}
+	if err := s.conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		return "", false, err
+	}
+	if _, err := io.WriteString(s.conn, out.String()); err != nil {
+		return "", false, err
+	}
+
+	line, err := s.reader.ReadString('\n')
+	if err != nil {
+		return "", false, err
+	}
+	line = strings.TrimRight(line, "\r\n")
+	if line == "" {
+		return "", false, errors.New("resp: the server sent an empty reply")
+	}
+
+	switch line[0] {
+	case '+', ':':
+		return line[1:], true, nil
+	case '-':
+		return "", false, errors.New("resp: " + line[1:])
+	case '$':
+		size, err := strconv.Atoi(line[1:])
+		if err != nil {
+			return "", false, err
+		}
+		if size < 0 {
+			return "", false, nil
+		}
+		body := make([]byte, size+len("\r\n"))
+		if _, err := io.ReadFull(s.reader, body); err != nil {
+			return "", false, err
+		}
+		return string(body[:size]), true, nil
+	default:
+		return "", false, fmt.Errorf("resp: unexpected reply %q", line)
+	}
+}
+
+// AcquireLock is SET key token NX PX ttl, and it is the single command the
+// whole proof rests on: the key and its expiry are written together or not at
+// all, so a process that dies between them is not a case that exists.
+func (s *resp) AcquireLock(_ context.Context, key, token string, ttl time.Duration) (bool, error) {
+	if ttl <= 0 {
+		return false, cache.ErrNoTTL
+	}
+	_, ok, err := s.do("SET", s.prefix+key, token, "NX", "PX", strconv.FormatInt(ttl.Milliseconds(), 10))
+	return ok, err
+}
+
+// ReleaseLock deletes the key only if this token still holds it.
+//
+// Nothing in this proof calls it -- a claim's only way out is its expiry, which
+// is the property under test -- so the gap between reading the token and
+// deleting the key is not a race anything here can lose. A store meant for
+// Locker.Run would have to close it, and would do it the way hesape's Redis
+// store does, in a transaction.
+func (s *resp) ReleaseLock(_ context.Context, key, token string) error {
+	held, ok, err := s.do("GET", s.prefix+key)
+	if err != nil || !ok || held != token {
+		return err
+	}
+	_, _, err = s.do("DEL", s.prefix+key)
+	return err
 }
 
 // TestTheKernelCollectsTasksFromModules: same shape as Migrations(), so a
