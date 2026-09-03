@@ -22,10 +22,10 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/arandu-io/framework/foundation"
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
@@ -49,10 +49,11 @@ type Options struct {
 	// single replica, and with more than one it means every replica runs
 	// everything.
 	//
-	// It stays a kernel.Locker. hesape claims a window through a
-	// SchedulingMutex, which marks the window and never releases it, where this
-	// one wraps the run and releases at the end -- a lock that cannot be
-	// expressed as the other. kernel.NewLocker builds one over a lock issuer.
+	// The field stays a kernel.Locker for compatibility with existing wiring.
+	// When any task is Singleton, a non-nil value must also implement
+	// foundation.OccurrenceClaimer; New rejects a transient-only Locker rather
+	// than silently weakening the guarantee. foundation.NewLocker and
+	// kernel.NewLocker return values with that additive capability.
 	Locker kernel.Locker
 	// Tenants expands PerTenant tasks. Nil means those tasks do not run, which
 	// is reported rather than silent.
@@ -86,12 +87,13 @@ type entry struct {
 // It is declared here rather than aliased because the two designs collect
 // different things. A schedule is declared through Schedule.Call in hesape and
 // carried as an Event; here it is collected as a kernel.Task, and the task
-// carries a Timeout, a Recorder and a kernel.Locker that an Event has no field
-// for.
+// carries a Timeout, a Recorder and a durable occurrence claim that an Event
+// has no field for.
 type Scheduler struct {
 	entries  []*entry
 	schedule *scheduling.Schedule
 	opts     Options
+	claimer  foundation.OccurrenceClaimer
 	// stop cancels the loop, and done closes when it has stopped.
 	stop context.CancelFunc
 	done chan struct{}
@@ -101,7 +103,8 @@ type Scheduler struct {
 //
 // An unparseable spec is an error at construction rather than a task that
 // silently never runs -- which is the failure mode of every scheduler that
-// validates lazily.
+// validates lazily. A Singleton task with a non-nil transient-only Locker is
+// also refused here, before any task can execute.
 func New(tasks []kernel.Task, opts Options) (*Scheduler, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -109,6 +112,7 @@ func New(tasks []kernel.Task, opts Options) (*Scheduler, error) {
 
 	seen := map[string]bool{}
 	entries := make([]*entry, 0, len(tasks))
+	hasSingleton := false
 
 	for _, t := range tasks {
 		if t.ID == "" {
@@ -129,16 +133,29 @@ func New(tasks []kernel.Task, opts Options) (*Scheduler, error) {
 		if t.Timeout <= 0 {
 			t.Timeout = 5 * time.Minute
 		}
+		hasSingleton = hasSingleton || t.Singleton
 		entries = append(entries, &entry{task: t, cron: cron})
+	}
+
+	claimer, _ := opts.Locker.(foundation.OccurrenceClaimer)
+	if hasSingleton && opts.Locker != nil && claimer == nil {
+		return nil, errors.New("scheduler: Singleton tasks require a Locker with durable occurrence claims")
 	}
 
 	sort.Slice(entries, func(i, j int) bool { return entries[i].task.ID < entries[j].task.ID })
 
-	s := &Scheduler{entries: entries, opts: opts}
+	s := &Scheduler{entries: entries, opts: opts, claimer: claimer}
 
 	// Both mutexes are nil. Overlap and one-server are attributes of a hesape
 	// Event and not of a kernel.Task, and nothing here sets either, so neither
-	// mutex is ever asked. The singleton lock is Options.Locker instead.
+	// mutex is ever asked.
+	//
+	// Singleton is answered by the occurrence claim instead, and it is a third
+	// thing rather than either of them: the claim says one occurrence of one
+	// minute happens once, where WithoutOverlapping says a run does not start
+	// while the previous one is still going and OnOneServer says one process
+	// wins the window. Wiring a claim into either mutex would silently give a
+	// task a guarantee it never asked for.
 	s.schedule = scheduling.NewSchedule(nil, nil, nil)
 	s.schedule.Tenants = opts.Tenants
 
@@ -160,7 +177,7 @@ func New(tasks []kernel.Task, opts Options) (*Scheduler, error) {
 //
 // The loop stays here rather than delegating to scheduling.Module, which has one
 // of its own: that loop calls the runner with a context of its own making, and
-// the window a task's lock is named after has to reach the run. It is also a
+// the window a task's claim is named after has to reach the run. It is also a
 // module answering hesape's contract, not the kernel's.
 func (s *Scheduler) Start(ctx context.Context) {
 	loop, cancel := context.WithCancel(context.WithoutCancel(ctx))
@@ -175,8 +192,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 
 // Stop cancels the loop and waits for the run in flight.
 //
-// Waiting matters: a task killed halfway is a task whose lock is still held and
-// whose work is half done, and the next window will not know either.
+// Waiting matters: a task killed halfway is a task whose work is half done
+// under a claim that says the occurrence happened, and the next window will not
+// know either.
 func (s *Scheduler) Stop(ctx context.Context) error {
 	if s.stop == nil {
 		return nil
@@ -232,8 +250,14 @@ func (s *Scheduler) Tick(ctx context.Context, at time.Time) {
 
 // RunNow runs one task by id, outside its schedule.
 //
-// Same lock, same Grant, same instrumentation -- which is what makes the manual
-// run auditable rather than a back door.
+// Same claim, same Grant, same instrumentation -- which is what makes the
+// manual run auditable rather than a back door.
+//
+// Taking the same claim has a consequence worth knowing before reaching for it:
+// a Singleton whose occurrence is already claimed does not run and reports no
+// error, so a second manual run inside the same UTC minute does nothing. The
+// alternative is a manual path that skips the claim, and that path is how the
+// same occurrence gets executed twice.
 func (s *Scheduler) RunNow(ctx context.Context, id, tenant string) error {
 	for _, e := range s.entries {
 		if e.task.ID != id {
@@ -294,7 +318,7 @@ func (s *Scheduler) work(e *entry) scheduling.Callback {
 	}
 }
 
-// runOne executes a task under its lock.
+// runOne executes a task after claiming its occurrence.
 func (s *Scheduler) runOne(ctx context.Context, e *entry, g security.Grant, at time.Time) error {
 	work := func(ctx context.Context) error { return s.execute(ctx, e, g, at) }
 
@@ -302,34 +326,51 @@ func (s *Scheduler) runOne(ctx context.Context, e *entry, g security.Grant, at t
 		return work(ctx)
 	}
 
-	// The window is in the key, so two replicas that tick a second apart still
-	// contend for the same lock -- and the TTL is the timeout, so a replica
-	// that dies holding it releases at the same moment the run would have been
-	// abandoned anyway.
-	name := fmt.Sprintf("sched:%s:%s:%d", g.Subject().Tenant, e.task.ID, at.Truncate(time.Minute).Unix())
+	name := occurrenceClaimName(e.task.ID, g.Subject().Tenant, at)
 
-	err := s.opts.Locker.Run(ctx, name, e.task.Timeout, work)
-	if err != nil && isLocked(err) {
-		// Another replica has it. That is the lock working, not a failure.
-		return nil
+	// The claim has to outlive the minute it names, or a replica whose clock
+	// or tick runs late finds the key free and repeats the occurrence -- which
+	// is the whole failure a lock released at the end of the work leaves open.
+	// An hour is far past any tick that is still a tick and far short of
+	// unbounded, and the floor rises to the timeout so a run can never outlast
+	// its own claim. The cost is that a task firing every minute keeps an
+	// hour's worth of expired-in-place keys per tenant, which is bounded and
+	// cheap next to running the same occurrence twice.
+	ttl := max(time.Hour, e.task.Timeout)
+	outcome, err := s.claimer.ClaimOccurrence(ctx, name, ttl)
+	if err != nil {
+		return err
 	}
-	return err
+
+	switch outcome {
+	case foundation.OccurrenceClaimAcquired:
+		return work(ctx)
+	case foundation.OccurrenceAlreadyClaimed:
+		return nil
+	default:
+		return fmt.Errorf("scheduler: occurrence claimer returned invalid outcome %d", outcome)
+	}
 }
 
-// isLocked recognizes "somebody else holds it" without importing whatever holds
-// the lock.
+// occurrenceClaimName identifies one task and tenant in one UTC minute.
 //
-// By message rather than by type, which is ugly and is the price of the core
-// not depending on the implementation. The alternative -- a sentinel here that
-// the implementation imports -- inverts the dependency the wrong way.
-func isLocked(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "lock is held")
+// The representation is deliberately the same one previous releases used for
+// the transient lock, so old and new binaries at least contend in the same
+// namespace during a mixed-version rollout. A previous binary can still
+// release a claim it won, so homogeneous deployment is required for the
+// durable guarantee.
+//
+// Task.ID is the explicit task identity. Action, Spec and values captured by
+// Run are deliberately not inferred; task variants must declare distinct IDs.
+func occurrenceClaimName(taskID, tenant string, at time.Time) string {
+	window := at.UTC().Truncate(time.Minute).Unix()
+	return fmt.Sprintf("sched:%s:%s:%d", tenant, taskID, window)
 }
 
 // execute is the run itself: timeout, Collector, log.
 func (s *Scheduler) execute(ctx context.Context, e *entry, g security.Grant, at time.Time) error {
 	// The timeout is the framework's: a hesape Event has no field for one, and
-	// a scheduled run with no bound is a run that holds its lock until the TTL.
+	// a scheduled run with no bound is a run nothing ever stops.
 	runCtx, cancel := context.WithTimeout(ctx, e.task.Timeout)
 	defer cancel()
 

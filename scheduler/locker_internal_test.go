@@ -1,71 +1,20 @@
-// The one assertion that cannot be made from outside this package.
-//
-// isLocked decides, by the text of an error, whether a Singleton task was
-// skipped because another replica is doing it or failed for a reason worth
-// reporting. It is unexported, so this file is in the package rather than
-// beside it.
-//
-// The failure it guards against is silent in both directions. A refusal
-// isLocked does not recognize is reported as a failed task, every minute, on
-// every replica that lost the race. A failure it recognizes by accident is a
-// task that never runs and never says so.
-
 package scheduler
 
 import (
-	"context"
-	"errors"
 	"testing"
 	"time"
-
-	"github.com/arandu-io/framework/foundation"
-	"github.com/arandu-io/hesape/cache"
 )
 
-// TestIsLockedRecognizesARealRefusal wires the locker the framework hands out
-// to the function that reads its errors.
-//
-// Both halves are asserted from one real lock: the refusal a held lock produces
-// has to be recognized, and the error the work itself returned has to not be --
-// a check that answered yes to everything would pass the first half alone.
-func TestIsLockedRecognizesARealRefusal(t *testing.T) {
-	locker := foundation.NewLocker(cache.NewLocks(cache.NewArrayStore()))
+// TestOccurrenceClaimNameKeepsTheExistingNamespace pins the persisted identity.
+// A mixed-version rollout must have old transient locks and new durable claims
+// contend on the same byte string.
+func TestOccurrenceClaimNameKeepsTheExistingNamespace(t *testing.T) {
+	zone := time.FixedZone("America/Sao_Paulo", -3*60*60)
+	window := time.Date(2026, time.August, 3, 10, 0, 59, 0, zone)
 
-	holding := make(chan struct{})
-	release := make(chan struct{})
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-		_ = locker.Run(context.Background(), "reports.monthly", time.Minute,
-			func(context.Context) error {
-				close(holding)
-				<-release
-				return nil
-			})
-	}()
-	<-holding
-
-	refusal := locker.Run(context.Background(), "reports.monthly", time.Minute,
-		func(context.Context) error {
-			t.Error("the work ran while the lock was held")
-			return nil
-		})
-
-	if !isLocked(refusal) {
-		t.Fatalf("isLocked does not recognize %v: a held lock would be reported as a failed task on every replica that lost the race", refusal)
-	}
-
-	close(release)
-	<-done
-
-	// The other direction: work that genuinely failed must not be mistaken for
-	// a lock somebody else holds, or the failure is swallowed and the task
-	// looks like it ran somewhere.
-	failure := locker.Run(context.Background(), "reports.monthly", time.Minute,
-		func(context.Context) error { return errors.New("the report has no rows") })
-
-	if isLocked(failure) {
-		t.Errorf("isLocked treats %v as a held lock, so a real failure would never be reported", failure)
+	got := occurrenceClaimName("billing.close", "tenant-1", window)
+	want := "sched:tenant-1:billing.close:1785762000"
+	if got != want {
+		t.Fatalf("occurrence claim name = %q, want %q", got, want)
 	}
 }

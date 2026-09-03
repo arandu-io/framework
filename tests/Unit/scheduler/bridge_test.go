@@ -17,11 +17,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/arandu-io/framework/foundation"
 	"github.com/arandu-io/framework/foundation/bootstrap"
 	"github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/scheduler"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/cache"
 	"github.com/arandu-io/hesape/config"
 	"github.com/arandu-io/hesape/console/scheduling"
 )
@@ -242,6 +244,150 @@ func TestOnlyOneReplicaRunsASingleton(t *testing.T) {
 	}
 }
 
+// TestALateReplicaCannotRepeatASingletonOccurrence reproduces the production
+// gap with the real framework adapter. The second replica arrives only after
+// the first task has finished, so a transient lock has already been released;
+// the occurrence claim still has to reject it for the same UTC minute.
+func TestALateReplicaCannotRepeatASingletonOccurrence(t *testing.T) {
+	var mu sync.Mutex
+	runs := 0
+	locker := foundation.NewLocker(cache.NewLocks(cache.NewArrayStore()))
+
+	build := func() *scheduler.Scheduler {
+		tk := task("billing.close", func(context.Context, security.Grant) error {
+			mu.Lock()
+			defer mu.Unlock()
+			runs++
+			return nil
+		})
+		tk.Singleton = true
+
+		s, err := scheduler.New([]kernel.Task{tk}, scheduler.Options{Locker: locker})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		return s
+	}
+
+	window := at("2026-08-03T13:00:00Z")
+	build().Tick(context.Background(), window)
+	build().Tick(context.Background(), window)
+
+	if runs != 1 {
+		t.Fatalf("a late replica ran the same occurrence %d times, want 1", runs)
+	}
+}
+
+// TestConcurrentReplicasClaimOneSingletonOccurrence starts every replica at
+// the same barrier. The store's atomic acquisition, surfaced through the typed
+// outcome, must select exactly one winner under the race detector.
+func TestConcurrentReplicasClaimOneSingletonOccurrence(t *testing.T) {
+	const replicas = 32
+	window := at("2026-08-03T13:00:00Z")
+	locker := foundation.NewLocker(cache.NewLocks(cache.NewArrayStore()))
+
+	var runsMu sync.Mutex
+	runs := 0
+	schedulers := make([]*scheduler.Scheduler, replicas)
+	for i := range schedulers {
+		tk := task("billing.close", func(context.Context, security.Grant) error {
+			runsMu.Lock()
+			runs++
+			runsMu.Unlock()
+			return nil
+		})
+		tk.Singleton = true
+
+		var err error
+		schedulers[i], err = scheduler.New([]kernel.Task{tk}, scheduler.Options{
+			Locker: locker,
+			Now:    func() time.Time { return window },
+		})
+		if err != nil {
+			t.Fatalf("New replica %d: %v", i, err)
+		}
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, replicas)
+	var ready sync.WaitGroup
+	ready.Add(replicas)
+	for _, s := range schedulers {
+		go func() {
+			ready.Done()
+			<-start
+			errs <- s.RunNow(context.Background(), "billing.close", "")
+		}()
+	}
+	ready.Wait()
+	close(start)
+
+	for range replicas {
+		if err := <-errs; err != nil {
+			t.Errorf("RunNow: %v", err)
+		}
+	}
+	runsMu.Lock()
+	defer runsMu.Unlock()
+	if runs != 1 {
+		t.Fatalf("%d concurrent replicas ran the occurrence, want 1", runs)
+	}
+}
+
+// TestOccurrenceIdentitySeparatesTasksAndTenants proves the explicit identity
+// tuple. Task ID and tenant select the occurrence; Action and captured
+// parameters must be represented by a distinct task ID when they select
+// distinct work.
+func TestOccurrenceIdentitySeparatesTasksAndTenants(t *testing.T) {
+	window := at("2026-08-03T13:00:00Z")
+	locker := foundation.NewLocker(cache.NewLocks(cache.NewArrayStore()))
+	var mu sync.Mutex
+	runs := map[string]int{}
+
+	build := func(id string) kernel.Task {
+		tk := task(id, func(_ context.Context, g security.Grant) error {
+			mu.Lock()
+			defer mu.Unlock()
+			runs[id+"/"+g.Subject().Tenant]++
+			return nil
+		})
+		tk.Scope = kernel.PerTenant
+		tk.Singleton = true
+		return tk
+	}
+
+	s, err := scheduler.New(
+		[]kernel.Task{build("billing.close"), build("billing.remind")},
+		scheduler.Options{
+			Locker:  locker,
+			Now:     func() time.Time { return window },
+			Tenants: func(context.Context) ([]string, error) { return []string{"tenant-1", "tenant-2"}, nil },
+		},
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	s.Tick(context.Background(), window)
+	s.Tick(context.Background(), window)
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, identity := range []string{
+		"billing.close/tenant-1",
+		"billing.close/tenant-2",
+		"billing.remind/tenant-1",
+		"billing.remind/tenant-2",
+	} {
+		if runs[identity] != 1 {
+			t.Errorf("%s ran %d times, want 1", identity, runs[identity])
+		}
+	}
+	if len(runs) != 4 {
+		t.Errorf("ran unexpected identities: %v", runs)
+	}
+}
+
 // TestANonSingletonRunsEverywhere: opting out has to actually opt out, or the
 // flag is decoration.
 func TestANonSingletonRunsEverywhere(t *testing.T) {
@@ -300,6 +446,62 @@ func TestTheLockIsPerWindow(t *testing.T) {
 	}
 }
 
+// TestAdjacentSingletonWindowsRemainIndependent keeps occurrence deduplication
+// separate from overlap prevention. A later task may opt into an overlap
+// window; Singleton alone continues to let two distinct UTC minutes run at the
+// same time.
+func TestAdjacentSingletonWindowsRemainIndependent(t *testing.T) {
+	locker := foundation.NewLocker(cache.NewLocks(cache.NewArrayStore()))
+	firstWindow := at("2026-08-03T13:00:00Z")
+	secondWindow := at("2026-08-03T13:01:00Z")
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondRan := make(chan struct{})
+
+	firstTask := task("billing.close", func(context.Context, security.Grant) error {
+		close(firstStarted)
+		<-releaseFirst
+		return nil
+	})
+	firstTask.Singleton = true
+	secondTask := task("billing.close", func(context.Context, security.Grant) error {
+		close(secondRan)
+		return nil
+	})
+	secondTask.Singleton = true
+
+	first, err := scheduler.New([]kernel.Task{firstTask}, scheduler.Options{
+		Locker: locker,
+		Now:    func() time.Time { return firstWindow },
+	})
+	if err != nil {
+		t.Fatalf("New first: %v", err)
+	}
+	second, err := scheduler.New([]kernel.Task{secondTask}, scheduler.Options{
+		Locker: locker,
+		Now:    func() time.Time { return secondWindow },
+	})
+	if err != nil {
+		t.Fatalf("New second: %v", err)
+	}
+
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- first.RunNow(context.Background(), firstTask.ID, "") }()
+	<-firstStarted
+	if err := second.RunNow(context.Background(), secondTask.ID, ""); err != nil {
+		t.Fatalf("second window: %v", err)
+	}
+	select {
+	case <-secondRan:
+	default:
+		t.Fatal("the adjacent window did not run while the first was in flight")
+	}
+	close(releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first window: %v", err)
+	}
+}
+
 func TestNewRefusesTasksThatCannotWork(t *testing.T) {
 	valid := task("ok", func(context.Context, security.Grant) error { return nil })
 
@@ -315,6 +517,128 @@ func TestNewRefusesTasksThatCannotWork(t *testing.T) {
 		if _, err := scheduler.New(c.tasks, scheduler.Options{}); err == nil {
 			t.Errorf("%s was accepted", c.name)
 		}
+	}
+}
+
+// TestNewRefusesATransientOnlyLockerForSingletonTasks prevents a custom Locker
+// from silently advertising a guarantee it cannot provide. Non-singleton work
+// remains compatible with the original Run-only contract.
+func TestNewRefusesATransientOnlyLockerForSingletonTasks(t *testing.T) {
+	tk := task("billing.close", func(context.Context, security.Grant) error { return nil })
+	tk.Singleton = true
+
+	_, err := scheduler.New([]kernel.Task{tk}, scheduler.Options{Locker: transientLocker{}})
+	want := "scheduler: Singleton tasks require a Locker with durable occurrence claims"
+	if err == nil || err.Error() != want {
+		t.Fatalf("New error = %v, want %q", err, want)
+	}
+
+	tk.Singleton = false
+	s, err := scheduler.New([]kernel.Task{tk}, scheduler.Options{Locker: transientLocker{}})
+	if err != nil {
+		t.Fatalf("New non-singleton: %v", err)
+	}
+	if err := s.RunNow(context.Background(), tk.ID, ""); err != nil {
+		t.Fatalf("RunNow non-singleton: %v", err)
+	}
+}
+
+// TestNilLockerPreservesSingleReplicaSemantics keeps the documented opt-out.
+// With no shared locker, each scheduler trusts that it is the only replica and
+// runs its local Singleton task.
+func TestNilLockerPreservesSingleReplicaSemantics(t *testing.T) {
+	window := at("2026-08-03T13:00:00Z")
+	var mu sync.Mutex
+	runs := 0
+	build := func() *scheduler.Scheduler {
+		tk := task("billing.close", func(context.Context, security.Grant) error {
+			mu.Lock()
+			runs++
+			mu.Unlock()
+			return nil
+		})
+		tk.Singleton = true
+		s, err := scheduler.New([]kernel.Task{tk}, scheduler.Options{})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		return s
+	}
+
+	build().Tick(context.Background(), window)
+	build().Tick(context.Background(), window)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if runs != 2 {
+		t.Fatalf("two single-replica schedulers ran %d times, want 2", runs)
+	}
+}
+
+// TestDuplicateRegistrationIsDeterministicUnderConcurrency makes the
+// construction-time registry race itself. Every builder must reject the same
+// identity with the same error, and construction never executes the task.
+func TestDuplicateRegistrationIsDeterministicUnderConcurrency(t *testing.T) {
+	const builders = 64
+	var runsMu sync.Mutex
+	runs := 0
+	duplicate := task("billing.close", func(context.Context, security.Grant) error {
+		runsMu.Lock()
+		runs++
+		runsMu.Unlock()
+		return nil
+	})
+	want := `scheduler: two tasks share the id "billing.close", and the lock cannot tell them apart`
+
+	start := make(chan struct{})
+	errs := make(chan error, builders)
+	var ready sync.WaitGroup
+	ready.Add(builders)
+	for range builders {
+		go func() {
+			ready.Done()
+			<-start
+			_, err := scheduler.New([]kernel.Task{duplicate, duplicate}, scheduler.Options{})
+			errs <- err
+		}()
+	}
+	ready.Wait()
+	close(start)
+
+	for range builders {
+		if err := <-errs; err == nil || err.Error() != want {
+			t.Errorf("New error = %v, want %q", err, want)
+		}
+	}
+	runsMu.Lock()
+	defer runsMu.Unlock()
+	if runs != 0 {
+		t.Fatalf("duplicate registration executed the task %d times", runs)
+	}
+}
+
+// TestAnUnknownOccurrenceOutcomeFailsClosed reserves the outcome zero value.
+// A custom implementation that forgets to set its result must never authorize
+// the task accidentally.
+func TestAnUnknownOccurrenceOutcomeFailsClosed(t *testing.T) {
+	ran := false
+	tk := task("billing.close", func(context.Context, security.Grant) error {
+		ran = true
+		return nil
+	})
+	tk.Singleton = true
+	s, err := scheduler.New([]kernel.Task{tk}, scheduler.Options{Locker: fixedOutcomeLocker{}})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	err = s.RunNow(context.Background(), tk.ID, "")
+	want := "scheduler: occurrence claimer returned invalid outcome 0"
+	if err == nil || err.Error() != want {
+		t.Fatalf("RunNow error = %v, want %q", err, want)
+	}
+	if ran {
+		t.Fatal("the task ran under an invalid occurrence outcome")
 	}
 }
 
@@ -422,6 +746,176 @@ func TestRunNowReportsWhatTheTaskFailedWith(t *testing.T) {
 	}
 }
 
+// TestAFailedSingletonKeepsItsClaimAndError proves that claim state and task
+// state travel on different channels. The reserved wording is ordinary domain
+// text now: the first caller receives it intact, and a late replica skips the
+// already-claimed occurrence without executing it again.
+func TestAFailedSingletonKeepsItsClaimAndError(t *testing.T) {
+	window := at("2026-08-03T13:00:00Z")
+	locker := foundation.NewLocker(cache.NewLocks(cache.NewArrayStore()))
+	boom := errors.New("database lock is held during reconciliation")
+	runs := 0
+	tk := task("billing.close", func(context.Context, security.Grant) error {
+		runs++
+		return boom
+	})
+	tk.Singleton = true
+
+	s, err := scheduler.New([]kernel.Task{tk}, scheduler.Options{
+		Locker: locker,
+		Now:    func() time.Time { return window },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if err := s.RunNow(context.Background(), tk.ID, ""); !errors.Is(err, boom) {
+		t.Fatalf("first RunNow error = %v, want %v", err, boom)
+	}
+	if err := s.RunNow(context.Background(), tk.ID, ""); err != nil {
+		t.Fatalf("late RunNow: %v", err)
+	}
+	if runs != 1 {
+		t.Fatalf("failed occurrence ran %d times, want 1", runs)
+	}
+}
+
+// TestACancelledSingletonKeepsItsClaim waits until the task owns the claim,
+// cancels that run, then sends a late replica to the same minute. Cancellation
+// propagates from the owner and does not reopen the occurrence.
+func TestACancelledSingletonKeepsItsClaim(t *testing.T) {
+	window := at("2026-08-03T13:00:00Z")
+	locker := foundation.NewLocker(cache.NewLocks(cache.NewArrayStore()))
+	started := make(chan struct{})
+	runs := 0
+	tk := task("billing.close", func(ctx context.Context, _ security.Grant) error {
+		runs++
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	tk.Singleton = true
+
+	s, err := scheduler.New([]kernel.Task{tk}, scheduler.Options{
+		Locker: locker,
+		Now:    func() time.Time { return window },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	first := make(chan error, 1)
+	go func() { first <- s.RunNow(ctx, tk.ID, "") }()
+	<-started
+	cancel()
+	if err := <-first; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled RunNow error = %v", err)
+	}
+
+	if err := s.RunNow(context.Background(), tk.ID, ""); err != nil {
+		t.Fatalf("late RunNow: %v", err)
+	}
+	if runs != 1 {
+		t.Fatalf("cancelled occurrence ran %d times, want 1", runs)
+	}
+}
+
+// TestATimedOutSingletonKeepsItsClaim proves the scheduler's own deadline is a
+// task failure, not a reason to reopen the occurrence for a late replica.
+func TestATimedOutSingletonKeepsItsClaim(t *testing.T) {
+	window := at("2026-08-03T13:00:00Z")
+	locker := foundation.NewLocker(cache.NewLocks(cache.NewArrayStore()))
+	runs := 0
+	tk := task("billing.close", func(ctx context.Context, _ security.Grant) error {
+		runs++
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	tk.Singleton = true
+	tk.Timeout = 20 * time.Millisecond
+
+	s, err := scheduler.New([]kernel.Task{tk}, scheduler.Options{
+		Locker: locker,
+		Now:    func() time.Time { return window },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if err := s.RunNow(context.Background(), tk.ID, ""); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("timed-out RunNow error = %v", err)
+	}
+	if err := s.RunNow(context.Background(), tk.ID, ""); err != nil {
+		t.Fatalf("late RunNow: %v", err)
+	}
+	if runs != 1 {
+		t.Fatalf("timed-out occurrence ran %d times, want 1", runs)
+	}
+}
+
+// TestAClaimStoreErrorPropagatesByType makes the former reserved phrase come
+// from the claimer rather than the task. It is still a failure unless the
+// typed outcome says the occurrence was already claimed.
+func TestAClaimStoreErrorPropagatesByType(t *testing.T) {
+	boom := errors.New("lock is held because the database is unavailable")
+	ran := false
+	tk := task("billing.close", func(context.Context, security.Grant) error {
+		ran = true
+		return nil
+	})
+	tk.Singleton = true
+	s, err := scheduler.New([]kernel.Task{tk}, scheduler.Options{
+		Locker: fixedOutcomeLocker{err: boom},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if err := s.RunNow(context.Background(), tk.ID, ""); !errors.Is(err, boom) {
+		t.Fatalf("RunNow error = %v, want %v", err, boom)
+	}
+	if ran {
+		t.Fatal("the task ran after its occurrence claim failed")
+	}
+}
+
+// TestOccurrenceClaimTTLOutlivesShortTasks keeps a late replica from entering
+// the same minute after a fast task returns. Long task timeouts remain the lower
+// bound so a live execution cannot outlast its own claim.
+func TestOccurrenceClaimTTLIsAtLeastOneHourAndTheTaskTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		timeout time.Duration
+		want    time.Duration
+	}{
+		{name: "short task", timeout: time.Second, want: time.Hour},
+		{name: "long task", timeout: 2 * time.Hour, want: 2 * time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			locker := &memoryLocker{held: map[string]bool{}}
+			tk := task("billing.close", func(context.Context, security.Grant) error { return nil })
+			tk.Singleton = true
+			tk.Timeout = tc.timeout
+			s, err := scheduler.New([]kernel.Task{tk}, scheduler.Options{Locker: locker})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			if err := s.RunNow(context.Background(), tk.ID, ""); err != nil {
+				t.Fatalf("RunNow: %v", err)
+			}
+			attempts := locker.claimAttempts()
+			if len(attempts) != 1 {
+				t.Fatalf("claim attempts = %d, want 1", len(attempts))
+			}
+			if attempts[0].ttl != tc.want {
+				t.Fatalf("claim ttl = %s, want %s", attempts[0].ttl, tc.want)
+			}
+		})
+	}
+}
+
 func TestListReportsTheNextRun(t *testing.T) {
 	tk := task("billing.close", func(context.Context, security.Grant) error { return nil })
 	tk.Spec = "0 3 * * *"
@@ -515,8 +1009,14 @@ func TestStartAndStop(t *testing.T) {
 // against a real server wherever it is written. This one exists to prove the
 // scheduler asks for the lock and honors the answer.
 type memoryLocker struct {
-	mu   sync.Mutex
-	held map[string]bool
+	mu     sync.Mutex
+	held   map[string]bool
+	claims []claimAttempt
+}
+
+type claimAttempt struct {
+	name string
+	ttl  time.Duration
 }
 
 func (l *memoryLocker) Run(ctx context.Context, name string, _ time.Duration, fn func(context.Context) error) error {
@@ -530,7 +1030,50 @@ func (l *memoryLocker) Run(ctx context.Context, name string, _ time.Duration, fn
 	l.held[name] = true
 	l.mu.Unlock()
 
+	defer func() {
+		l.mu.Lock()
+		delete(l.held, name)
+		l.mu.Unlock()
+	}()
 	return fn(ctx)
+}
+
+func (l *memoryLocker) ClaimOccurrence(_ context.Context, name string, ttl time.Duration) (foundation.OccurrenceClaimOutcome, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.claims = append(l.claims, claimAttempt{name: name, ttl: ttl})
+
+	if l.held[name] {
+		return foundation.OccurrenceAlreadyClaimed, nil
+	}
+	l.held[name] = true
+	return foundation.OccurrenceClaimAcquired, nil
+}
+
+func (l *memoryLocker) claimAttempts() []claimAttempt {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return append([]claimAttempt(nil), l.claims...)
+}
+
+type transientLocker struct{}
+
+func (transientLocker) Run(ctx context.Context, _ string, _ time.Duration, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+type fixedOutcomeLocker struct {
+	outcome foundation.OccurrenceClaimOutcome
+	err     error
+}
+
+func (l fixedOutcomeLocker) Run(ctx context.Context, _ string, _ time.Duration, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (l fixedOutcomeLocker) ClaimOccurrence(context.Context, string, time.Duration) (foundation.OccurrenceClaimOutcome, error) {
+	return l.outcome, l.err
 }
 
 // TestTheKernelCollectsTasksFromModules: same shape as Migrations(), so a

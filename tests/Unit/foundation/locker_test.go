@@ -1,4 +1,5 @@
-// Tests of the lock, which is three lines carrying a guarantee.
+// Tests of the lock, which is three lines carrying a guarantee, and of the
+// occurrence claim beside it.
 //
 // What a lock does under contention is tested in hesape, against the store; what
 // is left to prove here is that the three lines hand the name, the ttl and the
@@ -6,9 +7,10 @@
 // the lock comes back when the work finishes, and that a caller can tell "somebody
 // else has it" from "the work failed".
 //
-// The last one is not decoration. The scheduler recognizes a held lock by the
-// text of the error, so a refusal this package stopped passing through unchanged
-// would read as an acquired lock, and every replica would run every task.
+// The last one is not decoration, and it is why the claim answers with an
+// outcome instead of an error. A store failure whose message happens to read
+// like contention would otherwise be taken for a claim somebody else won, and
+// the occurrence would be skipped everywhere and reported nowhere.
 
 package unit
 
