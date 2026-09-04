@@ -76,7 +76,12 @@ type Asset = hview.Asset
 //
 // The hash comes from the content, so upgrading HTMX changes the URL and no
 // browser serves a stale script -- without anyone remembering to bump a version.
-func URL(name string) string { return hview.URL(name) }
+//
+// The name it forwards to is [github.com/arandu-io/hesape/view.AssetURL], and
+// the two differ on purpose. Write new code against that one: URL is the name
+// this bridge shipped with, and a bridge that renames its own exports breaks
+// the callers it exists to carry.
+func URL(name string) string { return hview.AssetURL(name) }
 
 // Handler serves the embedded assets.
 //
