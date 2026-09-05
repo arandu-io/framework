@@ -70,18 +70,22 @@ func RegisterAsset(name, contentType string, body []byte) {
 func Assets() []Asset { return hview.Assets() }
 
 // Asset is one served file, as Assets reports it.
-type Asset = hview.Asset
+//
+// Hesape calls this type Registration, and this alias keeps the name the bridge
+// shipped with: the frozen-surface test refuses a renamed export here, and the
+// callers this bridge carries wrote Asset.
+type Asset = hview.Registration
 
 // URL returns the versioned path of an asset: /_arandu/assets/<hash>/htmx.min.js
 //
 // The hash comes from the content, so upgrading HTMX changes the URL and no
 // browser serves a stale script -- without anyone remembering to bump a version.
 //
-// The name it forwards to is [github.com/arandu-io/hesape/view.AssetURL], and
+// The name it forwards to is [github.com/arandu-io/hesape/view.Asset], and
 // the two differ on purpose. Write new code against that one: URL is the name
 // this bridge shipped with, and a bridge that renames its own exports breaks
 // the callers it exists to carry.
-func URL(name string) string { return hview.AssetURL(name) }
+func URL(name string) string { return hview.Asset(name) }
 
 // Handler serves the embedded assets.
 //

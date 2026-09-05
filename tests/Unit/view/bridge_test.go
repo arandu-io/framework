@@ -31,14 +31,14 @@ import (
 // but a defined type over an alias is assignable in one. Both directions is
 // what says "same type".
 var (
-	_ view.Func        = hview.Func(nil)
-	_ hview.Func       = view.Func(nil)
-	_ view.LayoutFunc  = hview.LayoutFunc(nil)
-	_ hview.LayoutFunc = view.LayoutFunc(nil)
-	_ view.Asset       = hview.Asset{}
-	_ hview.Asset      = view.Asset{}
-	_ *view.Renderer   = (*hview.Renderer)(nil)
-	_ *hview.Renderer  = (*view.Renderer)(nil)
+	_ view.Func          = hview.Func(nil)
+	_ hview.Func         = view.Func(nil)
+	_ view.LayoutFunc    = hview.LayoutFunc(nil)
+	_ hview.LayoutFunc   = view.LayoutFunc(nil)
+	_ view.Asset         = hview.Registration{}
+	_ hview.Registration = view.Asset{}
+	_ *view.Renderer     = (*hview.Renderer)(nil)
+	_ *hview.Renderer    = (*view.Renderer)(nil)
 )
 
 // TestTheBridgedRendererStillSatisfiesTheFrameworkInterface is the one line
