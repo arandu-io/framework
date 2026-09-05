@@ -680,6 +680,30 @@ func (a *Application) Tasks() []Task {
 	return out
 }
 
+// Publications collects what every registered module publishes, in
+// registration order.
+//
+// Same shape as Migrations() and Tasks(): the module declares, the Application
+// collects, and the engine that writes the files runs elsewhere. It is what a
+// project's own binary answers when asked to publish, because only that binary
+// knows which modules the application registered.
+//
+// A module that publishes nothing contributes nothing, and a module that
+// declares a tag from outside the closed set stops the collection: the refusal
+// has to reach the person publishing, and a publication skipped in silence is a
+// directory that never appears with no line saying why.
+func (a *Application) Publications() ([]Publication, error) {
+	var out []Publication
+	for _, m := range a.modules {
+		published, err := Publications(m)
+		if err != nil {
+			return nil, fmt.Errorf("publications of %s: %w", m.Name(), err)
+		}
+		out = append(out, published...)
+	}
+	return out, nil
+}
+
 // Diagnose asks every module that implements Diagnostic what is wrong right
 // now, and returns what they say.
 //

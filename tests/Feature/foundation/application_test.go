@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/arandu-io/framework/foundation"
@@ -389,6 +390,71 @@ func TestMigrationsAreCollectedInRegistrationOrder(t *testing.T) {
 		t.Fatalf("order = %s, %s: registration order decides collection order",
 			collected[0].GetName(), collected[1].GetName())
 	}
+}
+
+func TestPublicationsAreCollectedInRegistrationOrder(t *testing.T) {
+	k := foundation.New(testConfig(config.EnvProd)).
+		Register(
+			&publisher{name: "ui", tag: foundation.PublishView, to: "resources/views"},
+			&publisher{name: "billing", tag: foundation.PublishMigration, to: "database/migrations"},
+			&stub{name: "auth"},
+		)
+
+	collected, err := k.Publications()
+	if err != nil {
+		t.Fatalf("Publications: %v", err)
+	}
+
+	if len(collected) != 2 {
+		t.Fatalf("collected %d publications, want 2: a module that publishes nothing contributes nothing",
+			len(collected))
+	}
+	if collected[0].To != "resources/views" || collected[1].To != "database/migrations" {
+		t.Fatalf("order = %s, %s: registration order decides collection order",
+			collected[0].To, collected[1].To)
+	}
+	if collected[0].Tag != foundation.PublishView || collected[1].Tag != foundation.PublishMigration {
+		t.Fatalf("tags = %s, %s: the tag a module declared is the tag collected",
+			collected[0].Tag, collected[1].Tag)
+	}
+}
+
+// TestPublicationsRefusesAModuleThatDeclaresAnUnknownTag: the closed set is
+// enforced where every caller passes, and the refusal names the module so the
+// person publishing knows which one to open.
+func TestPublicationsRefusesAModuleThatDeclaresAnUnknownTag(t *testing.T) {
+	k := foundation.New(testConfig(config.EnvProd)).
+		Register(&publisher{name: "panelkit", tag: foundation.PublishTag("panel"), to: "resources/panels"})
+
+	collected, err := k.Publications()
+	if err == nil {
+		t.Fatalf("a tag from outside the six was collected: %v", collected)
+	}
+	if !strings.Contains(err.Error(), "panelkit") {
+		t.Errorf("the refusal does not name the module: %v", err)
+	}
+	if collected != nil {
+		t.Errorf("a refused collection still answered %v", collected)
+	}
+}
+
+// publisher is a module whose only optional interface is Publishable.
+type publisher struct {
+	name string
+	tag  foundation.PublishTag
+	to   string
+}
+
+func (m *publisher) Name() string { return m.name }
+
+func (m *publisher) Routes(*fhttp.Router) {}
+
+func (m *publisher) Publishes() []foundation.Publication {
+	return []foundation.Publication{{
+		Tag:   m.tag,
+		Files: fstest.MapFS{"page.kyse.go": &fstest.MapFile{Data: []byte("package views\n")}},
+		To:    m.to,
+	}}
 }
 
 // TestShutdownClosesInReverseOrder: a module registered later may depend on an
