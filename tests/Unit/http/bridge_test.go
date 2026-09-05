@@ -139,6 +139,38 @@ func TestTheOldNameForBuildingAPathAnswersWhatTheNewOneAnswers(t *testing.T) {
 	}
 }
 
+// The required action a route declares reaches this package through the Route
+// alias and through nothing else.
+//
+// Can and RequiredAction are methods on routing.Route, so the alias carries
+// them the day hesape declares them -- no wrapper, no envelope, no line here to
+// keep in step. The action they take is security.Action, which is already an
+// alias for the auth.Action they name, so a route declared in a module written
+// against the old names asks for the same permission the new ones do.
+//
+// Routes.Requirements is deliberately not reached from here. The table this
+// package hands back is the envelope Routes.URL exists for, and a catalogue
+// built from Router.Routes() would be a second implementation of the sibling
+// rule that hesape already applies. Import github.com/arandu-io/hesape/routing
+// for the catalogue.
+func TestTheActionARouteRequiresIsReachedThroughTheAliasedRoute(t *testing.T) {
+	r := fhttp.NewRouter()
+
+	route := r.Get("/invoices", func(http.ResponseWriter, *http.Request) {}).
+		Name("invoices.index").
+		Can(security.Action("invoice.list"))
+
+	var _ *routing.Route = route
+	if got := route.RequiredAction(); got != security.Action("invoice.list") {
+		t.Errorf("RequiredAction = %q, want %q", got, "invoice.list")
+	}
+
+	unguarded := r.Get("/health", func(http.ResponseWriter, *http.Request) {}).Name("health")
+	if got := unguarded.RequiredAction(); got != "" {
+		t.Errorf("a route that declared nothing requires %q", got)
+	}
+}
+
 // A name that does not exist is an error the caller sees, not a 404 the person
 // sees. The sentence is hesape's now; what this asserts is that an error still
 // comes back rather than an empty path.
