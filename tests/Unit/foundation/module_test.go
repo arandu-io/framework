@@ -2,7 +2,9 @@ package unit
 
 import (
 	"reflect"
+	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/arandu-io/framework/foundation"
 	hfoundation "github.com/arandu-io/hesape/foundation"
@@ -38,6 +40,71 @@ func TestTheVocabularyIsTheHesapeVocabulary(t *testing.T) {
 		t.Error("the Scope constants stopped being the hesape ones")
 	}
 }
+
+// TestThePublishingVocabularyIsTheHesapeVocabulary is the same assertion for the
+// names a module publishes under.
+//
+// A module declaring Publishes() against either spelling has to satisfy both,
+// and the six tags have to be the six values the engine compares against. A
+// seventh tag added on one side and not the other would be a publication the
+// module offers and the command refuses, with nothing between them to say so.
+func TestThePublishingVocabularyIsTheHesapeVocabulary(t *testing.T) {
+	for name, pair := range map[string][2]reflect.Type{
+		"Publishable": {reflect.TypeFor[foundation.Publishable](), reflect.TypeFor[hfoundation.Publishable]()},
+		"Publication": {reflect.TypeFor[foundation.Publication](), reflect.TypeFor[hfoundation.Publication]()},
+		"PublishTag":  {reflect.TypeFor[foundation.PublishTag](), reflect.TypeFor[hfoundation.PublishTag]()},
+	} {
+		if pair[0] != pair[1] {
+			t.Errorf("foundation.%s is %s and hesape/foundation.%s is %s", name, pair[0], name, pair[1])
+		}
+	}
+
+	want := hfoundation.PublishTags()
+	got := foundation.PublishTags()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("PublishTags() = %v, want %v", got, want)
+	}
+	for _, tag := range []foundation.PublishTag{
+		foundation.PublishView, foundation.PublishComponent, foundation.PublishConfig,
+		foundation.PublishMigration, foundation.PublishTranslation, foundation.PublishAsset,
+	} {
+		if !tag.Valid() {
+			t.Errorf("foundation.PublishTag(%q) is not one of the six", tag)
+		}
+	}
+}
+
+// TestPublicationsRefusesATagFromOutsideTheSix is the closed set, reached
+// through this package rather than restated in it.
+func TestPublicationsRefusesATagFromOutsideTheSix(t *testing.T) {
+	_, err := foundation.Publications(publishing{
+		{Tag: foundation.PublishTag("panel"), Files: fstest.MapFS{}},
+	})
+	if err == nil {
+		t.Fatal("a tag from outside the six was accepted")
+	}
+	if !strings.Contains(err.Error(), "panel") {
+		t.Errorf("the refusal does not name the tag: %v", err)
+	}
+}
+
+// TestPublicationsAnswersNothingForAModuleThatPublishesNothing keeps the
+// optional interface optional: a value that does not implement it is not an
+// error.
+func TestPublicationsAnswersNothingForAModuleThatPublishesNothing(t *testing.T) {
+	got, err := foundation.Publications(struct{}{})
+	if err != nil {
+		t.Fatalf("Publications: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("Publications() = %v, want nothing", got)
+	}
+}
+
+// publishing is a value that publishes exactly what it is.
+type publishing []foundation.Publication
+
+func (p publishing) Publishes() []foundation.Publication { return p }
 
 // TestTheHesapeViewModuleSatisfiesRendererProvider is the promise the doc on
 // RendererProvider makes.

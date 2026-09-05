@@ -18,6 +18,13 @@
 // ReloadTagger are the hesape types under the same names. A module written
 // against either name is one type to the compiler.
 //
+// The publishing vocabulary arrives the same way: Publishable, Publication,
+// PublishTag and the six tag constants are aliases, and [PublishTags] and
+// [Publications] are call-throughs for the reason [FormatRoutes] is one. What
+// is declared here instead is [Application.Publications], the collection over
+// the registered modules, which has no counterpart up there for the reason
+// RendererProvider has none: it names the boot sequence, and that is here.
+//
 // The names declared here each have a reason recorded on the declaration in
 // module.go:
 //
