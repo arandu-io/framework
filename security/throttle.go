@@ -52,7 +52,7 @@ type SignInThrottle interface {
 // MemoryThrottle is the sign-in throttle in process memory.
 //
 // It is right for development and for a single instance. Behind more than one
-// pod the budget multiplies by the number of pods -- use the kv-backed
+// pod the budget multiplies by the number of pods -- use the Redis-backed
 // implementation there.
 //
 // It is an envelope over hesape/auth.MemoryThrottle, which is the code that

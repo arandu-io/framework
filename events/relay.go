@@ -44,7 +44,7 @@ type PublisherFunc = hevents.PublisherFunc
 // and Relay.Run below is what drives it.
 type Locker = kernel.Locker
 
-// relayLock names the lock one pass of the relay holds. It is the name the kv
+// relayLock names the lock one pass of the relay holds. It is the name the Redis
 // adapter has been keying on since before this bridge existed, and hesape asks
 // for the same one.
 const relayLock = "outbox-relay"
@@ -169,11 +169,11 @@ func (r *Relay) Run(ctx context.Context) error {
 	}
 }
 
-// isLocked recognizes "somebody else holds it" without importing the kv package.
+// isLocked recognizes "somebody else holds it" without importing the Redis adapter.
 //
 // By message rather than by type, which is ugly and is the price of the core not
 // depending on the adapter. The alternative -- an exported sentinel in the core
-// that kv would have to import -- inverts the dependency the wrong way. It is
+// that the Redis adapter would have to import -- inverts the dependency the wrong way. It is
 // kept here because it goes with the Locker: hesape's own lock answers with a
 // sentinel and needs none of this.
 func isLocked(err error) bool {

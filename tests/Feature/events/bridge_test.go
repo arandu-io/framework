@@ -108,7 +108,7 @@ func TestStoreInsideATransactionIsAccepted(t *testing.T) {
 
 // TestARelayWithALockerPublishesUnderTheLock covers the divergence that cannot
 // be aliased: hesape/events.RelayOptions carries a *cache.Locks, nothing can
-// build one from the Locker that kv implements, so a relay wired with one runs
+// build one from the Locker interface alone, so a relay wired with one runs
 // its ticker here and hands each pass to hesape under the lock.
 func TestARelayWithALockerPublishesUnderTheLock(t *testing.T) {
 	db, table := newFakeOutbox()
@@ -145,7 +145,7 @@ func TestARelayWithALockerPublishesUnderTheLock(t *testing.T) {
 
 	name, ttl := locker.took()
 	if name != "outbox-relay" {
-		t.Errorf("the lock was taken as %q: kv keys on outbox-relay", name)
+		t.Errorf("the lock was taken as %q: the shared lock key must be outbox-relay", name)
 	}
 	if ttl != 2*time.Second {
 		t.Errorf("the lock ttl was %s, want the configured 2s", ttl)
@@ -163,7 +163,7 @@ func TestARelayHeldByAnotherReplicaKeepsGoing(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	publisher := newRecorder()
-	locker := &fakeLocker{refuse: errors.New("kv: the lock is held by another process")}
+	locker := &fakeLocker{refuse: errors.New("redis: the lock is held by another process")}
 	relay := events.NewRelay(
 		events.NewOutbox(data.Wrap(db, data.DialectSQLite)),
 		publisher,

@@ -138,8 +138,8 @@ func subjectFrom(rec session.Record[Subject]) Subject {
 
 // backendHandler presents a SessionBackend as a hesape/session.Handler.
 //
-// It is four renames and the record translation, and it is what lets the kv
-// adapter keep the method names it was written with.
+// It translates four method names and the record while preserving the
+// SessionBackend contract implemented by the caller.
 type backendHandler struct{ backend SessionBackend }
 
 var _ session.Handler[Subject] = backendHandler{}
@@ -240,7 +240,7 @@ func (b handlerBackend) DeleteSubject(ctx context.Context, tenant, subjectID, ke
 //
 // It is the right choice for development and for a single instance. Behind more
 // than one pod it silently logs people out on every deploy and on every request
-// routed elsewhere -- use the kv adapter there.
+// routed elsewhere -- use a Redis-backed handler through NewSessionBackend.
 //
 // It is the same four renames as backendHandler, run the other way: the store
 // underneath is hesape/session.ArrayHandler, and nothing is kept here. Those

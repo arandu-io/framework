@@ -123,9 +123,9 @@ type Service struct {
 	// belongs to the project the moment the starter kit writes it -- a control
 	// in a file the project may delete is a control that disappears.
 	//
-	// When the kv-backed implementation lands it replaces what this constructor
-	// builds, here, for every application at once. Same interface, so it is an
-	// adapter and not a mode.
+	// A distributed backend must preserve this interface and share the budget
+	// across replicas. Keeping state in one process does not enforce a shared
+	// sign-in limit.
 	throttle security.SignInThrottle
 }
 

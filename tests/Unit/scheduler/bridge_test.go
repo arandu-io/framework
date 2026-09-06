@@ -1158,7 +1158,7 @@ func (l *memoryLocker) Run(ctx context.Context, name string, _ time.Duration, fn
 		l.mu.Unlock()
 		// The same wording the adapter uses, which is what the scheduler
 		// matches on to tell "somebody else has it" from a real failure.
-		return errors.New("kv: the lock is held")
+		return errors.New("redis: the lock is held")
 	}
 	l.held[name] = true
 	l.mu.Unlock()

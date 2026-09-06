@@ -41,7 +41,7 @@ type Module struct {
 //
 //	k := kernel.New(cfg).Register(billing.New(...), reports.New(...))
 //	k.Register(scheduler.NewModule(k.Tasks(), scheduler.Options{
-//	    Locker:  kv.NewLocker(client),
+//	    Locker:  kernel.NewLocker(cache.NewLocks(redis.NewRedisStore(client))),
 //	    Tenants: tenants.Active,
 //	}))
 func NewModule(tasks []kernel.Task, opts Options) *Module {
