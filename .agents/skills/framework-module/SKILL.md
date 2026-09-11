@@ -1,6 +1,6 @@
 ---
 name: framework-module
-description: The composition contract of the Arandu framework core — foundation.Module, the nine optional interfaces, and the boot sequence that asks for each one. Use when adding or changing a module, when a change touches New, Boot, Run, Shutdown, the middleware pipeline or the router wiring, when reading or extending bootstrap.LoadConfiguration, and when the request mentions "register a module", "boot order", "add a background loop", "add a migration", "add a scheduled task", "health check", "graceful shutdown", "middleware pipeline", "add a config setting", "read an environment variable", "where does this get wired" or "why is my method never called". Covers what the Application does in order, where each optional interface is asked, what a module must never do, and the typed configuration read once at start.
+description: The composition contract of the Arandu framework core — foundation.Module, the eleven optional interfaces, and the boot sequence that asks for each one. Use when adding or changing a module, when a change touches New, Boot, Run, Shutdown, the middleware pipeline or the router wiring, when reading or extending bootstrap.LoadConfiguration, and when the request mentions "register a module", "boot order", "add a background loop", "add a migration", "add a scheduled task", "publish files into a project", "health check", "graceful shutdown", "middleware pipeline", "add a config setting", "read an environment variable", "where does this get wired" or "why is my method never called". Covers what the Application does in order, where each optional interface is asked, what a module must never do, and the typed configuration read once at start.
 license: MIT
 ---
 
@@ -48,38 +48,66 @@ this one names a `*http.Router`, which is the one envelope the request bridge
 could not turn into an alias, because it carries the renderer and the flash and
 `hesape/routing.Router` deliberately carries neither. It becomes an alias the
 day `http.Router` stops being an envelope, and not before. The same reasoning
-keeps `RendererProvider` and `Locker` declared here; everything else in that
-file is an alias.
+keeps `RendererProvider`, `Ready`, `Locker` and `OccurrenceClaimer` declared
+here — `hesape/foundation` has no counterpart for any of them — and everything
+else in that file is an alias.
 
-## The nine optional interfaces, and where each is asked
+## The eleven optional interfaces, and where each is asked
 
-Every one is asked for by a type assertion, at exactly one place, all of them in
-`foundation/application.go`. Get the signature wrong and the assertion simply
-fails: the module is registered, nothing complains, and the method is never
-called.
+Every one is asked for by a type assertion, at exactly one place. Ten of them are
+in `foundation/application.go`, and `Publishable` is asked one call further in.
+Get the signature wrong and the assertion simply fails: the module is registered,
+nothing complains, and the method is never called.
 
 | interface | asked at | when |
 | --- | --- | --- |
-| `RendererProvider` | `:239` | in `Boot`, before any route is registered. Two providers refuse the boot rather than picking one (`:244`) |
-| `Bootable` | `:216` | in `Boot`, per module, in registration order. A failure stops the process |
-| `ReloadTagger` | `:297` | in `mountInternalRoutes`, development only, first one wins |
-| `Background` | `:264` | from `Run`, never from `Boot` |
-| `Health` | `:346` | on each request to `/_arandu/health`; the body names the failing module |
-| `Migratable` | `:545` | when `Application.Migrations()` is called |
-| `Schedulable` | `:561` | when `Application.Tasks()` is called |
-| `Diagnostic` | `:578` | when `Application.Diagnose()` is called, for the error page |
-| `Closable` | `:524` | in `Shutdown`, in **reverse** registration order |
+| `RendererProvider` | `:265` | in `Boot`, before any route is registered. Two providers refuse the boot rather than picking one (`:270`) |
+| `Bootable` | `:221` | in `Boot`, per module, in registration order. A failure stops the process |
+| `ReloadTagger` | `:333` | in `mountInternalRoutes`, development only, first one wins |
+| `Background` | `:290` | from `Run`, never from `Boot` |
+| `Health` | `:438` | on each request to `/_arandu/health`; the body names the failing module |
+| `Ready` | `:442` | in the same loop, straight after `Health`. A module that implements both is asked both, so gaining the second never drops the first |
+| `Migratable` | `:658` | when `Application.Migrations()` is called |
+| `Schedulable` | `:674` | when `Application.Tasks()` is called |
+| `Publishable` | `hesape/foundation/publishing.go:95` | when `Application.Publications()` hands each module over, one at a time (`:698`) |
+| `Diagnostic` | `:715` | when `Application.Diagnose()` is called, for the error page |
+| `Closable` | `:637` | in `Shutdown`, in **reverse** registration order |
 
 Confirm the list has not moved before relying on a line number:
 
 ```sh
-grep -nE '\.\((Bootable|Background|RendererProvider|Closable|Diagnostic|Schedulable|Migratable|Health|ReloadTagger)\)' foundation/application.go
+grep -nE '\.\((Bootable|Background|RendererProvider|Closable|Diagnostic|Schedulable|Migratable|Health|Ready|ReloadTagger)\)' foundation/application.go
 ```
 
-All nine except `RendererProvider` are aliases to `hesape/foundation`, and
-`TestTheVocabularyIsTheHesapeVocabulary` (`tests/Unit/foundation/module_test.go:18`)
-asserts that at compile time, name by name. A rename in hesape that this package
-has not followed fails there rather than in a project that imports the old name.
+`Publishable` is the one that grep does not find, and the reason is worth
+knowing: `Application.Publications()` passes each module to `Publications`
+(`foundation/publishing.go:68`), a wrapper over the hesape function, and the
+assertion is in there — beside the check that refuses a tag from outside the
+closed set, which is enforced there because it is the one place every caller
+passes through.
+
+`Publishes()` is the shape of `Migrations()` and `Tasks()` again: the module
+declares, the Application collects, and something else runs. What it declares is
+a `Publication`, which is data rather than behaviour — a tag, the `fs.FS` the
+module embedded, the directory inside it to take, and the directory in the
+project the files land in. The tag is one of six — view, component, config,
+migration, translation, asset — and the set is closed, so a seventh is refused
+when the publication is read, naming the module, rather than becoming a
+directory nobody expected. Nothing here writes a file: `aru vendor:publish`
+forwards to the project's own binary to do the writing, because the list of
+registered modules exists only inside that binary. The worked example is
+`ayra/module`: one embedded tree, tagged `PublishView` because the files are
+screens the project edits, landing in `cmd/native` because that is where they
+have to be. A tag says what a file is, never where it goes.
+
+Nine of the eleven are aliases to `hesape/foundation`; `RendererProvider` and
+`Ready` are declared here. Two tests assert the aliases at compile time, name by
+name: `TestTheVocabularyIsTheHesapeVocabulary`
+(`tests/Unit/foundation/module_test.go:20`) for the composition names, and
+`TestThePublishingVocabularyIsTheHesapeVocabulary` (`:51`) for `Publishable`,
+`Publication`, `PublishTag` and the six tags. A rename in hesape that this
+package has not followed fails there rather than in a project that imports the
+old name.
 
 ## The sequence, in order
 

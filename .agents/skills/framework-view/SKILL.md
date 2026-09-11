@@ -1,6 +1,6 @@
 ---
 name: framework-view
-description: The view runtime of the Arandu framework core — the functions a compiled .kyse.go calls, the three package-level registries behind them, and the two files that still hold an implementation. Use when adding or changing a runtime function generated views call (Text, TextAttr, TextURL, TextJS, TextCSS, Yield, RenderInto, Include, CSRF), when touching Register, RegisterLayout, RegisterAsset or RegisterStylesheet, when changing view.Page or view.Layout, when a page renders blank or reports "no view named x" over a file that is on disk, when an asset or the reload script is not served, and when the request mentions "escaping", "add a directive", "the renderer", "embedded assets", "app.css", "live reload" or "THIRD_PARTY". Covers what is bridged and what is not, why a second registry is the failure to avoid, and the assets directory that is compiled into nothing.
+description: The view runtime of the Arandu framework core — the functions a compiled .kyse.go calls, the three package-level registries behind them, and the two files that still hold an implementation. Use when adding or changing a runtime function generated views call (Text, TextAttr, TextURL, TextJS, TextCSS, Yield, RenderInto, Include, CSRF), when touching Register, RegisterLayout, RegisterAsset or RegisterStylesheet, when changing view.Page or view.Layout, when a page renders blank or reports "no view named x" over a file that is on disk, when an asset or the reload script is not served, when a page answers as values instead of markup, and when the request mentions "escaping", "add a directive", "the renderer", "embedded assets", "app.css", "live reload", "view data" or "THIRD_PARTY". Covers what is bridged and what is not, why a second registry is the failure to avoid, and the assets directory that is compiled into nothing.
 license: MIT
 ---
 
@@ -136,6 +136,22 @@ than written as an inline `<script>` — an inline tag is refused by the policy
 **silently**, which reads as the feature simply not working. Any proposal that
 needs a string compiled into a function at run time needs a different policy,
 and that is a conversation rather than a patch.
+
+## The renderer is one of two answers to the same address
+
+A handler that calls `View` does not always reach a renderer. `renderWith` asks
+`wantsViewData` before it asks for markup, and a request whose `Accept` carries
+`application/vnd.arandu.view+json` — the constant is `http.ViewDataMediaType` —
+is answered by `writeViewData` instead: an `http.ViewData`, carrying the name of
+the view and the values it would have rendered from, as JSON and under
+`Vary: Accept` (`hesape/http/context.go:177-252`). It is content negotiation on
+one address, not a second route and not an API, so nothing here registers a
+route for it and no registry in this package is read on that path.
+
+What that changes for this package is that the data a screen hands the renderer
+is also written to a client as it stands. A screen that embeds `Page`
+serializes through the promoted `MarshalJSON` below, so what that redaction
+decides is what goes over the wire, and not only what reaches a log.
 
 ## `Page` carries things that must not leak
 
