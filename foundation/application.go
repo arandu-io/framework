@@ -9,10 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -74,6 +76,12 @@ type Application struct {
 	modules  []Module
 	pipeline []fhttp.Middleware
 	srv      *http.Server
+	serverMu sync.Mutex
+	// cancelRequests ends the base context from which net/http derives every
+	// request context. Shutdown calls it before asking the server to drain, so a
+	// long-lived handler gets the same signal as an ordinary request whose client
+	// went away and can return while Shutdown is waiting for active connections.
+	cancelRequests context.CancelFunc
 
 	// flash carries the messages of a rejected form across the redirect that
 	// answers it. The Application builds it rather than the project, for the
@@ -569,10 +577,11 @@ func exceptInternal(mw fhttp.Middleware) fhttp.Middleware {
 // newServer builds the server Run listens with. It is separate from Run so that
 // the limits above can be asserted without binding a port: a field left off this
 // literal is a limit the process silently does not have.
-func (a *Application) newServer() *http.Server {
+func (a *Application) newServer(baseContext context.Context) *http.Server {
 	return &http.Server{
 		Addr:              a.cfg.App.HTTPAddr,
 		Handler:           a.Handler(),
+		BaseContext:       func(net.Listener) context.Context { return baseContext },
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
@@ -580,6 +589,22 @@ func (a *Application) newServer() *http.Server {
 		MaxHeaderBytes:    maxHeaderBytes,
 		ErrorLog:          slog.NewLogLogger(a.log.Handler(), slog.LevelError),
 	}
+}
+
+// prepareServer gives the process one cancellation root for all of its HTTP
+// requests. BaseContext is the native net/http root; using it keeps the request
+// context created by net/http as the one context passed through the router and
+// the Hesape adapter rather than wrapping every request in another one.
+func (a *Application) prepareServer(ctx context.Context) *http.Server {
+	requestContext, cancelRequests := context.WithCancel(ctx)
+	srv := a.newServer(requestContext)
+
+	a.serverMu.Lock()
+	a.srv = srv
+	a.cancelRequests = cancelRequests
+	a.serverMu.Unlock()
+
+	return srv
 }
 
 // Run starts the server and blocks until SIGINT or SIGTERM, then shuts down
@@ -595,12 +620,12 @@ func (a *Application) Run(ctx context.Context) error {
 		return err
 	}
 
-	a.srv = a.newServer()
+	srv := a.prepareServer(ctx)
 
 	errc := make(chan error, 1)
 	go func() {
 		a.log.Info("server listening", "addr", a.cfg.App.HTTPAddr, "env", a.cfg.App.Env)
-		if err := a.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errc <- err
 		}
 	}()
@@ -626,10 +651,27 @@ func (a *Application) Run(ctx context.Context) error {
 func (a *Application) Shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
+	return a.shutdown(ctx)
+}
+
+// shutdown takes a context so the drain contract can be exercised without
+// making a failing test wait the process-wide timeout.
+func (a *Application) shutdown(ctx context.Context) error {
+	a.serverMu.Lock()
+	srv := a.srv
+	cancelRequests := a.cancelRequests
+	a.serverMu.Unlock()
+
+	// http.Server.Shutdown waits for active handlers; it does not cancel their
+	// request contexts. Cancel the root first so streams have a reason to return
+	// before the server starts waiting for them.
+	if cancelRequests != nil {
+		cancelRequests()
+	}
 
 	var errs []error
-	if a.srv != nil {
-		if err := a.srv.Shutdown(ctx); err != nil {
+	if srv != nil {
+		if err := srv.Shutdown(ctx); err != nil {
 			errs = append(errs, err)
 		}
 	}
