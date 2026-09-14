@@ -578,10 +578,15 @@ func exceptInternal(mw fhttp.Middleware) fhttp.Middleware {
 // the limits above can be asserted without binding a port: a field left off this
 // literal is a limit the process silently does not have.
 func (a *Application) newServer(baseContext context.Context) *http.Server {
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+
 	return &http.Server{
 		Addr:              a.cfg.App.HTTPAddr,
 		Handler:           a.Handler(),
 		BaseContext:       func(net.Listener) context.Context { return baseContext },
+		Protocols:         protocols,
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
@@ -613,6 +618,9 @@ func (a *Application) Run(ctx context.Context) error {
 	if !a.booted {
 		return errors.New("arandu: Run called before Boot")
 	}
+	if err := a.cfg.HTTP.Validate(); err != nil {
+		return fmt.Errorf("arandu: invalid HTTP transport: %w", err)
+	}
 
 	// The background loops start here rather than at boot, so only the process
 	// that serves runs them. See Background.
@@ -625,7 +633,7 @@ func (a *Application) Run(ctx context.Context) error {
 	errc := make(chan error, 1)
 	go func() {
 		a.log.Info("server listening", "addr", a.cfg.App.HTTPAddr, "env", a.cfg.App.Env)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := a.serve(srv); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errc <- err
 		}
 	}()
@@ -646,6 +654,17 @@ func (a *Application) Run(ctx context.Context) error {
 	return a.Shutdown()
 }
 
+// serve selects the one application listener's transport. TLS is activated
+// only by an explicit certificate pair; when an ingress terminates TLS, the
+// existing plain listener remains the deliberate boundary behind it.
+func (a *Application) serve(srv *http.Server) error {
+	certificate := strings.TrimSpace(a.cfg.HTTP.TLSCertFile)
+	if certificate == "" {
+		return srv.ListenAndServe()
+	}
+	return srv.ListenAndServeTLS(certificate, strings.TrimSpace(a.cfg.HTTP.TLSKeyFile))
+}
+
 // Shutdown stops the server and closes the modules in reverse registration
 // order, which is the only order that respects dependencies between them.
 func (a *Application) Shutdown() error {
@@ -662,9 +681,19 @@ func (a *Application) shutdown(ctx context.Context) error {
 	cancelRequests := a.cancelRequests
 	a.serverMu.Unlock()
 
+	// Admission closes before cancellation so no RPC can enter while the
+	// request root and listener are being drained. This interface is structural:
+	// an RPC-owning module can expose the handler's CloseAdmission without making
+	// foundation import a transport package.
+	for _, module := range a.modules {
+		if closer, ok := module.(interface{ CloseAdmission() }); ok {
+			closer.CloseAdmission()
+		}
+	}
+
 	// http.Server.Shutdown waits for active handlers; it does not cancel their
-	// request contexts. Cancel the root first so streams have a reason to return
-	// before the server starts waiting for them.
+	// request contexts. Cancel the root after admission is closed so streams
+	// have a reason to return before the server starts waiting for them.
 	if cancelRequests != nil {
 		cancelRequests()
 	}

@@ -669,6 +669,24 @@ func TestBootDoesNotStartBackgroundLoops(t *testing.T) {
 	}
 }
 
+func TestRunRejectsAnIncompleteTLSPairBeforeStartingBackgroundLoops(t *testing.T) {
+	spy := &backgroundSpy{}
+	cfg := testConfig(config.EnvProd)
+	cfg.HTTP.TLSCertFile = "server.crt"
+	k := foundation.New(cfg).Register(spy)
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	err := k.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "HTTP_TLS_CERT_FILE and HTTP_TLS_KEY_FILE") {
+		t.Fatalf("Run error = %v, want the incomplete TLS pair refusal", err)
+	}
+	if spy.started.Load() {
+		t.Fatal("Run started a background loop before validating its HTTP transport")
+	}
+}
+
 // TestRunStartsBackgroundLoops is the other half: the process that serves does
 // run them, or a scheduled task silently never happens.
 func TestRunStartsBackgroundLoops(t *testing.T) {
