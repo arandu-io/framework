@@ -69,7 +69,7 @@ func TestTheServerCarriesEveryLimit(t *testing.T) {
 	}
 }
 
-func TestOneTLSListenerServesRESTOverHTTP1AndMountedStreamsOverHTTP2(t *testing.T) {
+func TestOneTLSListenerServesRESTOverHTTP1AndRPCStreamsOverHTTP2(t *testing.T) {
 	a := New(bootstrap.Configuration{
 		App: config.App{
 			Name:     "test",
@@ -88,7 +88,7 @@ func TestOneTLSListenerServesRESTOverHTTP1AndMountedStreamsOverHTTP2(t *testing.
 	})
 	started := make(chan int, 1)
 	exited := make(chan error, 1)
-	a.router.Mount("/rpc.example.Service/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a.router.Post("/rpc.example.Service/{procedure}", func(w http.ResponseWriter, r *http.Request) {
 		started <- r.ProtoMajor
 		if _, err := io.WriteString(w, "ready"); err != nil {
 			exited <- fmt.Errorf("write first message: %w", err)
@@ -102,7 +102,7 @@ func TestOneTLSListenerServesRESTOverHTTP1AndMountedStreamsOverHTTP2(t *testing.
 		flusher.Flush()
 		<-r.Context().Done()
 		exited <- r.Context().Err()
-	}))
+	})
 
 	requestContext, cancelRequests := context.WithCancel(context.Background())
 	tlsServer := httptest.NewUnstartedServer(nil)
@@ -133,9 +133,9 @@ func TestOneTLSListenerServesRESTOverHTTP1AndMountedStreamsOverHTTP2(t *testing.
 	http2Transport.Protocols = http2Protocols
 	http2Client := &http.Client{Transport: http2Transport}
 	t.Cleanup(http2Transport.CloseIdleConnections)
-	response, err := http2Client.Get(tlsServer.URL + "/rpc.example.Service/Stream")
+	response, err := http2Client.Post(tlsServer.URL+"/rpc.example.Service/Stream", "application/proto", nil)
 	if err != nil {
-		t.Fatalf("open mounted stream: %v", err)
+		t.Fatalf("open RPC stream: %v", err)
 	}
 	t.Cleanup(func() { _ = response.Body.Close() })
 	if response.ProtoMajor != 2 {
@@ -163,7 +163,7 @@ func TestOneTLSListenerServesRESTOverHTTP1AndMountedStreamsOverHTTP2(t *testing.
 			t.Fatalf("stream context ended with %v, want context.Canceled", err)
 		}
 	default:
-		t.Fatal("Shutdown returned before the mounted stream exited")
+		t.Fatal("Shutdown returned before the RPC stream exited")
 	}
 }
 
