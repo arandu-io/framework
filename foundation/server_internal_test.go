@@ -2,12 +2,14 @@ package foundation
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +54,135 @@ func TestTheServerCarriesEveryLimit(t *testing.T) {
 	}
 	if srv.MaxHeaderBytes == 0 {
 		t.Error("MaxHeaderBytes is unset, so the limit is net/http's 1 MB rather than this framework's")
+	}
+	if srv.Protocols == nil {
+		t.Fatal("Protocols is unset: the application server cannot declare its TLS protocol boundary")
+	}
+	if !srv.Protocols.HTTP1() {
+		t.Error("HTTP/1 is disabled: existing REST clients cannot connect")
+	}
+	if !srv.Protocols.HTTP2() {
+		t.Error("HTTP/2 over TLS is disabled")
+	}
+	if srv.Protocols.UnencryptedHTTP2() {
+		t.Error("unencrypted HTTP/2 is enabled on the application listener")
+	}
+}
+
+func TestOneTLSListenerServesRESTOverHTTP1AndMountedStreamsOverHTTP2(t *testing.T) {
+	a := New(bootstrap.Configuration{
+		App: config.App{
+			Name:     "test",
+			Env:      config.EnvProd,
+			HTTPAddr: "127.0.0.1:0",
+			Key:      make([]byte, encryption.KeySize),
+		},
+		Observability: bootstrap.Observability{LogLevel: slog.LevelError},
+	})
+	if err := a.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	a.router.Get("/rest", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, "rest:%d", r.ProtoMajor)
+	})
+	started := make(chan int, 1)
+	exited := make(chan error, 1)
+	a.router.Mount("/rpc.example.Service/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started <- r.ProtoMajor
+		if _, err := io.WriteString(w, "ready"); err != nil {
+			exited <- fmt.Errorf("write first message: %w", err)
+			return
+		}
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			exited <- errors.New("response writer does not implement http.Flusher")
+			return
+		}
+		flusher.Flush()
+		<-r.Context().Done()
+		exited <- r.Context().Err()
+	}))
+
+	requestContext, cancelRequests := context.WithCancel(context.Background())
+	tlsServer := httptest.NewUnstartedServer(nil)
+	tlsServer.Config = a.newServer(requestContext)
+	tlsServer.EnableHTTP2 = true
+	tlsServer.TLS = &tls.Config{NextProtos: []string{"h2", "http/1.1"}}
+	tlsServer.StartTLS()
+	t.Cleanup(tlsServer.Close)
+
+	a.serverMu.Lock()
+	a.srv = tlsServer.Config
+	a.cancelRequests = cancelRequests
+	a.serverMu.Unlock()
+
+	http1Protocols := new(http.Protocols)
+	http1Protocols.SetHTTP1(true)
+	http1Transport := tlsServer.Client().Transport.(*http.Transport).Clone()
+	http1Transport.Protocols = http1Protocols
+	http1Transport.ForceAttemptHTTP2 = false
+	http1Transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
+	http1Client := &http.Client{Transport: http1Transport}
+	t.Cleanup(http1Transport.CloseIdleConnections)
+	assertResponse(t, http1Client, tlsServer.URL+"/rest", 1, "rest:1")
+
+	http2Protocols := new(http.Protocols)
+	http2Protocols.SetHTTP2(true)
+	http2Transport := tlsServer.Client().Transport.(*http.Transport).Clone()
+	http2Transport.Protocols = http2Protocols
+	http2Client := &http.Client{Transport: http2Transport}
+	t.Cleanup(http2Transport.CloseIdleConnections)
+	response, err := http2Client.Get(tlsServer.URL + "/rpc.example.Service/Stream")
+	if err != nil {
+		t.Fatalf("open mounted stream: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	if response.ProtoMajor != 2 {
+		t.Fatalf("mounted stream used HTTP/%d, want HTTP/2", response.ProtoMajor)
+	}
+	firstMessage := make([]byte, len("ready"))
+	if _, err := io.ReadFull(response.Body, firstMessage); err != nil {
+		t.Fatalf("read first message: %v", err)
+	}
+	if got := string(firstMessage); got != "ready" {
+		t.Fatalf("first message = %q, want ready", got)
+	}
+	if got := <-started; got != 2 {
+		t.Fatalf("mounted handler received HTTP/%d, want HTTP/2", got)
+	}
+
+	drainContext, cancelDrain := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelDrain()
+	if err := a.shutdown(drainContext); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	select {
+	case err := <-exited:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("stream context ended with %v, want context.Canceled", err)
+		}
+	default:
+		t.Fatal("Shutdown returned before the mounted stream exited")
+	}
+}
+
+func assertResponse(t *testing.T, client *http.Client, url string, protocolMajor int, body string) {
+	t.Helper()
+	response, err := client.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer response.Body.Close()
+	got, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read %s: %v", url, err)
+	}
+	if response.ProtoMajor != protocolMajor {
+		t.Fatalf("GET %s used HTTP/%d, want HTTP/%d", url, response.ProtoMajor, protocolMajor)
+	}
+	if string(got) != body {
+		t.Fatalf("GET %s body = %q, want %q", url, got, body)
 	}
 }
 

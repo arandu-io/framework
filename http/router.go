@@ -146,6 +146,16 @@ func (r *Router) Delete(pattern string, h http.HandlerFunc, mws ...Middleware) *
 	return r.inner.Delete(pattern, h, mws...)
 }
 
+// Mount registers a standard HTTP handler for every method under one pattern.
+//
+// A trailing slash mounts a subtree, following [http.ServeMux] semantics. This
+// is the shape used by protocol handlers that dispatch their own methods and
+// content types. The handler still enters the same route table, middleware
+// pipeline and server lifecycle as every other application route.
+func (r *Router) Mount(pattern string, h http.Handler, mws ...Middleware) *Route {
+	return r.inner.Any(pattern, h, mws...)
+}
+
 // Action registers one controller action, for a route outside a resource.
 //
 //	r.Action("GET", "/dashboard", dashboard.Index).Name("dashboard")

@@ -578,10 +578,15 @@ func exceptInternal(mw fhttp.Middleware) fhttp.Middleware {
 // the limits above can be asserted without binding a port: a field left off this
 // literal is a limit the process silently does not have.
 func (a *Application) newServer(baseContext context.Context) *http.Server {
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+
 	return &http.Server{
 		Addr:              a.cfg.App.HTTPAddr,
 		Handler:           a.Handler(),
 		BaseContext:       func(net.Listener) context.Context { return baseContext },
+		Protocols:         protocols,
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
