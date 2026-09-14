@@ -13,10 +13,11 @@ import (
 // TestNothingWeakensTheTLSDefaults guards a default this module gets for free
 // and can lose in one line.
 //
-// Nothing here terminates TLS: the single listen site is ListenAndServe, so
-// whatever negotiates with a browser sits in front of the process. What the
-// defaults do cover is every outbound client the module grows, and they hold
-// only while nobody writes the field that replaces them.
+// The application may terminate TLS with an explicit certificate pair, or an
+// ingress may terminate it before the plain listener. Both paths keep Go's TLS
+// defaults: the framework never replaces the cipher, curve, or verification
+// policy. The same defaults cover every outbound client the module grows, and
+// they hold only while nobody writes the field that replaces them.
 //
 // The three names below are the three ways to lose them silently:
 //

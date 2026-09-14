@@ -22,6 +22,8 @@
 package bootstrap
 
 import (
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -64,6 +66,14 @@ type Configuration struct {
 	// already validates the key and refuses debug in production.
 	App config.App
 
+	// HTTP is the transport boundary owned by the application listener.
+	//
+	// An empty pair preserves deployments that terminate TLS at their ingress.
+	// Setting the pair makes the application itself terminate TLS, which is the
+	// only mode in which the listener advertises HTTP/2 through ALPN. One file
+	// without the other is never accepted.
+	HTTP HTTPServer
+
 	Session    session.Config
 	Cache      cache.Config
 	Database   database.Config
@@ -84,6 +94,31 @@ type Configuration struct {
 	// framework depends on is read through it, and a key set here and nowhere
 	// else configures nothing.
 	Repository *config.Repository
+}
+
+// HTTPServer contains the explicit TLS material for the application listener.
+// There is deliberately no generated certificate and no path default: a
+// deployment either names the certificate and its private key together or
+// leaves TLS termination to the ingress in front of the process.
+type HTTPServer struct {
+	TLSCertFile string
+	TLSKeyFile  string
+}
+
+// Validate reports a TLS pair that cannot safely start the listener.
+func (s HTTPServer) Validate() error {
+	certificate := strings.TrimSpace(s.TLSCertFile)
+	key := strings.TrimSpace(s.TLSKeyFile)
+	if certificate == "" && key == "" {
+		return nil
+	}
+	if certificate == "" || key == "" {
+		return errors.New("HTTP_TLS_CERT_FILE and HTTP_TLS_KEY_FILE must be set together")
+	}
+	if _, err := tls.LoadX509KeyPair(certificate, key); err != nil {
+		return fmt.Errorf("loading HTTP TLS certificate and key: %w", err)
+	}
+	return nil
 }
 
 // Observability is how the assembled application reports on itself: what the
@@ -193,6 +228,14 @@ func LoadConfiguration() (Configuration, error) {
 		return Configuration{}, fmt.Errorf("loading the application configuration: %w", err)
 	}
 
+	httpServer := HTTPServer{
+		TLSCertFile: config.String("HTTP_TLS_CERT_FILE", ""),
+		TLSKeyFile:  config.String("HTTP_TLS_KEY_FILE", ""),
+	}
+	if err := httpServer.Validate(); err != nil {
+		return Configuration{}, err
+	}
+
 	db, err := loadDatabase()
 	if err != nil {
 		return Configuration{}, err
@@ -211,6 +254,7 @@ func LoadConfiguration() (Configuration, error) {
 
 	cfg := Configuration{
 		App:           app,
+		HTTP:          httpServer,
 		Session:       loadSession(app),
 		Cache:         loadCache(),
 		Database:      db,

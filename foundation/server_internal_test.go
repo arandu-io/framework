@@ -2,19 +2,29 @@ package foundation
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/arandu-io/framework/foundation/bootstrap"
+	fhttp "github.com/arandu-io/framework/http"
 	fmiddleware "github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/hesape/config"
 	"github.com/arandu-io/hesape/encryption"
@@ -167,6 +177,133 @@ func TestOneTLSListenerServesRESTOverHTTP1AndRPCStreamsOverHTTP2(t *testing.T) {
 	}
 }
 
+func TestRunNegotiatesHTTP2WithTheConfiguredTLSPair(t *testing.T) {
+	certificateFile, keyFile, roots := writeServerCertificate(t)
+
+	reserved, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve listener address: %v", err)
+	}
+	address := reserved.Addr().String()
+	if err := reserved.Close(); err != nil {
+		t.Fatalf("release listener address: %v", err)
+	}
+
+	a := New(bootstrap.Configuration{
+		App: config.App{
+			Name:     "test",
+			Env:      config.EnvProd,
+			HTTPAddr: address,
+			Key:      make([]byte, encryption.KeySize),
+		},
+		HTTP: bootstrap.HTTPServer{
+			TLSCertFile: certificateFile,
+			TLSKeyFile:  keyFile,
+		},
+		Observability: bootstrap.Observability{LogLevel: slog.LevelError},
+	})
+	a.router.Get("/protocol", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, "http/%d", r.ProtoMajor)
+	})
+	if err := a.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	ctx, stop := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- a.Run(ctx) }()
+	t.Cleanup(stop)
+
+	protocols := new(http.Protocols)
+	protocols.SetHTTP2(true)
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			RootCAs:    roots,
+		},
+		Protocols: protocols,
+	}
+	t.Cleanup(transport.CloseIdleConnections)
+	client := &http.Client{Transport: transport}
+
+	url := "https://" + address + "/protocol"
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		response, requestErr := client.Get(url)
+		if requestErr == nil {
+			body, readErr := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			if readErr != nil {
+				t.Fatalf("read response: %v", readErr)
+			}
+			if response.ProtoMajor != 2 {
+				t.Fatalf("Run negotiated HTTP/%d, want HTTP/2", response.ProtoMajor)
+			}
+			if got := string(body); got != "http/2" {
+				t.Fatalf("handler saw %q, want http/2", got)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("connect to Run TLS listener: %v", requestErr)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	stop()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not stop after its context was cancelled")
+	}
+}
+
+func writeServerCertificate(t *testing.T) (string, string, *x509.CertPool) {
+	t.Helper()
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate private key: %v", err)
+	}
+	now := time.Now()
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "arandu runtime test"},
+		NotBefore:    now.Add(-time.Minute),
+		NotAfter:     now.Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	certificateDER, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		t.Fatalf("create certificate: %v", err)
+	}
+	privateKeyDER, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		t.Fatalf("marshal private key: %v", err)
+	}
+
+	directory := t.TempDir()
+	certificateFile := filepath.Join(directory, "server.crt")
+	keyFile := filepath.Join(directory, "server.key")
+	if err := os.WriteFile(certificateFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificateDER}), 0o600); err != nil {
+		t.Fatalf("write certificate: %v", err)
+	}
+	if err := os.WriteFile(keyFile, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateKeyDER}), 0o600); err != nil {
+		t.Fatalf("write private key: %v", err)
+	}
+	certificate, err := x509.ParseCertificate(certificateDER)
+	if err != nil {
+		t.Fatalf("parse certificate: %v", err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(certificate)
+	return certificateFile, keyFile, roots
+}
+
 func assertResponse(t *testing.T, client *http.Client, url string, protocolMajor int, body string) {
 	t.Helper()
 	response, err := client.Get(url)
@@ -282,6 +419,49 @@ func TestShutdownCancelsAStreamBeforeWaitingForIt(t *testing.T) {
 
 	if err := <-serveDone; !errors.Is(err, http.ErrServerClosed) {
 		t.Fatalf("Serve: %v, want http.ErrServerClosed", err)
+	}
+}
+
+type shutdownOrderModule struct {
+	events *[]string
+}
+
+func (*shutdownOrderModule) Name() string { return "rpc" }
+
+func (*shutdownOrderModule) Routes(*fhttp.Router) {}
+
+func (m *shutdownOrderModule) CloseAdmission() {
+	*m.events = append(*m.events, "admission")
+}
+
+func (m *shutdownOrderModule) Close(context.Context) error {
+	*m.events = append(*m.events, "close")
+	return nil
+}
+
+func TestShutdownClosesAdmissionBeforeCancellingRequestsAndClosingModules(t *testing.T) {
+	var events []string
+	a := New(bootstrap.Configuration{
+		App: config.App{
+			Name:     "test",
+			Env:      config.EnvProd,
+			HTTPAddr: "127.0.0.1:0",
+			Key:      make([]byte, encryption.KeySize),
+		},
+		Observability: bootstrap.Observability{LogLevel: slog.LevelError},
+	}).Register(&shutdownOrderModule{events: &events})
+	if err := a.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	a.cancelRequests = func() { events = append(events, "cancel") }
+
+	if err := a.shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	want := []string{"admission", "cancel", "close"}
+	if fmt.Sprint(events) != fmt.Sprint(want) {
+		t.Fatalf("shutdown order = %v, want %v", events, want)
 	}
 }
 
