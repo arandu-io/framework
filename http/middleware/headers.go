@@ -15,10 +15,16 @@ import (
 // operates through attributes rather than inline script. There is no global
 // 'unsafe-inline' in this framework.
 //
+// imageOrigins are the addresses, besides this application's own, that an image
+// may load from: the public address of a disk whose files the pages embed, such
+// as a bucket served by a CDN. They reach img-src and no other directive. Each
+// is a bare https origin, the scheme and the host with an optional port, and
+// anything else panics while the pipeline is wired.
+//
 // A wrapper and not an alias, because a plain function has no alias form. The
 // declared return type stays func(http.Handler) http.Handler rather than
 // hhttp.Middleware, which is the same type by two aliases: spelling it the way
 // this package always has keeps the signature identical for every caller.
-func SecurityHeaders(dev bool) func(http.Handler) http.Handler {
-	return hmiddleware.SecurityHeaders(dev)
+func SecurityHeaders(dev bool, imageOrigins ...string) func(http.Handler) http.Handler {
+	return hmiddleware.SecurityHeaders(dev, imageOrigins...)
 }

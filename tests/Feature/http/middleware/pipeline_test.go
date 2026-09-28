@@ -194,6 +194,29 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
+// TestAnImageOriginReachesImgSrcThroughTheWrapper: the origins a public disk is
+// served from are passed through, and reach img-src and nothing else.
+func TestAnImageOriginReachesImgSrcThroughTheWrapper(t *testing.T) {
+	rec := httptest.NewRecorder()
+	middleware.SecurityHeaders(false, "https://cdn.example.com")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "img-src 'self' data: https://cdn.example.com;") {
+		t.Errorf("the image origin did not reach img-src: %q", csp)
+	}
+	if strings.Count(csp, "cdn.example.com") != 1 {
+		t.Errorf("the image origin reached another directive: %q", csp)
+	}
+
+	defer func() {
+		if recover() == nil {
+			t.Error("the wrapper accepted an image origin that would start another directive")
+		}
+	}()
+	middleware.SecurityHeaders(false, "https://cdn.example.com; script-src *")
+}
+
 // TestHSTSIsProductionOnly: sending HSTS over localhost pins http://localhost to
 // https and breaks every developer's machine, in a way that survives a browser
 // restart.

@@ -19,6 +19,28 @@ down here fails the build.
 
 ---
 
+## v0.49.0 — `SecurityHeaders` takes the origins an image may load from
+
+`middleware.SecurityHeaders(dev bool)` is now
+`middleware.SecurityHeaders(dev bool, imageOrigins ...string)`, on `hesape`
+v0.43.0, which this release requires. Every call compiles unchanged and answers
+the same policy, byte for byte. `apidiff` reports the change because the type of
+the function changed: **only code that stores `SecurityHeaders` in a variable of
+type `func(bool) func(http.Handler) http.Handler` breaks** — give the variable
+the new type.
+
+The origins reach `img-src` and no other directive, and each must be a bare
+`https` origin; anything else panics while the pipeline is wired:
+
+```go
+middleware.SecurityHeaders(cfg.App.IsDev(), "https://cdn.example.com")
+// img-src 'self' data: https://cdn.example.com
+```
+
+It exists because a disk with a public address (`filesystem.Config.URL`,
+`Disk.URL`) is how a bucket behind a CDN hands out its files, and the default
+policy refused to draw the address `Disk.URL` returns.
+
 ## v0.42.0 — the CSRF form field is read as `_token`
 
 `CSRFProtect` read the hidden field as `_csrf`. The form builder in `hesape`

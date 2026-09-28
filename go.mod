@@ -1,6 +1,6 @@
 module github.com/arandu-io/framework
 
-go 1.26
+go 1.26.0
 
 // The components live in a module of their own because Go publishes a submodule
 // without a subtree splitter: a directory with its own go.mod is already a
@@ -18,9 +18,9 @@ go 1.26
 // and storage -- were folded into hesape by ADR 0048. The heavy driver still
 // sits in a submodule with its own go.mod, because Go has no optional
 // dependency, so a project still pays in go.sum only for what it imports.
-require github.com/arandu-io/hesape v0.42.2
+require github.com/arandu-io/hesape v0.43.0
 
 require (
-	golang.org/x/crypto v0.55.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )
