@@ -82,10 +82,17 @@ func (m *Module) renderLogin(w http.ResponseWriter, r *http.Request, status int,
 }
 
 // doLogin authenticates and rotates the session.
+//
+// The form is read with ParseForm, which never parses a multipart body. The
+// sign-in form is URL-encoded, and PostFormValue on a multipart body would write
+// its parts to temporary files that net/http does not remove for a request the
+// pipeline has copied. A multipart body whose token came in the form is parsed
+// by CSRFProtect, which removes it, and its fields are read here all the same.
 func (m *Module) doLogin(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
 	in := LoginRequest{
-		Email:    r.PostFormValue("email"),
-		Password: r.PostFormValue("password"),
+		Email:    r.PostForm.Get("email"),
+		Password: r.PostForm.Get("password"),
 	}
 	if errs := in.Validate(); errs.Any() {
 		m.renderLogin(w, r, http.StatusUnprocessableEntity, in.Email, errs)

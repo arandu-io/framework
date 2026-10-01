@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"mime"
 	"net/http"
 
 	fhttp "github.com/arandu-io/framework/http"
@@ -18,6 +19,22 @@ const StatusCSRFExpired = 419
 // THE TRAP THIS SOLVES: with HTMX the token does not always arrive in a form
 // field, it arrives in a header. Both sources are read, the X-CSRF-Token header
 // first and the _token form field after it.
+//
+// The body is read only when the header is absent, and only as a form: an
+// application/x-www-form-urlencoded body is parsed with ParseForm, a
+// multipart/form-data body with ParseMultipartForm, and any other body is left
+// unread and the request refused as carrying no token. A request whose token is
+// in the header reaches the handler with its body untouched, so a handler can
+// still stream a multipart upload part by part.
+//
+// A multipart form parsed here is removed when the handler returns, whatever
+// the answer was. ParseMultipartForm writes the parts that do not fit in memory
+// to temporary files, and net/http removes them only for the request the server
+// created; the one reaching this middleware is a copy made further up the
+// pipeline, so without the removal every upload that reached it -- a refused
+// one included -- left its files on disk. The handler reads the same parsed form
+// through the request it receives, and the files are gone once it has returned:
+// one that keeps an upload has to copy it somewhere before then.
 //
 // The field is named for the session key the token is stored under, which is
 // the one name a form builder, a view and this middleware can all arrive at
@@ -78,7 +95,9 @@ func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) fun
 
 			token := r.Header.Get("X-CSRF-Token")
 			if token == "" {
-				token = r.PostFormValue("_token")
+				var release func()
+				token, release = formToken(r)
+				defer release()
 			}
 
 			// A missing token and an expired one are different mistakes and get
@@ -104,4 +123,62 @@ func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) fun
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// multipartMemory is how much of a multipart body is held in memory before the
+// rest of its files go to temporary files. It is the figure net/http uses when a
+// handler calls FormFile without parsing first, so a handler behind this
+// middleware sees the form it would have parsed itself.
+const multipartMemory = 32 << 20
+
+// formToken reads the _token field from a form body, and returns the function
+// that releases what reading it left behind.
+//
+// Only the two form encodings are parsed. Anything else -- JSON, a file posted
+// as the whole body, a body with no Content-Type -- carries its token in the
+// header or carries none.
+//
+// The release removes the temporary files of a multipart form parsed here, and
+// only of one parsed here: a form some earlier layer parsed belongs to that
+// layer.
+func formToken(r *http.Request) (string, func()) {
+	nothing := func() {}
+
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		return "", nothing
+	}
+
+	switch mediaType {
+	case "application/x-www-form-urlencoded":
+		if err := r.ParseForm(); err != nil {
+			return "", nothing
+		}
+		return r.PostForm.Get("_token"), nothing
+
+	case "multipart/form-data":
+		if r.MultipartForm != nil {
+			return firstValue(r.MultipartForm.Value["_token"]), nothing
+		}
+		err := r.ParseMultipartForm(multipartMemory)
+		form := r.MultipartForm
+		release := func() {
+			if form != nil {
+				_ = form.RemoveAll()
+			}
+		}
+		if err != nil || form == nil {
+			return "", release
+		}
+		return firstValue(form.Value["_token"]), release
+	}
+	return "", nothing
+}
+
+// firstValue is the first of a form field's values, or "" when it has none.
+func firstValue(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
 }

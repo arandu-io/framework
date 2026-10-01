@@ -19,7 +19,7 @@ down here fails the build.
 
 ---
 
-## Unreleased — the guards carry the subject, and an action's error is answered with its status
+## Unreleased — the guards carry the subject, an action's error is answered with its status, and CSRF removes its multipart files
 
 Nothing here stops compiling, and `apidiff` reports no incompatible change. It
 is written down because what a handler sees, and what a client receives,
@@ -79,6 +79,28 @@ What to check:
 
 - `validation.Errors` is answered exactly as before, and any other error still
   panics and is answered 500.
+
+### CSRF removes the multipart files it parsed
+
+`CSRFProtect` reads the `X-CSRF-Token` header first and the `_token` form field
+after it, as before. When the token comes from a multipart body, it parses the form and
+removes its temporary files once the handler returns, whatever the answer. Until
+now those files were never removed: the request reaching the middleware is a
+copy, and net/http cleans up only after the one it created, so every multipart
+POST that reached it — a refused one included — left whatever did not fit in
+32 MB on disk.
+
+What to check:
+
+- **A handler that keeps an upload past its return** copies the file somewhere
+  first. A form parsed by `CSRFProtect` is gone once the handler has returned.
+- **A request whose token is in the header reaches the handler with its body
+  unread**, as before. A handler behind it that calls `FormFile`,
+  `ParseMultipartForm` or `PostFormValue` on a multipart body removes the form
+  itself, `defer r.MultipartForm.RemoveAll()`, for the same reason.
+- The legacy sign-in handler of `modules/auth` reads its form with `ParseForm`,
+  which does not parse a multipart body: a multipart sign-in carrying the token
+  in the header now arrives with no fields and is answered 422.
 
 ## v0.49.0 — `SecurityHeaders` takes the origins an image may load from
 
