@@ -12,10 +12,13 @@ package http
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
+	"github.com/arandu-io/hesape/database"
+	"github.com/arandu-io/hesape/database/model"
 	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/routing"
 )
@@ -192,17 +195,20 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) { r.inner.S
 // free function taking only the action reaches none of them. So this is where
 // it is written, once, for both Action and Resource.
 //
-// An error reaching here is one the handler could not handle, so it goes to the
-// panic path: the error page in development, 500 in production. Swallowing it
-// would answer 200 with an empty body, which is the failure nobody debugs.
+// An error reaching here that nothing below claims is one the handler could
+// not handle, so it goes to the panic path: the error page in development, 500
+// in production. Swallowing it would answer 200 with an empty body, which is
+// the failure nobody debugs.
 //
-// One error is not that, and it is the branch below: validation.Errors is not a
-// failure the handler could not handle, it is the answer. A controller returns
-// it and this turns it into the flash and the redirect back. The branch is
-// here, once, for the reason Redirect and Refuse are one function each: the
-// last time a decision of this shape lived at every call site there were
-// forty-one copies of it, and the failure they were written to answer is
-// invisible when one of them is wrong.
+// Two kinds of error are not that. validation.Errors is not a failure the
+// handler could not handle, it is the answer: a controller returns it and this
+// turns it into the flash and the redirect back. And an error that says which
+// status it is -- a record that does not exist, a refusal, an expired form, or
+// an error declaring HTTPStatus -- is answered with that status; see statusFor
+// for the closed list. Both branches are here, once, for the reason Redirect
+// and Refuse are one function each: the last time a decision of this shape
+// lived at every call site there were forty-one copies of it, and the failure
+// they were written to answer is invisible when one of them is wrong.
 func (r *Router) adapt(h func(*Context) error) http.Handler {
 	renderer, urls, flash := r.render, r.table.inner, r.flash
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -227,6 +233,81 @@ func (r *Router) adapt(h func(*Context) error) http.Handler {
 			Reject(w, req, flash, rejected)
 			return
 		}
+
+		if status, ok := statusFor(err); ok {
+			if status < 400 || status > 599 {
+				// A status outside the error range is not an answer to a
+				// failure: 200 would tell the client the request worked, and
+				// a 3xx with no Location sends it nowhere. It is a defect in
+				// the error type, and it is answered like one.
+				panic(fmt.Errorf("http: %T asked to be answered with status %d, and an error is answered with 400-599: %w", err, status, err))
+			}
+			Refuse(w, req, status, statusSentence(status))
+			return
+		}
 		panic(err)
 	})
+}
+
+// statusPageExpired is the status of a form whose CSRF token is no longer
+// valid. It is not in any RFC: 403 would say the account may not do this, when
+// the account may and the page is simply old.
+const statusPageExpired = 419
+
+// statusFor reads an error chain and answers the status it asks for, and
+// whether it asked at all.
+//
+// The list is closed, and the order is the order below, first match wins:
+//
+//	model.ErrModelNotFound, database.ErrRecordNotFound   404
+//	security.ErrForbidden                                403
+//	security.ErrCSRF                                     419
+//	an error with a method HTTPStatus() int              that status
+//
+// errors.Is and errors.As walk the chain, so a sentinel wrapped with
+// fmt.Errorf("loading invoice %d: %w", id, err) keeps its status, and the
+// context it was wrapped with stays out of the answer.
+//
+// The last entry is how an application states a status for a failure of its
+// own domain: a type with an HTTPStatus method, matched by its method set, so
+// it needs no import of this package. There is no registry of translators
+// beside it -- a second place to map an error to a status is a second answer
+// for the same error.
+//
+// False means nobody claimed the error, and the caller panics with it.
+func statusFor(err error) (int, bool) {
+	switch {
+	case errors.Is(err, model.ErrModelNotFound), errors.Is(err, database.ErrRecordNotFound):
+		return http.StatusNotFound, true
+	case errors.Is(err, security.ErrForbidden):
+		return http.StatusForbidden, true
+	case errors.Is(err, security.ErrCSRF):
+		return statusPageExpired, true
+		// TODO(unique-violation): database.ErrUniqueViolation answers 409 here,
+		// after 419 and before HTTPStatus, once hesape declares it. Until then a
+		// unique violation is not claimed and keeps reaching the panic path.
+	}
+
+	var claimed interface{ HTTPStatus() int }
+	if errors.As(err, &claimed) {
+		return claimed.HTTPStatus(), true
+	}
+	return 0, false
+}
+
+// statusSentence is what a person reads when an error is answered with a
+// status.
+//
+// It is the standard text for the status and never the error's own string:
+// an error is written for the log, and a wrapped chain carries exactly the
+// context -- an id, a table, a query -- that is not for whoever made the
+// request.
+func statusSentence(status int) string {
+	if status == statusPageExpired {
+		return "this page has expired: reload it and submit again"
+	}
+	if text := http.StatusText(status); text != "" {
+		return text
+	}
+	return "the request could not be completed"
 }

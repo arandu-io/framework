@@ -19,10 +19,11 @@ down here fails the build.
 
 ---
 
-## Unreleased — the guards carry the subject
+## Unreleased — the guards carry the subject, and an action's error is answered with its status
 
 Nothing here stops compiling, and `apidiff` reports no incompatible change. It
-is written down because what a handler sees changes.
+is written down because what a handler sees, and what a client receives,
+changes.
 
 ### The route guards put the subject on the request context
 
@@ -41,6 +42,43 @@ subject, ok := ctx.User()                                  // now
 
 The `Grant` is never on the context; it still comes from a Policy. A missing or
 expired session is answered exactly as before.
+
+### An action's error is answered with its status
+
+An action registered with `Router.Action` or `Router.Resource` that returns one
+of these errors, bare or wrapped with `%w`, is now answered with the status
+through `Refuse` instead of panicking:
+
+| error | status |
+| --- | --- |
+| `model.ErrModelNotFound`, `database.ErrRecordNotFound` (`hesape`) | 404 |
+| `security.ErrForbidden` | 403 |
+| `security.ErrCSRF` | 419 |
+| an error with a method `HTTPStatus() int`, returning 400–599 | that status |
+
+The first match in that order wins. A whole page gets the status and the
+standard sentence for it; an htmx request gets the status and `HX-Refresh`, the
+same answer the route guards and CSRF give. The error's own text is never
+shown. A declared status outside 400–599 panics, naming the type.
+
+What to check:
+
+- **These errors no longer reach the recover middleware.** They are not logged
+  as a recovered panic, and they do not draw the application's own
+  `errors/<status>` view: the answer is the refusal, not the status page. A
+  project that relied on either for these errors handles it in the action.
+- **A `fail()` helper that mapped these errors by hand can go**, and a domain
+  failure declares its status instead of being switched on per controller:
+
+  ```go
+  type InvoiceLocked struct{}
+
+  func (InvoiceLocked) Error() string   { return "invoice is locked" }
+  func (InvoiceLocked) HTTPStatus() int { return http.StatusConflict }
+  ```
+
+- `validation.Errors` is answered exactly as before, and any other error still
+  panics and is answered 500.
 
 ## v0.49.0 — `SecurityHeaders` takes the origins an image may load from
 

@@ -168,7 +168,11 @@ var allowedHesapeImports = bridgeSurface{
 	"geo": inventoryItems(`
 		github.com/arandu-io/hesape/geo
 	`),
+	// database and database/model are here for two sentinels: the action
+	// adapter answers ErrRecordNotFound and ErrModelNotFound with 404 instead
+	// of the panic path, and errors.Is needs the value it compares against.
 	"http": inventoryItems(`
+		github.com/arandu-io/hesape/database github.com/arandu-io/hesape/database/model
 		github.com/arandu-io/hesape/http github.com/arandu-io/hesape/pipeline
 		github.com/arandu-io/hesape/routing github.com/arandu-io/hesape/validation
 	`),
