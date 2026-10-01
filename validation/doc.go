@@ -8,9 +8,9 @@
 //		"password": "required|min:12|confirmed",
 //	})
 //
-//	in, err := ctx.Validate(requests.Register)
-//	if err != nil {
-//		return err
+//	in, errs := Register.Validate(form)
+//	if errs.Any() {
+//		return errs
 //	}
 //
 // A rule set is compiled ONCE, in a package-level variable, and every rule
