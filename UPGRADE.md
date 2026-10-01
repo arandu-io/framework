@@ -19,11 +19,71 @@ down here fails the build.
 
 ---
 
-## Unreleased — the guards carry the subject, an action's error is answered with its status, and two security fixes
+## Unreleased — the guards carry the subject, an action's error is answered with its status, a guest's CSRF token is bound to the guest, and the rate limit asks the store
 
-Nothing here stops compiling, and `apidiff` reports no incompatible change. It
-is written down because what a handler sees, and what a client receives,
-changes.
+This release requires `hesape` v0.44.0. One signature changes and stops
+compiling — `middleware.KeyBySession` — and `apidiff` reports it. The rest is
+written down because what a handler sees, and what a client receives, changes.
+
+### `KeyBySession` takes the session store, and keys only a live session
+
+`http/middleware.KeyBySession` took a function returning the session id the
+cookie named. A signature on the cookie proves only that the id was issued here
+once, so every expired or signed-out id a client kept was a fresh rate-limit
+budget. It now takes a `middleware.Sessions` — `IDFromRequest` and `Load`, which
+`*security.SessionStore` already has — and keys by the session only while the
+store holds it, falling back to the address otherwise.
+
+```go
+middleware.KeyBySession(sessions.IDFromRequest) // before: no longer compiles
+middleware.KeyBySession(sessions)               // now
+```
+
+The key a live session is counted under is the same string as before, so no
+counter is reset on deploy. Each keyed request now reads the session from the
+store once.
+
+### A guest's CSRF token is bound to the guest, and `CSRFProtect` issues it
+
+A visitor with no session was issued a token bound to the empty id — one token
+for every visitor, valid on anybody's sign-in form for its whole lifetime.
+`hesape` v0.44.0 refuses that binding: `CSRF.Issue("")` returns
+`session.ErrUnboundToken`, and a token is validated only against a session id or
+a guest binding.
+
+`CSRFProtect` now does the issuing. On every `GET` and `HEAD` it issues a token
+for the request's binding — the session id, or for a visitor without one a
+random id in the signed `arandu_csrf_guest` cookie (HttpOnly, SameSite=Lax,
+Secure), set on their first page — and puts it on the request context.
+`view.New` reads it into `Page.Token`. On a write that passed the check, the
+token that was submitted is put there instead, so a form drawn again on the
+same request carries a token that still validates. The signature of
+`CSRFProtect` is unchanged.
+
+What to check:
+
+- **A controller that issued the token itself** with
+  `csrf.Issue(sessions.IDFromRequest(ctx.Request))` gets `ErrUnboundToken` for
+  every visitor without a session, and the sign-in screen answers 500. Delete
+  the issuing and the `.WithToken(token)`: `view.New(ctx, title)` already
+  carries the token. `WithToken` remains for a page drawn outside
+  `CSRFProtect`, and such a page issues with
+  `csrf.Issue(csrf.Binding(w, r, sessions.IDFromRequest(r)))`.
+- **Development over plain HTTP** builds the issuer with
+  `security.NewCSRF(key, ttl).Secure(false)`. Without it the browser never sends
+  the guest cookie back, and every form a guest submits answers 419.
+- **A page that carries a token is a page for one visitor.** A shared cache
+  that served one visitor's page to another now serves a token bound to
+  somebody else, and that form answers 419. Before, the token was the same for
+  every guest, which is what made the cache look harmless.
+- A guest's first page sets a cookie. A response that must set none is one
+  that sits outside `CSRFProtect`.
+- A request carrying neither a session cookie nor the guest cookie — a client
+  that drops cookies — has nothing to bind to, and every write it sends is
+  answered 419, header token or not.
+
+`modules/auth` draws its sign-in screen with the token from the request
+context, and issues one for `CSRF.Binding` only where `CSRFProtect` did not run.
 
 ### The route guards put the subject on the request context
 
@@ -54,7 +114,12 @@ through `Refuse` instead of panicking:
 | `model.ErrModelNotFound`, `database.ErrRecordNotFound` (`hesape`) | 404 |
 | `security.ErrForbidden` | 403 |
 | `security.ErrCSRF` | 419 |
+| `database.ErrUniqueViolation` (`hesape`) | 409 |
 | an error with a method `HTTPStatus() int`, returning 400–599 | that status |
+
+A duplicate key is classified by the driver's own error code, never by the
+message. A body cut off by the size limit is answered 413 through the last row:
+`Bind` and `Validate` return a `PostTooLargeException` that declares it.
 
 The first match in that order wins. A whole page gets the status and the
 standard sentence for it; an htmx request gets the status and `HX-Refresh`, the
@@ -77,6 +142,10 @@ What to check:
   func (InvoiceLocked) HTTPStatus() int { return http.StatusConflict }
   ```
 
+- **A duplicate key on a write an action returns is 409, no longer 500.** It is
+  not logged as a recovered panic. A form that should say which field is taken
+  still checks first and returns `validation.Errors`; the 409 is what is left
+  for the race between that check and the insert.
 - `validation.Errors` is answered exactly as before, and any other error still
   panics and is answered 500.
 
