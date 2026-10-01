@@ -81,8 +81,13 @@ trusted.
 checks the scheme against a list of what is allowed, exactly, so a value hiding
 a scheme behind whitespace fails to match instead of being tidied — cleaning
 would change what the page says without saying so. `TextCSS` does the same and
-names the character it refused. Both return the empty string alongside the
-error, so a caller that ignores the error writes nothing rather than the value.
+names the character it refused. A refusal is an error that stops the render:
+the generated code writes nothing further and returns the error, with the view's
+file and line, so the page fails closed. Both functions also return the empty
+string alongside the error, but that is a last line of defence and not a way to
+use them — a caller that drops the error and keeps writing renders a page that
+silently lost a value it was told was unsafe. Never ignore the error; a new
+function that can refuse returns one, and its caller stops on it.
 
 **Nothing reaches for request state.** `CSRF` takes the token off the data,
 through an interface the page data satisfies. A template that reached a global
