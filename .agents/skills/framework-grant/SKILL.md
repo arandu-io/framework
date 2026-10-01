@@ -1,6 +1,6 @@
 ---
 name: framework-grant
-description: Authorization in the Arandu framework core — security.Grant, what makes it unforgeable, and the tenant that is read off it. Use when changing anything under security/ or data/, when writing or reviewing a method that reaches stored data, when a call will not compile and the missing argument is a Grant, when writing or changing a Policy or a route guard, and when the request mentions "permissions", "roles", "authorize", "who can access", "multi-tenant", "tenant isolation", "scope this query", "SystemGrant", "guest", "this needs a Grant" or "just skip the policy for reads". Also use when tempted to drop the parameter to make something build — here that parameter is the only thing making the query safe. Covers the Policy that issues, data.Tenant, the two fixtures the compiler must refuse, the line a guard must not cross, and the honest limit of the guarantee.
+description: Authorization in the Arandu framework core — security.Grant, what makes it unforgeable, and the tenant that is read off it. Use when changing anything under security/ or data/, when writing or reviewing a method that reaches stored data, when a call will not compile and the missing argument is a Grant, when writing or changing a Policy or a route guard, and when the request mentions "permissions", "roles", "authorize", "who can access", "multi-tenant", "tenant isolation", "scope this query", "SystemGrant", "guest", "this needs a Grant" or "just skip the policy for reads". Also use when tempted to drop the parameter to make something build — here that parameter is the only thing making the query safe. Covers the Policy that decides and security.Authorize that issues, data.Tenant, the two fixtures the compiler must refuse, the line a guard must not cross, and the honest limit of the guarantee.
 license: MIT
 ---
 
@@ -56,9 +56,14 @@ skipping it.
 
 ## The procedure
 
-**1. The Policy decides, and it is the only thing that issues.** One policy per
-entity, in the module's `<entity>.policy.go`. `modules/auth/user.policy.go` is
-the reference:
+**1. The Policy decides; `security.Authorize` issues.** A Policy is a
+`security.Policy[T]`: its one method, `Can(ctx, subject, action, resource)`,
+returns `nil` to allow and an error to deny, and it never builds a Grant itself.
+The Grant is issued by `security.Authorize` (step 2), and only after the policy
+allowed. One policy per entity. Write it in the application — the skeleton's
+`app/Policies/UserPolicy.go` is the shape to follow. `modules/auth` is migration
+debt, not a reference: native code never starts there, and nothing new should
+copy from it. A policy keeps these properties:
 
 - The actions are **constants**, not strings at the call site. A typo in an
   action name would silently authorize nothing, or worse, everything.
