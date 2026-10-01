@@ -264,6 +264,15 @@ func sendTo(w http.ResponseWriter, r *http.Request, to string) {
 // subject goes: it goes under auth.WithSubject, which is the key Context.User,
 // auth.SubjectFrom and every policy read. The value is the one the session
 // answered with, not a copy assembled from the request.
+//
+// A subject already on the request for the same account and tenant is kept.
+// Middleware mounted earlier may have loaded the same session and added to it --
+// the actions a permission resolver attaches are the case that matters -- and
+// replacing that value with the bare one from the session would leave every
+// policy downstream with a subject that can do nothing.
 func withSubject(r *http.Request, subject security.Subject) *http.Request {
+	if current, ok := auth.SubjectFrom(r.Context()); ok && current.ID == subject.ID && current.Tenant == subject.Tenant {
+		return r
+	}
 	return r.WithContext(auth.WithSubject(r.Context(), subject))
 }

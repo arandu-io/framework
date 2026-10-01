@@ -9,6 +9,7 @@ import (
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 )
 
 // seen is what a controller action behind a guard read from ctx.User.
@@ -146,4 +147,61 @@ func TestAnExpiredSessionCarriesNoSubject(t *testing.T) {
 			t.Errorf("ctx.User reported %+v for a session that no longer exists", got.subject)
 		}
 	})
+}
+
+// enriched is middleware standing in for one mounted before the guard that loads
+// the same session and attaches what the subject may do, the way a permission
+// resolver does.
+func enriched(subject security.Subject) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(auth.WithSubject(r.Context(), subject)))
+		})
+	}
+}
+
+// A guard that finds the same account already on the request keeps that value:
+// replacing it with the bare session subject dropped the actions an earlier
+// middleware attached, and every policy behind the guard refused.
+func TestRequireAuthKeepsTheSubjectAnEarlierMiddlewareEnriched(t *testing.T) {
+	sessions := newSessions()
+	stored := security.Subject{ID: "u-3", Tenant: "acme", Roles: []string{"member"}}
+	withActions := stored
+	withActions.Actions = []auth.Action{"invoices.view"}
+
+	got := &seen{}
+	r := fhttp.NewRouter()
+	r.Action(http.MethodGet, "/dashboard", func(ctx *fhttp.Context) error {
+		got.reached = true
+		got.subject, got.ok = ctx.User()
+		return nil
+	}, enriched(withActions), middleware.RequireAuth(sessions))
+	r.ServeHTTP(httptest.NewRecorder(), signedIn(t, sessions, stored, http.MethodGet, "/dashboard"))
+
+	if !got.reached || !got.ok {
+		t.Fatalf("the action did not run with a subject: reached=%v ok=%v", got.reached, got.ok)
+	}
+	if len(got.subject.Actions) != 1 || got.subject.Actions[0] != "invoices.view" {
+		t.Errorf("ctx.User().Actions = %v, want the actions the earlier middleware attached", got.subject.Actions)
+	}
+}
+
+// A subject for a different account is not trusted over the session.
+func TestRequireAuthReplacesASubjectForAnotherAccount(t *testing.T) {
+	sessions := newSessions()
+	stored := security.Subject{ID: "u-4", Tenant: "acme"}
+	other := security.Subject{ID: "u-5", Tenant: "acme", Actions: []auth.Action{"invoices.delete"}}
+
+	got := &seen{}
+	r := fhttp.NewRouter()
+	r.Action(http.MethodGet, "/dashboard", func(ctx *fhttp.Context) error {
+		got.reached = true
+		got.subject, got.ok = ctx.User()
+		return nil
+	}, enriched(other), middleware.RequireAuth(sessions))
+	r.ServeHTTP(httptest.NewRecorder(), signedIn(t, sessions, stored, http.MethodGet, "/dashboard"))
+
+	if got.subject.ID != stored.ID || len(got.subject.Actions) != 0 {
+		t.Errorf("ctx.User() = %+v, want the session's own subject %+v", got.subject, stored)
+	}
 }
