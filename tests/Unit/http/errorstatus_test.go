@@ -59,6 +59,7 @@ func TestAnErrorThatNamesItsStatusIsAnsweredWithIt(t *testing.T) {
 		{"record not found", database.ErrRecordNotFound, http.StatusNotFound},
 		{"forbidden", security.ErrForbidden, http.StatusForbidden},
 		{"csrf", security.ErrCSRF, 419},
+		{"unique violation", database.ErrUniqueViolation, http.StatusConflict},
 		{"declared status", domainError{status: http.StatusConflict}, http.StatusConflict},
 		{"declared server status", domainError{status: http.StatusServiceUnavailable}, http.StatusServiceUnavailable},
 		// The order is fixed: a sentinel in the chain is matched before the
@@ -187,4 +188,35 @@ func TestValidationErrorsWithoutAFlashStillPanic(t *testing.T) {
 		}
 	}()
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/invoices", nil))
+}
+
+// A body cut off by the size limit reaches the action as the error Bind
+// returns, and that error declares 413 through HTTPStatus: the adapter answers
+// it as the limit, not as a failure of the application.
+func TestABodyOverTheLimitIsAnswered413ThroughTheAdapter(t *testing.T) {
+	r := fhttp.NewRouter()
+	r.Action(http.MethodPost, "/notes", func(ctx *fhttp.Context) error {
+		var in struct {
+			Body string `form:"body"`
+		}
+		return ctx.Bind(&in)
+	})
+
+	for _, contentType := range []string{"application/x-www-form-urlencoded", "application/json"} {
+		body := "body=" + strings.Repeat("x", 64)
+		if contentType == "application/json" {
+			body = `{"body":"` + strings.Repeat("x", 64) + `"}`
+		}
+		req := httptest.NewRequest(http.MethodPost, "/notes", strings.NewReader(body))
+		req.Header.Set("Content-Type", contentType)
+		// A chunked body announces no length, so only the reader can stop it.
+		req.ContentLength = -1
+		rec := httptest.NewRecorder()
+		req.Body = http.MaxBytesReader(rec, req.Body, 16)
+
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("%s: status = %d, want 413", contentType, rec.Code)
+		}
+	}
 }

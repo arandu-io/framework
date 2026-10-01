@@ -203,9 +203,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) { r.inner.S
 // Two kinds of error are not that. validation.Errors is not a failure the
 // handler could not handle, it is the answer: a controller returns it and this
 // turns it into the flash and the redirect back. And an error that says which
-// status it is -- a record that does not exist, a refusal, an expired form, or
-// an error declaring HTTPStatus -- is answered with that status; see statusFor
-// for the closed list. Both branches are here, once, for the reason Redirect
+// status it is -- a record that does not exist, a refusal, an expired form, a
+// duplicate key, or an error declaring HTTPStatus, which is how a body over the
+// size limit arrives as 413 -- is answered with that status; see statusFor for
+// the closed list. Both branches are here, once, for the reason Redirect
 // and Refuse are one function each: the last time a decision of this shape
 // lived at every call site there were forty-one copies of it, and the failure
 // they were written to answer is invisible when one of them is wrong.
@@ -262,11 +263,17 @@ const statusPageExpired = 419
 //	model.ErrModelNotFound, database.ErrRecordNotFound   404
 //	security.ErrForbidden                                403
 //	security.ErrCSRF                                     419
+//	database.ErrUniqueViolation                          409
 //	an error with a method HTTPStatus() int              that status
 //
 // errors.Is and errors.As walk the chain, so a sentinel wrapped with
 // fmt.Errorf("loading invoice %d: %w", id, err) keeps its status, and the
 // context it was wrapped with stays out of the answer.
+//
+// A duplicate key is 409 because it is the request that collided with a row
+// already there -- two sign-ups for one address, a slug taken between the form
+// and the insert -- and a 500 would send somebody to the error page for it. The
+// engine decides it from its own error code, never from the message.
 //
 // The last entry is how an application states a status for a failure of its
 // own domain: a type with an HTTPStatus method, matched by its method set, so
@@ -283,9 +290,8 @@ func statusFor(err error) (int, bool) {
 		return http.StatusForbidden, true
 	case errors.Is(err, security.ErrCSRF):
 		return statusPageExpired, true
-		// TODO(unique-violation): database.ErrUniqueViolation answers 409 here,
-		// after 419 and before HTTPStatus, once hesape declares it. Until then a
-		// unique violation is not claimed and keeps reaching the panic path.
+	case errors.Is(err, database.ErrUniqueViolation):
+		return http.StatusConflict, true
 	}
 
 	var claimed interface{ HTTPStatus() int }
