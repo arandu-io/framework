@@ -202,9 +202,12 @@ var allowedHesapeImports = bridgeSurface{
 	"mail": inventoryItems(`
 		github.com/arandu-io/hesape/mail github.com/arandu-io/hesape/mail/transport
 	`),
+	// http is here because the sign-in screen draws the CSRF token CSRFProtect
+	// put on the request context, read with http.CSRFTokenFrom.
 	"modules/auth": inventoryItems(`
 		github.com/arandu-io/hesape/database/migrations
 		github.com/arandu-io/hesape/database/schema
+		github.com/arandu-io/hesape/http
 	`),
 	"observability": inventoryItems(`
 		github.com/arandu-io/hesape/log

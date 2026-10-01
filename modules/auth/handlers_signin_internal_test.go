@@ -12,6 +12,7 @@ import (
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
+	hhttp "github.com/arandu-io/hesape/http"
 )
 
 // signInScreen builds the part of the module the sign-in screen needs: a CSRF
@@ -110,6 +111,11 @@ func TestTheSignInFormCarriesATokenTheCSRFMiddlewareAccepts(t *testing.T) {
 	post := httptest.NewRequest(http.MethodPost, middleware.SignInPath,
 		strings.NewReader(url.Values{field[1]: {field[2]}}.Encode()))
 	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// The browser that loaded the screen sends back the guest cookie it was
+	// given: a visitor with no session is bound to that cookie.
+	for _, c := range rec.Result().Cookies() {
+		post.AddCookie(c)
+	}
 	guarded.ServeHTTP(httptest.NewRecorder(), post)
 
 	if !reached {
@@ -131,5 +137,65 @@ func TestTheFirstVisitToTheSignInScreenShowsNoRefusal(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "That did not work") {
 		t.Error("somebody who has not tried anything yet is told it did not work")
+	}
+}
+
+// A visitor with no session is bound to the guest cookie the screen set, so the
+// token on one browser's sign-in form is refused from another. Bound to the
+// empty id, as it used to be, one token passed on every visitor's form.
+func TestASignInTokenIsRefusedFromAnotherBrowser(t *testing.T) {
+	m := signInScreen()
+
+	screen := func() (token string, cookies []*http.Cookie) {
+		rec := httptest.NewRecorder()
+		m.renderLogin(rec, httptest.NewRequest(http.MethodGet, "/auth/login", nil), http.StatusOK, "", nil)
+		field := hiddenFieldPattern.FindStringSubmatch(rec.Body.String())
+		if field == nil {
+			t.Fatalf("no hidden token field:\n%s", rec.Body.String())
+		}
+		return field[2], rec.Result().Cookies()
+	}
+	victimToken, _ := screen()
+	_, attackerCookies := screen()
+
+	reached := false
+	guarded := middleware.CSRFProtect(m.svc.csrf, m.svc.session.IDFromRequest)(
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+
+	post := httptest.NewRequest(http.MethodPost, middleware.SignInPath,
+		strings.NewReader(url.Values{"_token": {victimToken}}.Encode()))
+	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	for _, c := range attackerCookies {
+		post.AddCookie(c)
+	}
+	rec := httptest.NewRecorder()
+	guarded.ServeHTTP(rec, post)
+
+	if reached || rec.Code != middleware.StatusCSRFExpired {
+		t.Fatalf("another browser's sign-in token was accepted (status %d)", rec.Code)
+	}
+}
+
+// Behind CSRFProtect the screen draws the token the middleware issued, and
+// sets no guest cookie of its own: two cookies of one name on one response is
+// a form bound to the cookie the browser did not keep.
+func TestTheSignInScreenDrawsTheTokenTheMiddlewareIssued(t *testing.T) {
+	m := signInScreen()
+	var issued string
+	screen := middleware.CSRFProtect(m.svc.csrf, m.svc.session.IDFromRequest)(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			issued, _ = hhttp.CSRFTokenFrom(r.Context())
+			m.showLogin(w, r)
+		}))
+
+	rec := httptest.NewRecorder()
+	screen.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/auth/login", nil))
+
+	field := hiddenFieldPattern.FindStringSubmatch(rec.Body.String())
+	if field == nil || field[2] != issued {
+		t.Fatalf("the form carries %v, want the token the middleware issued (%q)", field, issued)
+	}
+	if n := len(rec.Header().Values("Set-Cookie")); n != 1 {
+		t.Fatalf("the response sets %d cookies, want the one guest cookie the middleware set", n)
 	}
 }

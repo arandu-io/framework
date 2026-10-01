@@ -12,6 +12,7 @@ import (
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/framework/view"
+	hhttp "github.com/arandu-io/hesape/http"
 )
 
 // Handlers are thin on purpose: extract the input, delegate to the service,
@@ -44,7 +45,7 @@ type loginPage struct {
 	HTMX       string
 }
 
-// showLogin renders the login form with a fresh CSRF token.
+// showLogin renders the login form with the request's CSRF token.
 func (m *Module) showLogin(w http.ResponseWriter, r *http.Request) {
 	m.renderLogin(w, r, http.StatusOK, "", nil)
 }
@@ -63,7 +64,7 @@ func (m *Module) showLogin(w http.ResponseWriter, r *http.Request) {
 // for a form that did not validate, 429 for the lockout, all of them with the
 // screen the person can act on attached.
 func (m *Module) renderLogin(w http.ResponseWriter, r *http.Request, status int, email string, errs validation.Errors) {
-	token, err := m.svc.csrf.Issue(m.svc.session.IDFromRequest(r))
+	token, err := m.csrfToken(w, r)
 	if err != nil {
 		observability.Log(r.Context()).Error("issuing csrf token", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -79,6 +80,22 @@ func (m *Module) renderLogin(w http.ResponseWriter, r *http.Request, status int,
 		Stylesheet: view.URL(view.Stylesheet),
 		HTMX:       view.URL("htmx.min.js"),
 	})
+}
+
+// csrfToken is the token the sign-in form carries: the one CSRFProtect put on
+// the request context, or, for a screen drawn where that middleware did not
+// run, one issued here for the same binding the middleware validates against
+// -- the session id, or the guest cookie of a visitor who has none.
+//
+// The context comes first because the middleware may have set the guest
+// cookie on this very response. The request does not carry it yet, so a
+// second Binding here would mint a second guest id, and the form would hold a
+// token for one cookie while the browser kept the other.
+func (m *Module) csrfToken(w http.ResponseWriter, r *http.Request) (string, error) {
+	if token, ok := hhttp.CSRFTokenFrom(r.Context()); ok {
+		return token, nil
+	}
+	return m.svc.csrf.Issue(m.svc.csrf.Binding(w, r, m.svc.session.IDFromRequest(r)))
 }
 
 // doLogin authenticates and rotates the session.
