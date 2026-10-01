@@ -113,6 +113,21 @@ can do with the sign-in screen. It remembers where they were going in a signed
 cookie rather than in the session, because the session is the thing that does
 not exist yet at the moment the guard fires.
 
+A request `RequireAuth` lets through carries the subject it loaded on the
+request context (`RequireRole` and `RequireConfirmedPassword` do the same, and
+`LoadSubject` does it on a public route without redirecting). A handler reads
+it with `ctx.User()` instead of loading the session again. Only the subject
+travels there: the Grant is still issued by `security.Authorize`, per call, and
+never stored on the context.
+
+A handler does not map errors to statuses by hand either. It returns the error,
+and the router's action adapter answers it: not found (`model.ErrModelNotFound`,
+`database.ErrRecordNotFound`) is 404, `security.ErrForbidden` 403,
+`security.ErrCSRF` 419, and an error with an `HTTPStatus() int` method that
+status — through the same refusal path the guards use, so the error's own text
+never reaches the person. A controller-local `fail()` that repeats that table is
+redundant.
+
 ## When there is no subject
 
 `security.SystemGrant(action, tenant)` is the named escape hatch: a scheduled
