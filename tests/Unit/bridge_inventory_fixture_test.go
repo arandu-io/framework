@@ -176,9 +176,13 @@ var allowedHesapeImports = bridgeSurface{
 	// rather than writing the panic path a second time. It is the one
 	// implementation of that job in the collection, and this package is the
 	// bridge that reaches it until v1.0.0.
+	//
+	// auth is here because the guards put the subject they loaded on the
+	// request context with auth.WithSubject, the key Context.User and every
+	// policy read. The security bridge is frozen and does not re-export it.
 	"http/middleware": inventoryItems(`
-		github.com/arandu-io/hesape/exception github.com/arandu-io/hesape/http/middleware
-		github.com/arandu-io/hesape/routing/middleware
+		github.com/arandu-io/hesape/auth github.com/arandu-io/hesape/exception
+		github.com/arandu-io/hesape/http/middleware github.com/arandu-io/hesape/routing/middleware
 	`),
 	"jobs": inventoryItems(`
 		github.com/arandu-io/hesape/queue github.com/arandu-io/hesape/queue/jobs

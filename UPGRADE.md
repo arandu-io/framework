@@ -19,6 +19,29 @@ down here fails the build.
 
 ---
 
+## Unreleased — the guards carry the subject
+
+Nothing here stops compiling, and `apidiff` reports no incompatible change. It
+is written down because what a handler sees changes.
+
+### The route guards put the subject on the request context
+
+`RequireAuth`, `RequireRole` and `RequireConfirmedPassword` now put the subject
+they loaded from the session on the request context, so `ctx.User()` answers it
+behind them. The new `middleware.LoadSubject(sessions)` does the same on a
+public route: it carries the subject when a valid session exists and lets every
+request through, with no redirect and no subject when there is none. A handler
+that loaded the session again only to learn who is asking reads `ctx.User()`
+instead:
+
+```go
+subject, err := c.sessions.Load(ctx.Ctx(), ctx.Request)   // before
+subject, ok := ctx.User()                                  // now
+```
+
+The `Grant` is never on the context; it still comes from a Policy. A missing or
+expired session is answered exactly as before.
+
 ## v0.49.0 — `SecurityHeaders` takes the origins an image may load from
 
 `middleware.SecurityHeaders(dev bool)` is now

@@ -5,6 +5,7 @@ import (
 
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 )
 
 // SignInPath is where a guard sends somebody who has to sign in.
@@ -66,12 +67,42 @@ const PasswordConfirmPath = "/auth/password/confirm"
 // rather than in the session, because the session is the thing that does not
 // exist yet at the moment the guard fires -- see SessionStore.RememberIntended,
 // and SessionStore.TakeIntended for the other end of it.
+//
+// A request it lets through carries the subject it loaded, on the request
+// context, so the handler reads it with Context.User or auth.SubjectFrom rather
+// than loading the session a second time. That is who is asking and nothing
+// more: whether they may touch a record is still the Policy's answer, and the
+// Grant it issues is never put on the context.
 func RequireAuth(sessions *security.SessionStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if _, err := sessions.Load(r.Context(), r); err != nil {
+			subject, err := sessions.Load(r.Context(), r)
+			if err != nil {
 				sendToSignIn(sessions, w, r)
 				return
+			}
+			next.ServeHTTP(w, withSubject(r, subject))
+		})
+	}
+}
+
+// LoadSubject puts the subject of the request's session on its context when
+// there is one, and lets every request through either way.
+//
+// It is for the page that is public and still wants to know who is looking --
+// the front page that shows the account menu to somebody signed in and the
+// sign-in link to everybody else. A request with no session, or with a cookie
+// whose session expired, reaches the handler exactly as it arrived: nothing is
+// redirected, and nothing is put on the context, so Context.User answers false.
+// No subject and an anonymous reader are different facts, and a guest is
+// declared with security.Guest by the code that means it, never invented here.
+//
+// Behind RequireAuth it adds nothing: that guard already carries the subject.
+func LoadSubject(sessions *security.SessionStore) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if subject, err := sessions.Load(r.Context(), r); err == nil {
+				r = withSubject(r, subject)
 			}
 			next.ServeHTTP(w, r)
 		})
@@ -125,7 +156,7 @@ func RequireRole(sessions *security.SessionStore, roles ...string) func(http.Han
 			}
 			for _, role := range roles {
 				if subject.HasRole(role) {
-					next.ServeHTTP(w, r)
+					next.ServeHTTP(w, withSubject(r, subject))
 					return
 				}
 			}
@@ -175,7 +206,7 @@ func RequireConfirmedPassword(sessions *security.SessionStore) func(http.Handler
 			// is now an alias for hesape/auth.Subject, and Go forbids declaring
 			// a method on another package's type. See security.PasswordConfirmedWithin.
 			if security.PasswordConfirmedWithin(subject, security.PasswordConfirmationWindow) {
-				next.ServeHTTP(w, r)
+				next.ServeHTTP(w, withSubject(r, subject))
 				return
 			}
 			// Where they were going is kept, so the confirmation screen can
@@ -224,4 +255,15 @@ func sendToSignIn(sessions *security.SessionStore, w http.ResponseWriter, r *htt
 func sendTo(w http.ResponseWriter, r *http.Request, to string) {
 	w.Header().Set("Cache-Control", "no-store, private")
 	fhttp.Redirect(w, r, to)
+}
+
+// withSubject returns the request carrying the subject a guard loaded from the
+// session.
+//
+// One function for every guard, so they cannot disagree about where the
+// subject goes: it goes under auth.WithSubject, which is the key Context.User,
+// auth.SubjectFrom and every policy read. The value is the one the session
+// answered with, not a copy assembled from the request.
+func withSubject(r *http.Request, subject security.Subject) *http.Request {
+	return r.WithContext(auth.WithSubject(r.Context(), subject))
 }
