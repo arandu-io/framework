@@ -19,7 +19,7 @@ down here fails the build.
 
 ---
 
-## Unreleased — the guards carry the subject, an action's error is answered with its status, and CSRF removes its multipart files
+## Unreleased — the guards carry the subject, an action's error is answered with its status, and two security fixes
 
 Nothing here stops compiling, and `apidiff` reports no incompatible change. It
 is written down because what a handler sees, and what a client receives,
@@ -101,6 +101,27 @@ What to check:
 - The legacy sign-in handler of `modules/auth` reads its form with `ParseForm`,
   which does not parse a multipart body: a multipart sign-in carrying the token
   in the header now arrives with no fields and is answered 422.
+
+### The framework's own routes carry the security headers
+
+Every route under `/_arandu/` — the two probes, the debug console, the
+development reload and the asset route — skips the application's pipeline, and
+so skipped the `SecurityHeaders` an application mounts there: it went out with
+no `Content-Security-Policy`, no `X-Content-Type-Options` and no
+`X-Frame-Options`. The `Application` now answers those routes with the default
+headers itself, `Strict-Transport-Security` outside development included.
+
+What to check:
+
+- The policy on those routes is the default one. The image origins an
+  application passes to `SecurityHeaders` do not reach them, because nothing
+  the framework serves embeds an image from elsewhere.
+- The debug console's policy adds `'unsafe-inline'` to `style-src`, and nothing
+  else: its pages carry their styles inline.
+- An asset served from `/_arandu/` is now answered with
+  `Cross-Origin-Resource-Policy: same-origin`. A page on another origin that
+  loaded one directly is refused it; serve the asset from the application that
+  renders the page.
 
 ## v0.49.0 — `SecurityHeaders` takes the origins an image may load from
 

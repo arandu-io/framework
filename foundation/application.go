@@ -500,6 +500,10 @@ func (a *Application) Handler() http.Handler {
 	// document rather than a handler's intention to write one.
 	outer := append([]fhttp.Middleware{observability.RootLogger(a.log)}, devReload(a.isDev(), a.reloadTag)...)
 
+	// The framework's own routes skip the application's pipeline, the security
+	// headers an application mounts there included, so they get theirs here.
+	outer = append(outer, internalSecurityHeaders(a.isDev()))
+
 	// The flash is consumed above the application's own pipeline and below the
 	// logger, and the Application installs it rather than bootstrap/app.go for
 	// the reason the field on the Application says: there is nothing to decide.
@@ -540,7 +544,8 @@ func (a *Application) Handler() http.Handler {
 // framework gates each endpoint itself -- the two probes by nothing, because
 // they read no data and hold no session; the console by its own secret, in
 // constant time; the reload by the environment; the assets by the hash in the
-// path.
+// path. The security headers are the one thing every route under it gets
+// regardless: internalSecurityHeaders writes the defaults on all of them.
 //
 // The namespace has more than one first-party owner. The Application mounts the
 // probes, reload and console; the view module mounts the content-addressed asset
@@ -573,6 +578,59 @@ func exceptInternal(mw fhttp.Middleware) fhttp.Middleware {
 		})
 	}
 }
+
+// internalSecurityHeaders answers every route under internalPrefix with the
+// default security headers, the ones middleware.SecurityHeaders writes, and
+// leaves every other route to the application's pipeline.
+//
+// exceptInternal takes the application's middleware off the framework's routes,
+// and SecurityHeaders is application middleware like any other, so without this
+// the probes, the console, the development reload and the asset route went out
+// with no Content-Security-Policy, no nosniff and no frame refusal. The headers
+// are not a decision about an application: no image origin reaches them,
+// because nothing the framework serves embeds an image from elsewhere.
+//
+// The debug console is the one route whose policy differs, and only in
+// style-src: see consoleContentSecurityPolicy.
+func internalSecurityHeaders(dev bool) fhttp.Middleware {
+	headers := middleware.SecurityHeaders(dev)
+	return func(next http.Handler) http.Handler {
+		secured := headers(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == observability.ConsolePath || strings.HasPrefix(r.URL.Path, observability.ConsolePath+"/") {
+				w.Header().Set("Content-Security-Policy", consoleContentSecurityPolicy)
+			}
+			next.ServeHTTP(w, r)
+		}))
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !strings.HasPrefix(r.URL.Path, internalPrefix) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			secured.ServeHTTP(w, r)
+		})
+	}
+}
+
+// consoleContentSecurityPolicy is the default policy with inline styles
+// allowed, and nothing else changed.
+//
+// The console's pages carry their stylesheet inline, and the request timeline
+// is drawn with a width in a style attribute per bar -- a value that changes
+// with every request, so no hash can name it. Scripts stay on this origin,
+// which the development reload script needs and nothing else on the page uses.
+// The console is reachable only in development or under the tracing secret, and
+// it renders recorded values through html/template, so an inline style is the
+// only inline content it admits.
+const consoleContentSecurityPolicy = "default-src 'self'; " +
+	"script-src 'self'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"font-src 'self'; " +
+	"img-src 'self' data:; " +
+	"connect-src 'self'; " +
+	"object-src 'none'; " +
+	"frame-ancestors 'none'; " +
+	"base-uri 'self'; " +
+	"form-action 'self'"
 
 // newServer builds the server Run listens with. It is separate from Run so that
 // the limits above can be asserted without binding a port: a field left off this
