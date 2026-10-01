@@ -6,6 +6,7 @@ import (
 
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/security"
+	hhttp "github.com/arandu-io/hesape/http"
 )
 
 // StatusCSRFExpired is the status returned when the token is missing, invalid or
@@ -73,6 +74,37 @@ const StatusCSRFExpired = 419
 // from another site is exactly what this refuses, so an exception to it is a
 // decision about an application rather than a setting on a middleware.
 //
+// # The token a page draws
+//
+// It also issues the token, so that no controller has to. On a GET or a HEAD it
+// issues one and puts it on the request context with hhttp.WithCSRFToken, where
+// view.New reads it into Page.Token; on a request that passed the check it puts
+// the token that was submitted there, so a form redrawn on the same request --
+// a refused sign-in, a validation answered in place -- carries a token that
+// still validates. OPTIONS and TRACE draw nothing and get nothing.
+//
+// The token is bound to what CSRF.Binding returns: the session id when the
+// request carries a session cookie, and otherwise a random guest id carried in
+// a signed cookie of its own, set on the first page a visitor without one
+// loads. A token is therefore accepted only from the browser it was issued to,
+// signed in or not, and the sign-in form -- submitted by somebody with no
+// session yet -- is protected like every other. A request with neither cookie
+// validates nothing.
+//
+// Every token issued for a binding stays valid until its own expiry, so a page
+// left open in one tab keeps working after another tab loaded a newer one.
+// Nothing rotates them: the binding changes when the session does, at sign-in
+// and sign-out, and those answers are a redirect to a page that issues afresh.
+//
+// The guest cookie carries the Secure attribute unless the CSRF was built with
+// Secure(false), which is for development over plain HTTP only: without it the
+// browser never sends the cookie back, and every guest form answers
+// StatusCSRFExpired.
+//
+// A page that carries a token is a page for one visitor. A shared cache in
+// front of it that serves one visitor's page to another serves a token bound to
+// somebody else, and that form answers StatusCSRFExpired.
+//
 // sessionIDFrom must return the id only for a valid session cookie -- pass
 // SessionStore.IDFromRequest, which verifies the signature first.
 func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) func(http.Handler) http.Handler {
@@ -84,6 +116,14 @@ func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) fun
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if safe[r.Method] {
+				if r.Method == http.MethodGet || r.Method == http.MethodHead {
+					// Issue fails only when the system has no entropy left, and
+					// then the page is drawn without a token: a form on it is
+					// refused on submit, which is the safe side of the failure.
+					if token, err := c.Issue(c.Binding(w, r, sessionIDFrom(r))); err == nil {
+						r = r.WithContext(hhttp.WithCSRFToken(r.Context(), token))
+					}
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -116,11 +156,11 @@ func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) fun
 				fhttp.Refuse(w, r, StatusCSRFExpired, "this request carried no CSRF token: add the hidden _token field to the form, or send it as the X-CSRF-Token header")
 				return
 			}
-			if err := c.Validate(sessionIDFrom(r), token); err != nil {
+			if err := c.Validate(c.Binding(nil, r, sessionIDFrom(r)), token); err != nil {
 				fhttp.Refuse(w, r, StatusCSRFExpired, "this CSRF token is no longer valid: the session it belongs to expired or was replaced. Reload the page and submit again")
 				return
 			}
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(hhttp.WithCSRFToken(r.Context(), token)))
 		})
 	}
 }

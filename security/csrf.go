@@ -19,5 +19,7 @@ var ErrCSRF = session.ErrTokenMismatch
 // deployment does not need Redis just to protect forms.
 type CSRF = session.CSRF
 
-// NewCSRF returns a token issuer keyed by the application key.
+// NewCSRF returns a token issuer keyed by the application key. Chain
+// Secure(false) onto it in development over plain HTTP, or the browser never
+// sends the guest cookie a visitor without a session is bound to.
 func NewCSRF(appKey []byte, ttl time.Duration) *CSRF { return session.NewCSRF(appKey, ttl) }

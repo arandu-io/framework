@@ -9,6 +9,7 @@ import (
 
 	"github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/validation"
+	hview "github.com/arandu-io/hesape/view"
 )
 
 // Layout is what a layout asks of the data every screen hands it.
@@ -98,9 +99,9 @@ type Layout interface {
 // name into a compile error -- and takes the frame from here.
 //
 // Nothing on it is a helper a view reaches for by itself. There is no config(),
-// no route() and no auth(): the controller fills these in, so a name that drifts
-// is a compile error rather than a blank link, and a form can never end up
-// carrying another session's token under load.
+// no route() and no auth(): the controller and New fill these in, so a name that
+// drifts is a compile error rather than a blank link, and a form can never end
+// up carrying another session's token under load.
 //
 // # Why this one is declared and not aliased
 //
@@ -126,9 +127,11 @@ type Page struct {
 	// AppName is the brand in the navigation bar.
 	AppName string
 
-	// Token is the CSRF token issued for this session. It reaches the markup
-	// twice: as the hidden field @csrf writes, and as the hx-headers attribute
-	// on <body> that makes every HTMX request carry it.
+	// Token is the CSRF token issued for this request, bound to its session or,
+	// for a visitor with none, to its guest cookie. New fills it from the request
+	// context. It reaches the markup twice: as the hidden field @csrf writes,
+	// and as the hx-headers attribute on <body> that makes every HTMX request
+	// carry it.
 	Token string
 
 	// Authenticated decides which half of the navigation bar is drawn, and
@@ -347,37 +350,34 @@ func (p Page) PanelLink() string { return p.PanelURL }
 func (p Page) AdminLink() string { return p.AdminURL }
 
 // New returns the page chrome for this request, with the messages and the typed
-// input of a rejected attempt already on it.
+// input of a rejected attempt, and the CSRF token, already on it.
 //
-//	Page: view.New(ctx, "New post").WithToken(token),
+//	Page: view.New(ctx, "New post"),
 //
 // It replaces the view.Page{Title: ..., Token: ...} literal a controller used to
 // write, and the difference is the whole point of this file: nothing in that
-// line mentions errors, and the errors are on the page. There is no argument to
-// pass and therefore none to forget, which matters because forgetting produces a
-// form that comes back blank -- correct-looking, and wrong.
+// line mentions errors or tokens, and both are on the page. There is no
+// argument to pass and therefore none to forget, which matters because
+// forgetting produces a form that comes back blank, or one that is refused on
+// submit -- correct-looking, and wrong.
 //
 // It fills only what the request itself knows: the title it was given, the
-// address being served, and what the flash left behind. The application name,
-// the navigation and the signed-in person are the controller's, because they are
-// decisions -- see the Layout interface on why the layout is never allowed to go
-// and fetch them.
-func New(ctx *http.Context, title string) Page {
-	state := ctx.State()
-	return Page{
-		Title:  title,
-		Path:   ctx.Request.URL.Path,
-		Errors: state.Errors,
-		Old:    state.Old,
-	}
-}
-
-// WithToken sets the CSRF token, which the controller issues.
+// address being served, what the flash left behind, and the token the
+// middleware that protects forms put on the request context. The application
+// name, the navigation and the signed-in person are the controller's, because
+// they are decisions -- see the Layout interface on why the layout is never
+// allowed to go and fetch them.
 //
-// A method rather than a field in the literal, so that New reads as one
-// expression at the call site. It returns a copy: Page is a value everywhere
-// else, and a builder that mutated in place would be the one method on it that
-// does.
+// It is hesape's view.New converted to this type, which the identical fields
+// allow: the two constructors cannot disagree about what a page starts with.
+func New(ctx *http.Context, title string) Page { return Page(hview.New(ctx, title)) }
+
+// WithToken replaces the CSRF token New took from the request context.
+//
+// A page rendered behind the middleware that protects forms never needs it.
+// It is for one that is not -- a test, or a handler mounted outside that
+// middleware. It returns a copy: Page is a value everywhere else, and a builder
+// that mutated in place would be the one method on it that does.
 func (p Page) WithToken(token string) Page {
 	p.Token = token
 	return p
