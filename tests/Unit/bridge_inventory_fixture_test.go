@@ -32,16 +32,23 @@ var historicalBridgeSurface = bridgeSurface{
 		type.Publisher type.PublisherFunc type.Recorder type.Relay type.RelayOptions type.Stored
 		var.ErrNoTransaction
 	`),
-	// Singleton, ResourceAction, Invokable and Invoker are the one growth this
-	// list has had, and it is not new API: they are hesape/routing's route
-	// shapes, which take the action adapter as a parameter, and that adapter is
-	// unexported here and exported nowhere. Without these four methods a module,
-	// whose Routes receives this Router, could not reach the shapes at all. They
-	// forward and hold nothing, as Action and Resource do, and go with them.
+	// Singleton, ResourceAction, Invokable and Invoker grew this list, and they
+	// are not new API: they are hesape/routing's route shapes, which take the
+	// action adapter as a parameter, and that adapter is unexported here and
+	// exported nowhere. Without these four methods a module, whose Routes
+	// receives this Router, could not reach the shapes at all. They forward and
+	// hold nothing, as Action and Resource do, and go with them.
+	//
+	// Flash is the other growth, and it has no hesape counterpart to point at
+	// because hesape/routing deliberately holds no flash: the flash is a field
+	// of this envelope, set by WithFlash, and Flash only reads it back so a
+	// module reuses the one the kernel wired instead of building a second with
+	// its own Secure. It holds nothing new and goes with WithFlash.
 	"http": inventoryItems(`
 		func.Back func.Chain func.NewRouter func.Redirect func.Refuse func.Reject func.StateFrom
-		func.WithState method.Router.Action method.Router.Delete method.Router.ForModule
-		method.Router.Get method.Router.Group method.Router.Invokable method.Router.Patch
+		func.WithState method.Router.Action method.Router.Delete method.Router.Flash
+		method.Router.ForModule method.Router.Get method.Router.Group method.Router.Invokable
+		method.Router.Patch
 		method.Router.Post method.Router.Put method.Router.Resource method.Router.ResourceAction
 		method.Router.Routes method.Router.ServeHTTP method.Router.Singleton method.Router.Table
 		method.Router.WithFlash method.Router.WithRenderer method.Routes.All method.Routes.Must

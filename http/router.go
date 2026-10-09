@@ -88,6 +88,22 @@ func (r *Router) WithFlash(f *security.Flash) *Router {
 	return &g
 }
 
+// Flash returns the flash this router was wired with, or nil when it was wired
+// with none.
+//
+// A module that writes flash messages of its own -- a notice after a form
+// succeeded, beside the rejections the router writes -- takes this one rather
+// than building another with NewFlash. The router's flash is the one the
+// application reads back on the next page, and its Secure attribute is the
+// one the session cookie was given; a module that builds its own repeats that
+// decision and can make it differently. nil means the router came from
+// NewRouter with no WithFlash, as in a test, and only then does a module need
+// a flash of its own.
+//
+// Group, ForModule, WithRenderer and every other method that returns a
+// sub-router carry the flash over, so the answer is the same at any depth.
+func (r *Router) Flash() *security.Flash { return r.flash }
+
 // Group returns a sub-router with the prefix appended and the middleware
 // inherited. The route table is shared with the parent.
 //
