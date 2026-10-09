@@ -525,7 +525,7 @@ field or if the middleware order changes.
 
 ---
 
-## Unreleased — the components move out, and `httpx` becomes `http`
+## v0.26.0 — the components move out, and `httpx` becomes `http`
 
 Four changes, and the first two are import paths rather than behaviour. Only the
 last renames anything: `Grant`, `Context`, `Router` and `Module` answer to what
