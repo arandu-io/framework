@@ -94,8 +94,8 @@ type TokenResolver interface {
 // usually narrower than the session of the account that issued it, and a
 // cookie that happened to ride along must not widen what the token may do.
 //
-// A subject with no id, or a declared guest, is not somebody a token can name,
-// and is refused as an unknown token.
+// A subject with no id is not somebody a token can name -- a declared guest is
+// one, since security.Guest sets no id -- and is refused as an unknown token.
 func RequireToken(tokens TokenResolver) func(http.Handler) http.Handler {
 	if tokens == nil {
 		panic("middleware: RequireToken was given a nil TokenResolver. Pass the application's resolver; there is no guard that checks a token against nothing")
@@ -118,7 +118,7 @@ func RequireToken(tokens TokenResolver) func(http.Handler) http.Handler {
 				// telling a client with a good token that it has none.
 				panic(err)
 			}
-			if subject.ID == "" || subject.IsGuest() {
+			if subject.ID == "" {
 				refuseToken(w, r)
 				return
 			}
