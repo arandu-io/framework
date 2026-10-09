@@ -314,10 +314,25 @@ func loadSession(app config.App) session.Config {
 		Store:         config.String("SESSION_STORE", ""),
 		Path:          config.String("SESSION_PATH", "/"),
 		Domain:        config.String("SESSION_DOMAIN", ""),
-		// Secure defaults to whether the application URL is https, and not to
-		// false. A cookie that travels in the clear because nobody set a
-		// variable is the failure that looks like nothing at all.
-		Secure: config.Bool("SESSION_SECURE_COOKIE", app.URL != nil && app.URL.Scheme == "https"),
+		// Secure is SESSION_SECURE_COOKIE when it is set, and otherwise true in
+		// every environment except dev. It is the one decision of the
+		// attribute: the Application's flash takes this value, and so does a
+		// session store or CSRF issuer built from cfg.Session.
+		//
+		// The default closes rather than opens. Neither the scheme this process
+		// sees nor APP_URL can report that the browser's connection is https:
+		// behind a proxy that ends TLS the process only ever sees http, and an
+		// APP_URL nobody wrote is http://localhost:8080. Guessing from either
+		// puts the session id on the network in the clear on every request, and
+		// a cookie that travels in the clear because nobody set a variable is
+		// the failure that looks like nothing at all. A deployment that really
+		// is served over http outside dev says so with SESSION_SECURE_COOKIE=false.
+		//
+		// APP_URL takes no part. In dev the cookie is not Secure even when
+		// APP_URL is https, unless SESSION_SECURE_COOKIE=true says it is; dev is
+		// where http://localhost has to keep working, and a Secure cookie never
+		// reaches a browser there.
+		Secure: config.Bool("SESSION_SECURE_COOKIE", !app.Env.Is(config.EnvDev)),
 	}
 }
 

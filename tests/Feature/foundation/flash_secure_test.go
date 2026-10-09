@@ -68,20 +68,20 @@ func rejectedFlash(t *testing.T, cfg bootstrap.Configuration) *http.Cookie {
 //
 // Each case is a configuration read from the environment, the way a process
 // reads it, so what is compared is the decision the loader made and not a
-// value the test wrote into a struct. The two that a reading of the
-// environment would get wrong are the explicit ones: SESSION_SECURE_COOKIE=false
-// in production, and development with an https URL.
+// value the test wrote into a struct. The default is Secure outside dev
+// whatever APP_URL says, and SESSION_SECURE_COOKIE decides when it is set.
 func TestTheFlashCookieTakesSecureFromTheSessionConfiguration(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		env  []string
 		want bool
 	}{
-		{"https URL", []string{"APP_ENV", "prod", "APP_URL", "https://loja.example"}, true},
-		{"https URL with SESSION_SECURE_COOKIE=false", []string{"APP_ENV", "prod", "APP_URL", "https://loja.example", "SESSION_SECURE_COOKIE", "false"}, false},
-		{"http URL with SESSION_SECURE_COOKIE=true", []string{"APP_ENV", "prod", "APP_URL", "http://loja.example", "SESSION_SECURE_COOKIE", "true"}, true},
+		{"prod over https", []string{"APP_ENV", "prod", "APP_URL", "https://loja.example"}, true},
+		{"staging over http without the variable", []string{"APP_ENV", "staging", "APP_URL", "http://loja.internal"}, true},
+		{"prod with SESSION_SECURE_COOKIE=false", []string{"APP_ENV", "prod", "APP_URL", "https://loja.example", "SESSION_SECURE_COOKIE", "false"}, false},
 		{"dev over http", []string{"APP_ENV", "dev", "APP_URL", "http://localhost:8080"}, false},
-		{"dev with an https URL", []string{"APP_ENV", "dev", "APP_URL", "https://loja.test"}, true},
+		{"dev with an https URL", []string{"APP_ENV", "dev", "APP_URL", "https://loja.test"}, false},
+		{"dev with SESSION_SECURE_COOKIE=true", []string{"APP_ENV", "dev", "APP_URL", "http://localhost:8080", "SESSION_SECURE_COOKIE", "true"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("APP_KEY", flashSecureKey)

@@ -66,25 +66,36 @@ func TestTheSessionCookieFollowsTheApplicationNameAndNothingElse(t *testing.T) {
 }
 
 // A cookie that travels in the clear because nobody set a variable is the
-// failure that looks like nothing at all, so the default follows the URL.
-func TestTheSessionCookieIsSecureWhenTheApplicationIsHTTPS(t *testing.T) {
-	env(t, "APP_KEY", testKey, "APP_URL", "https://loja.example")
+// failure that looks like nothing at all, so the default closes: Secure in
+// every environment but dev, whatever APP_URL says, because behind a proxy that
+// ends TLS neither the URL nor the scheme this process sees is the browser's.
+// SESSION_SECURE_COOKIE, when it is set, decides in every environment.
+func TestTheSessionCookieIsSecureUnlessTheEnvironmentIsDev(t *testing.T) {
+	for _, tc := range []struct {
+		env, url, variable string
+		want               bool
+	}{
+		{"prod", "http://localhost:8080", "", true},
+		{"prod", "https://loja.example", "", true},
+		{"staging", "http://loja.internal", "", true},
+		{"dev", "http://localhost:8080", "", false},
+		{"dev", "https://loja.test", "", false},
+		{"prod", "https://loja.example", "false", false},
+		{"staging", "http://loja.internal", "false", false},
+		{"dev", "http://localhost:8080", "true", true},
+		// An APP_ENV nobody wrote is parsed as dev, so it answers as dev does.
+		{"", "http://localhost:8080", "", false},
+	} {
+		env(t, "APP_KEY", testKey, "APP_ENV", tc.env, "APP_URL", tc.url, "SESSION_SECURE_COOKIE", tc.variable)
 
-	cfg, err := bootstrap.LoadConfiguration()
-	if err != nil {
-		t.Fatalf("LoadConfiguration: %v", err)
-	}
-	if !cfg.Session.Secure {
-		t.Error("an https application got an insecure session cookie by default")
-	}
-
-	t.Setenv("APP_URL", "http://localhost:8080")
-	cfg, err = bootstrap.LoadConfiguration()
-	if err != nil {
-		t.Fatalf("LoadConfiguration: %v", err)
-	}
-	if cfg.Session.Secure {
-		t.Error("a plain-http application got a secure cookie, which never arrives")
+		cfg, err := bootstrap.LoadConfiguration()
+		if err != nil {
+			t.Fatalf("APP_ENV=%s: LoadConfiguration: %v", tc.env, err)
+		}
+		if cfg.Session.Secure != tc.want {
+			t.Errorf("APP_ENV=%s APP_URL=%s SESSION_SECURE_COOKIE=%q: Secure = %v, want %v",
+				tc.env, tc.url, tc.variable, cfg.Session.Secure, tc.want)
+		}
 	}
 }
 

@@ -19,30 +19,41 @@ down here fails the build.
 
 ---
 
-## Unreleased — the flash cookie takes `Secure` from the session configuration
+## Unreleased — a cookie is `Secure` unless the environment is dev, and the flash takes that one decision
 
 Nothing stops compiling, and `apidiff` reports only the addition of
 `Router.Flash`. The entry is here because a cookie attribute a browser acts on
 changed.
 
+### `cfg.Session.Secure` defaults to true outside dev
+
+`SESSION_SECURE_COOKIE` still decides when it is set. When it is not, the
+default was whether `APP_URL` is https; it is now true in every environment
+except `APP_ENV=dev`, and `APP_URL` takes no part. Behind a proxy that ends
+TLS the process sees only http, and an `APP_URL` nobody wrote is
+`http://localhost:8080`, so the old default left a production session cookie
+without the attribute.
+
+- `APP_ENV=staging` or `prod` with an `APP_URL` that is not https and no
+  `SESSION_SECURE_COOKIE`: the cookie is now `Secure`. If the browser really
+  reaches the application over http, declare `SESSION_SECURE_COOKIE=false`, or
+  the session disappears between requests.
+- `APP_ENV=dev` with an https `APP_URL` and no `SESSION_SECURE_COOKIE`: the
+  cookie is no longer `Secure`. Declare `SESSION_SECURE_COOKIE=true` if the
+  development server is served over https and you want it.
+
+An `APP_ENV` nobody wrote is parsed as dev, and answers as dev does.
+
 ### The flash cookie is `Secure` exactly when `cfg.Session.Secure` is
 
-The flash the Application builds used to be `Secure` outside development and
-never in it. It now takes `cfg.Session.Secure`, the value the loader decides
-for the session cookie: `SESSION_SECURE_COOKIE` when it is set, and otherwise
-whether `APP_URL` is https. Two configurations answer differently:
+The flash the Application builds used to be `Secure` outside dev regardless of
+`SESSION_SECURE_COOKIE`. It now takes `cfg.Session.Secure`, so the variable
+reaches it: `SESSION_SECURE_COOKIE=false` outside dev drops the attribute from
+the flash too, and `SESSION_SECURE_COOKIE=true` in dev sets it.
 
-- `APP_ENV=staging` or `prod` with an `APP_URL` that is not https, or with
-  `SESSION_SECURE_COOKIE=false`: the flash is no longer `Secure`. Set
-  `APP_URL` to the https address the browser uses, or
-  `SESSION_SECURE_COOKIE=true` behind a proxy that ends TLS.
-- `APP_ENV=dev` with an https `APP_URL`, or with `SESSION_SECURE_COOKIE=true`:
-  the flash is now `Secure`, and a browser on `http://localhost` stops sending
-  it back. Leave `APP_URL` on http there.
-
-An application that builds its session store from a value of its own, rather
-than from `cfg.Session.Secure`, has to give it the same answer, or the two
-cookies disagree.
+An application that builds its session store or CSRF issuer from a value of
+its own, rather than from `cfg.Session.Secure`, has to give it the same
+answer, or the cookies disagree.
 
 A module that writes flash messages of its own takes `r.Flash()` in `Routes`
 when it is not nil, instead of building one with `security.NewFlash`.

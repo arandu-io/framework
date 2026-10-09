@@ -129,7 +129,7 @@ func New(cfg bootstrap.Configuration) *Application {
 	// http, and the form comes back blank; a session marked Secure beside a
 	// flash that is not puts the typed input on the network in the clear.
 	// Development over http://localhost keeps working because that decision
-	// defaults to false for an application URL that is not https.
+	// defaults to false in dev and to true everywhere else.
 	a.flash = security.NewFlash(cfg.App.Key, cfg.Session.Secure)
 	a.router = fhttp.NewRouter().WithFlash(a.flash)
 
