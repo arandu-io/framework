@@ -223,13 +223,8 @@ func LoadConfiguration() (Configuration, error) {
 		return Configuration{}, fmt.Errorf("loading .env: %w", err)
 	}
 
-	// APP_DEBUG is read inside config.Load, through the same lenient reader the
-	// booleans below are protected from. The value it reads is the one kept;
-	// this only refuses one it could not read, before it falls back in silence.
-	if _, err := boolSetting("APP_DEBUG", false); err != nil {
-		return Configuration{}, err
-	}
-
+	// APP_DEBUG is read inside config.Load, by the same strict reader as every
+	// boolean below, so a value it cannot read is refused there.
 	app, err := config.Load()
 	if err != nil {
 		return Configuration{}, fmt.Errorf("loading the application configuration: %w", err)
@@ -307,16 +302,16 @@ func loadSession(app config.App) (session.Config, error) {
 	// stops matching and every form starts answering 419.
 	cookie := strings.ToLower(strings.NewReplacer(" ", "_", ".", "_").Replace(app.Name)) + "_session"
 
-	expireOnClose, err := boolSetting("SESSION_EXPIRE_ON_CLOSE", false)
+	expireOnClose, err := config.StrictBool("SESSION_EXPIRE_ON_CLOSE", false)
 	if err != nil {
 		return session.Config{}, err
 	}
-	encrypt, err := boolSetting("SESSION_ENCRYPT", false)
+	encrypt, err := config.StrictBool("SESSION_ENCRYPT", false)
 	if err != nil {
 		return session.Config{}, err
 	}
 	// The default is argued on the Secure field below.
-	secure, err := boolSetting("SESSION_SECURE_COOKIE", !app.Env.Is(config.EnvDev))
+	secure, err := config.StrictBool("SESSION_SECURE_COOKIE", !app.Env.Is(config.EnvDev))
 	if err != nil {
 		return session.Config{}, err
 	}
@@ -432,7 +427,7 @@ func loadLog(app config.App, level string) log.Config {
 // loadFilesystem answers the filesystem settings, or the error that names
 // FILESYSTEM_SERVE_SIGNED when it could not be read.
 func loadFilesystem() (filesystem.Config, error) {
-	serveSigned, err := boolSetting("FILESYSTEM_SERVE_SIGNED", true)
+	serveSigned, err := config.StrictBool("FILESYSTEM_SERVE_SIGNED", true)
 	if err != nil {
 		return filesystem.Config{}, err
 	}
@@ -521,42 +516,6 @@ func loadDatabase() (database.Config, error) {
 func setting(key string) (string, bool) {
 	value := strings.TrimSpace(os.Getenv(key))
 	return value, value != ""
-}
-
-// boolSpellings is what config.Bool reads, in the words the refusal shows.
-const boolSpellings = "true, false, 1, 0, yes, no, on and off, in any case"
-
-// boolSetting reads a boolean, and refuses one that is written and cannot be
-// read.
-//
-// config.Bool is the reader, and it falls back on a value it does not know --
-// SESSION_SECURE_COOKIE=sometimes is false in dev and true everywhere else, and
-// nothing says the word was dropped. That is the failure poolSize refuses for a
-// number, and for these it is worse, because two of them decide whether a
-// session cookie is Secure and encrypted.
-//
-// The value is asked for twice, with opposite fallbacks, and a value the reader
-// knows answers the same both times. That keeps the list of spellings
-// config.Bool's own: a second parser here would be a second answer to what
-// "yes" means the day the two drift. strconv.ParseBool would be one, since it
-// takes "t" and "F" and refuses "on".
-//
-// Unset, empty and blank are the default, as setting says. A value padded with
-// spaces is refused rather than trimmed, because the reader would not trim it:
-// the error shows it quoted, so the space is visible.
-func boolSetting(key string, fallback bool) (bool, error) {
-	if _, ok := setting(key); !ok {
-		return fallback, nil
-	}
-	answer := config.Bool(key, fallback)
-	if answer != config.Bool(key, !fallback) {
-		return false, fmt.Errorf(`%s is %q, and it is read as a boolean.
-
-    %s=true
-
-The accepted spellings are %s. Leave it unset to keep the default.`, key, os.Getenv(key), key, boolSpellings)
-	}
-	return answer, nil
 }
 
 // poolSize reads one of the two connection counts.
