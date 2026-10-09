@@ -16,6 +16,7 @@ import (
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 	"github.com/arandu-io/hesape/cache"
 )
 
@@ -56,7 +57,9 @@ func newCharges(store middleware.IdempotencyStore) *charges {
 	r := fhttp.NewRouter()
 	write := func(w http.ResponseWriter, req *http.Request) {
 		n := c.runs.Add(1)
-		if c.inside != nil {
+		// Only the first run is held. A second run is the defect under test,
+		// and holding it too would turn that failure into a hang.
+		if c.inside != nil && n == 1 {
 			c.inside <- struct{}{}
 			<-c.gate
 		}
@@ -174,7 +177,6 @@ func TestConcurrentDuplicatesDoNotBothRun(t *testing.T) {
 
 	close(c.gate)
 	wg.Wait()
-	c.inside = nil
 
 	if duplicate.Code != http.StatusConflict {
 		t.Errorf("a duplicate sent while the first was running answered %d, want 409", duplicate.Code)
@@ -288,29 +290,47 @@ func TestAMalformedKeyIsRefused(t *testing.T) {
 
 // Without a subject there is nobody to scope the key to, and a key kept
 // unscoped is one caller's answer replayed to another. It is a wiring defect,
-// and it panics rather than running the write unprotected.
+// and it panics rather than running the write unprotected. A subject with no
+// id, or with no tenant a key can carry, scopes nothing either.
 func TestAKeyWithNoSubjectIsAWiringDefect(t *testing.T) {
-	ran := false
-	h := middleware.Idempotent(cache.NewArrayStore(), time.Hour)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		ran = true
-	}))
-	r := httptest.NewRequest(http.MethodPost, "/charges", strings.NewReader("{}"))
-	r.Header.Set("Idempotency-Key", "key-1")
-
-	recovered := func() (v any) {
-		defer func() { v = recover() }()
-		h.ServeHTTP(httptest.NewRecorder(), r)
-		return nil
-	}()
-
-	if recovered == nil {
-		t.Fatal("Idempotent ran a keyed write with no subject on the request")
+	cases := map[string]func(*http.Request) *http.Request{
+		"no subject": func(r *http.Request) *http.Request { return r },
+		"a guest": func(r *http.Request) *http.Request {
+			return r.WithContext(auth.WithSubject(r.Context(), security.Guest("acme")))
+		},
+		"no tenant": func(r *http.Request) *http.Request {
+			return r.WithContext(auth.WithSubject(r.Context(), security.Subject{ID: "u-1"}))
+		},
+		"a tenant that is not a name": func(r *http.Request) *http.Request {
+			return r.WithContext(auth.WithSubject(r.Context(), security.Subject{ID: "u-1", Tenant: "acme:other"}))
+		},
 	}
-	if ran {
-		t.Error("the handler ran before the panic")
-	}
-	if !strings.Contains(fmt.Sprint(recovered), "RequireToken") {
-		t.Errorf("the panic does not name the fix: %v", recovered)
+	for name, carry := range cases {
+		t.Run(name, func(t *testing.T) {
+			ran := false
+			h := middleware.Idempotent(cache.NewArrayStore(), time.Hour)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				ran = true
+			}))
+			r := httptest.NewRequest(http.MethodPost, "/charges", strings.NewReader("{}"))
+			r.Header.Set("Idempotency-Key", "key-1")
+			r = carry(r)
+
+			recovered := func() (v any) {
+				defer func() { v = recover() }()
+				h.ServeHTTP(httptest.NewRecorder(), r)
+				return nil
+			}()
+
+			if recovered == nil {
+				t.Fatalf("Idempotent ran a keyed write with %s on the request", name)
+			}
+			if ran {
+				t.Error("the handler ran before the panic")
+			}
+			if !strings.Contains(fmt.Sprint(recovered), "RequireToken") {
+				t.Errorf("the panic does not name the fix: %v", recovered)
+			}
+		})
 	}
 }
 

@@ -178,7 +178,7 @@ func (m idempotency) serve(next http.Handler, w http.ResponseWriter, r *http.Req
 	}
 
 	subject, ok := auth.SubjectFrom(r.Context())
-	if !ok || subject.ID == "" || subject.IsGuest() || !auth.ValidTenant(subject.Tenant) {
+	if !ok || subject.ID == "" || !auth.ValidTenant(subject.Tenant) {
 		panic("middleware: Idempotent reached a request carrying an Idempotency-Key and no authenticated subject with an id and a tenant. " +
 			"Mount it after RequireToken, RequireAuth or another guard that carries the subject: a key with nobody to scope it to would replay one caller's answer to another")
 	}
