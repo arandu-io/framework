@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"bufio"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -56,10 +58,28 @@ func Observe(dev bool, tracingSecret string, recorder *observability.Recorder) f
 			next.ServeHTTP(rw, r.WithContext(ctx))
 
 			duration := time.Since(start)
-			attrs := []any{
-				"status", rw.status,
-				"duration_ms", duration.Milliseconds(),
-				"bytes", rw.bytes,
+			status := rw.status
+			var attrs []any
+			if rw.hijacked {
+				// The handler took the connection, so no response went through
+				// rw: the 200 it was seeded with is not an answer anybody sent,
+				// the byte count is not the traffic, and the time is how long the
+				// connection lived rather than how long a response took. An
+				// upgrade answers 101 on the raw connection, which is the status
+				// it is logged under; any other takeover has no status to log.
+				attrs = append(attrs, "hijacked", true)
+				status = 0
+				if upgradeRequested(r) {
+					status = http.StatusSwitchingProtocols
+					attrs = append(attrs, "status", status, "upgrade", r.Header.Get("Upgrade"))
+				}
+				attrs = append(attrs, "connection_ms", duration.Milliseconds())
+			} else {
+				attrs = append(attrs,
+					"status", status,
+					"duration_ms", duration.Milliseconds(),
+					"bytes", rw.bytes,
+				)
 			}
 
 			col := observability.FromContext(ctx)
@@ -76,11 +96,20 @@ func Observe(dev bool, tracingSecret string, recorder *observability.Recorder) f
 						"console", observability.ConsolePath+"/"+id)
 				}
 
+				if rw.hijacked {
+					// The record has no field to say the connection was taken,
+					// so the Collector carries it, with the same keys the log
+					// line has.
+					col.RecordEvent(hijackedEvent, map[string]any{
+						"upgrade":       r.Header.Get("Upgrade"),
+						"connection_ms": duration.Milliseconds(),
+					})
+				}
 				recorder.Record(observability.Recorded{
 					RequestID: id,
 					Method:    r.Method,
 					Path:      r.URL.Path,
-					Status:    rw.status,
+					Status:    status,
 					Duration:  duration,
 					At:        start,
 					Collector: col,
@@ -91,12 +120,18 @@ func Observe(dev bool, tracingSecret string, recorder *observability.Recorder) f
 	}
 }
 
-// statusWriter records the status and the byte count for the access log.
+// hijackedEvent is the Collector event that marks a request whose handler took
+// the connection over.
+const hijackedEvent = "http.hijacked"
+
+// statusWriter records the status and the byte count for the access log, and
+// whether the handler took the connection over.
 type statusWriter struct {
 	http.ResponseWriter
-	status int
-	bytes  int
-	wrote  bool
+	status   int
+	bytes    int
+	wrote    bool
+	hijacked bool
 }
 
 func (w *statusWriter) WriteHeader(code int) {
@@ -123,9 +158,47 @@ func (w *statusWriter) Flush() {
 	}
 }
 
+// Hijack takes the connection over through the writer underneath, and records
+// that it was taken.
+//
+// It is a method rather than left to Unwrap because http.ResponseController
+// asks the outermost writer for Hijack before it unwraps, and a takeover that
+// went around this wrapper is one the access log would report as the 200 it
+// was seeded with. The writer underneath is reached through a controller of
+// its own, so a wrapper below this one is followed the same way. Only a
+// takeover that succeeded is recorded: a refused one leaves the handler
+// answering through the writer, and that answer is the status to log.
+func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, brw, err := http.NewResponseController(w.ResponseWriter).Hijack()
+	if err == nil {
+		w.hijacked = true
+	}
+	return conn, brw, err
+}
+
 // Unwrap lets http.ResponseController reach the original writer, which is how
-// deadlines and hijacking keep working behind the wrapper.
+// deadlines keep working behind the wrapper.
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// upgradeRequested reports whether r asked to switch protocols: an Upgrade
+// header naming one, and a Connection header carrying the upgrade token.
+//
+// The Connection header is a comma-separated list that may arrive split over
+// several lines, and its tokens are case-insensitive, so it is read token by
+// token rather than compared whole.
+func upgradeRequested(r *http.Request) bool {
+	if strings.TrimSpace(r.Header.Get("Upgrade")) == "" {
+		return false
+	}
+	for _, line := range r.Header.Values("Connection") {
+		for token := range strings.SplitSeq(line, ",") {
+			if strings.EqualFold(strings.TrimSpace(token), "upgrade") {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 func newRequestID() string {
 	b := make([]byte, 8)
