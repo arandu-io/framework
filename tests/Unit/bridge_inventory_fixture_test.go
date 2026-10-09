@@ -173,7 +173,7 @@ var allowedHesapeImports = bridgeSurface{
 		github.com/arandu-io/hesape/cache github.com/arandu-io/hesape/config
 		github.com/arandu-io/hesape/database github.com/arandu-io/hesape/exception
 		github.com/arandu-io/hesape/filesystem github.com/arandu-io/hesape/log
-		github.com/arandu-io/hesape/queue github.com/arandu-io/hesape/session
+		github.com/arandu-io/hesape/queue
 		github.com/arandu-io/hesape/view
 	`),
 	// geo is a route-only envelope: the native package owns every handler and

@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -37,7 +38,6 @@ import (
 	"github.com/arandu-io/hesape/filesystem"
 	"github.com/arandu-io/hesape/log"
 	"github.com/arandu-io/hesape/queue"
-	"github.com/arandu-io/hesape/session"
 	"github.com/arandu-io/hesape/view"
 )
 
@@ -74,7 +74,11 @@ type Configuration struct {
 	// without the other is never accepted.
 	HTTP HTTPServer
 
-	Session    session.Config
+	// Session is what the session cookie is written with. It is the
+	// framework's own type and not a component's Config, because the store
+	// that writes the cookie takes two values and nothing else -- see the type.
+	Session Session
+
 	Cache      cache.Config
 	Database   database.Config
 	Log        log.Config
@@ -119,6 +123,58 @@ func (s HTTPServer) Validate() error {
 		return fmt.Errorf("loading HTTP TLS certificate and key: %w", err)
 	}
 	return nil
+}
+
+// Session is what the session cookie is written with: whether it is Secure, and
+// how long it lasts.
+//
+// It holds those two and nothing else, because the session store takes those
+// two and nothing else. The cookie is written by hesape's record store -- the
+// one security.NewSessionStore builds -- on path /, for the host that answered,
+// with SameSite=Lax, signed with the application key and not encrypted, and
+// none of that is a setting. Where the records are kept is the handler the
+// application builds the store with, which is why SESSION_DRIVER is the
+// application's to read and not this loader's.
+//
+// A SESSION_* variable that asks for something else -- encryption, a domain, a
+// path, a table -- would be read and then ignored, so LoadConfiguration refuses
+// it at boot instead, naming it.
+type Session struct {
+	// Secure is SESSION_SECURE_COOKIE when it is set, and otherwise true in
+	// every environment except dev. It is the one decision of the attribute:
+	// the Application's flash takes this value, and the application builds its
+	// session store and its CSRF issuer with it, so the cookies cannot disagree.
+	//
+	// The default closes rather than opens. Neither the scheme this process
+	// sees nor APP_URL can report that the browser's connection is https:
+	// behind a proxy that ends TLS the process only ever sees http, and an
+	// APP_URL nobody wrote is http://localhost:8080. Guessing from either puts
+	// the session id on the network in the clear on every request, and a
+	// cookie that travels in the clear because nobody set a variable is the
+	// failure that looks like nothing at all. A deployment that really is
+	// served over http outside dev says so with SESSION_SECURE_COOKIE=false.
+	//
+	// APP_URL takes no part. In dev the cookie is not Secure even when APP_URL
+	// is https, unless SESSION_SECURE_COOKIE=true says it is; dev is where
+	// http://localhost has to keep working, and a Secure cookie never reaches a
+	// browser there.
+	Secure bool
+
+	// Lifetime is how long a session lasts: SESSION_LIFETIME, in minutes, and
+	// two hours when it is not set. The application builds its session store
+	// with it.
+	//
+	// It is read in MINUTES, and it is the one duration in this loader that is
+	// not seconds. The unit comes with the name: wherever SESSION_LIFETIME is
+	// already written it means minutes, so reading it as seconds like every
+	// other duration here would turn an existing SESSION_LIFETIME=120 into a
+	// two-minute session instead of a two-hour one -- a failure that is silent,
+	// because everybody stays signed in long enough for the change to look like
+	// it worked and is then thrown out mid-form.
+	//
+	// A value that is not a whole number of minutes greater than zero stops the
+	// boot rather than falling back.
+	Lifetime time.Duration
 }
 
 // Observability is how the assembled application reports on itself: what the
@@ -281,86 +337,138 @@ func LoadConfiguration() (Configuration, error) {
 	return cfg, nil
 }
 
-// minutes reads a variable written as a count of minutes.
+// defaultSessionMinutes is SESSION_LIFETIME when it is not written: two hours.
+const defaultSessionMinutes = 120
+
+// maxSessionMinutes is the longest SESSION_LIFETIME a time.Duration holds.
+// Anything longer would wrap around to a negative lifetime, which is a cookie
+// that is deleted as it is written.
+const maxSessionMinutes = math.MaxInt64 / int64(time.Minute)
+
+// loadSession answers the session settings, or the error that names the
+// session variable it could not read or will not keep.
 //
-// It exists for exactly one variable, SESSION_LIFETIME, and the reason is at
-// its call site. Nothing else here is in minutes, and nothing else should be --
-// config.Seconds is the form, because "3600" survives a Helm chart and "1h"
-// does not.
-func minutes(key string, fallback int) time.Duration {
-	return time.Duration(config.Int(key, fallback)) * time.Minute
-}
-
-// loadSession answers the session settings, or the error that names a boolean
-// among them it could not read.
-func loadSession(app config.App) (session.Config, error) {
-	// The cookie name is derived from the application name, and it is NOT
-	// configurable on its own.
-	//
-	// The CSRF token is bound to the session, and a cookie name set
-	// independently breaks that binding in a way nothing reports -- the token
-	// stops matching and every form starts answering 419.
-	cookie := strings.ToLower(strings.NewReplacer(" ", "_", ".", "_").Replace(app.Name)) + "_session"
-
-	expireOnClose, err := config.StrictBool("SESSION_EXPIRE_ON_CLOSE", false)
-	if err != nil {
-		return session.Config{}, err
+// It reads two variables, because the session store takes two values. Every
+// other SESSION_* that asks for something the store does not do is refused,
+// rather than read and dropped. See refuseUnreadSession.
+func loadSession(app config.App) (Session, error) {
+	if err := refuseUnreadSession(); err != nil {
+		return Session{}, err
 	}
-	encrypt, err := config.StrictBool("SESSION_ENCRYPT", false)
-	if err != nil {
-		return session.Config{}, err
-	}
-	// The default is argued on the Secure field below.
+
+	// The default is argued on Session.Secure.
 	secure, err := config.StrictBool("SESSION_SECURE_COOKIE", !app.Env.Is(config.EnvDev))
 	if err != nil {
-		return session.Config{}, err
+		return Session{}, err
 	}
+	lifetime, err := sessionLifetime()
+	if err != nil {
+		return Session{}, err
+	}
+	return Session{Secure: secure, Lifetime: lifetime}, nil
+}
 
-	return session.Config{
-		Driver: config.String("SESSION_DRIVER", "database"),
-		Cookie: cookie,
-		// SESSION_LIFETIME is read in MINUTES, and it is the one duration here
-		// that is not seconds.
-		//
-		// The unit comes with the name: wherever SESSION_LIFETIME is already
-		// written it means minutes, so reading it through config.Seconds like
-		// every other duration in this file would turn an existing
-		// SESSION_LIFETIME=120 into a two-minute session instead of a two-hour
-		// one.
-		//
-		// That failure is silent and it is the worst shape available: everybody
-		// stays signed in long enough for the change to look like it worked, and
-		// then gets thrown out mid-form. A variable that means something else
-		// under the same spelling is worse than a variable with a different name.
-		Lifetime:      minutes("SESSION_LIFETIME", 120),
-		ExpireOnClose: expireOnClose,
-		Encrypt:       encrypt,
-		Files:         config.String("SESSION_FILES", "storage/framework/sessions"),
-		Connection:    config.String("SESSION_CONNECTION", ""),
-		Table:         config.String("SESSION_TABLE", "sessions"),
-		Store:         config.String("SESSION_STORE", ""),
-		Path:          config.String("SESSION_PATH", "/"),
-		Domain:        config.String("SESSION_DOMAIN", ""),
-		// Secure is SESSION_SECURE_COOKIE when it is set, and otherwise true in
-		// every environment except dev. It is the one decision of the
-		// attribute: the Application's flash takes this value, and so does a
-		// session store or CSRF issuer built from cfg.Session.
-		//
-		// The default closes rather than opens. Neither the scheme this process
-		// sees nor APP_URL can report that the browser's connection is https:
-		// behind a proxy that ends TLS the process only ever sees http, and an
-		// APP_URL nobody wrote is http://localhost:8080. Guessing from either
-		// puts the session id on the network in the clear on every request, and
-		// a cookie that travels in the clear because nobody set a variable is
-		// the failure that looks like nothing at all. A deployment that really
-		// is served over http outside dev says so with SESSION_SECURE_COOKIE=false.
-		//
-		// APP_URL takes no part. In dev the cookie is not Secure even when
-		// APP_URL is https, unless SESSION_SECURE_COOKIE=true says it is; dev is
-		// where http://localhost has to keep working, and a Secure cookie never
-		// reaches a browser there.
-		Secure: secure,
-	}, nil
+// sessionLifetime reads SESSION_LIFETIME as a whole number of minutes greater
+// than zero, and refuses anything else.
+//
+// The reader it replaced fell back on a value it could not parse and kept a
+// zero, so SESSION_LIFETIME=two-hours was two hours by accident and
+// SESSION_LIFETIME=0 was a session that expired as it was written. Unset, empty
+// and blank are the default, as setting says.
+func sessionLifetime() (time.Duration, error) {
+	value, ok := setting("SESSION_LIFETIME")
+	if !ok {
+		return defaultSessionMinutes * time.Minute, nil
+	}
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || n <= 0 || n > maxSessionMinutes {
+		return 0, fmt.Errorf(`SESSION_LIFETIME is %q, and it is read as a whole number of minutes greater than zero.
+
+    SESSION_LIFETIME=%d
+
+Minutes, which is what the variable means wherever else it is written. Leave it
+unset to keep the default of two hours.`, value, defaultSessionMinutes)
+	}
+	return time.Duration(n) * time.Minute, nil
+}
+
+// refuseUnreadSession refuses a session variable that asks for something the
+// session store does not do.
+//
+// The cookie is written by hesape's record store, the one
+// security.NewSessionStore builds, and the only settings it takes are Session's
+// two. Every variable below used to be read into a struct nothing built a
+// store from, so SESSION_ENCRYPT=true booted and encrypted nothing, and
+// SESSION_DOMAIN=example.com booted and wrote a host-only cookie. A setting
+// that is read and then ignored is worse than one that is refused: the .env
+// says one thing, the browser receives another, and nothing reports the
+// difference.
+//
+// The value that asks for what the store already does is kept, because it asks
+// for nothing: SESSION_PATH=/, SESSION_SAME_SITE=lax, SESSION_ENCRYPT=false and
+// SESSION_EXPIRE_ON_CLOSE=false are all what an older .env carries. Unset,
+// empty and blank are not refused either, as setting says.
+//
+// SESSION_DRIVER is not here. It is not read by this loader and not refused,
+// because the application reads it: it names the handler the application
+// builds its store with.
+func refuseUnreadSession() error {
+	for _, key := range []string{"SESSION_ENCRYPT", "SESSION_EXPIRE_ON_CLOSE"} {
+		on, err := config.StrictBool(key, false)
+		if err != nil {
+			return err
+		}
+		if on {
+			return unreadSession(key, "Remove it, or set it to false.")
+		}
+	}
+	for _, key := range []string{"SESSION_FILES", "SESSION_TABLE", "SESSION_CONNECTION", "SESSION_STORE"} {
+		if _, ok := setting(key); ok {
+			return unreadSession(key, `Remove it. Where the records are kept is the handler the application builds
+the session store with, and SESSION_DRIVER, which the application reads, is
+what chooses it.`)
+		}
+	}
+	if value, ok := setting("SESSION_PATH"); ok && value != "/" {
+		return unreadSession("SESSION_PATH", "Remove it, or set it to /.")
+	}
+	if _, ok := setting("SESSION_DOMAIN"); ok {
+		return unreadSession("SESSION_DOMAIN", `Remove it. The store does not write a session shared across subdomains, and
+with this kept and ignored every subdomain would sign in on its own.`)
+	}
+	if value, ok := setting("SESSION_SAME_SITE"); ok && !strings.EqualFold(value, "lax") {
+		return unreadSession("SESSION_SAME_SITE", "Remove it, or set it to lax.")
+	}
+	if value, ok := setting("SESSION_TTL"); ok {
+		minutes := int64(defaultSessionMinutes)
+		if seconds, err := strconv.ParseInt(value, 10, 64); err == nil && seconds > 0 {
+			minutes = seconds / 60
+			if seconds%60 != 0 {
+				minutes++
+			}
+		}
+		return unreadSession("SESSION_TTL", fmt.Sprintf(`The session lasts SESSION_LIFETIME, in minutes, and SESSION_TTL was a count of
+seconds. Remove it, and write the lifetime in minutes instead:
+
+    SESSION_LIFETIME=%d`, minutes))
+	}
+	return nil
+}
+
+// unreadSession answers a session variable that nothing reads.
+//
+// Every refusal says the same thing about the cookie, because the cookie is
+// the reason for every one of them: it is written one way, and a variable that
+// asks for another way is asking for nothing.
+func unreadSession(key, remedy string) error {
+	return fmt.Errorf(`%s is %q, and nothing reads it.
+
+The session cookie is written by the record store: on path /, for the host
+that answered and no other, with SameSite=Lax, signed and not encrypted, and it
+expires with SESSION_LIFETIME. None of that is a setting, so this value would
+be read here and then ignored while the .env says otherwise.
+
+%s`, key, os.Getenv(key), remedy)
 }
 
 // loadCache answers the cache settings.
@@ -622,10 +730,6 @@ func (c Configuration) asMap() map[string]any {
 			"env":    string(c.App.Env),
 			"debug":  c.App.Debug,
 			"locale": c.App.Locale,
-		},
-		"session": map[string]any{
-			"driver":   c.Session.Driver,
-			"lifetime": c.Session.Lifetime,
 		},
 		"cache": map[string]any{"default": c.Cache.Default, "prefix": c.Cache.Prefix},
 		"log":   map[string]any{"default": c.Log.Default},

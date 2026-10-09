@@ -47,21 +47,218 @@ func TestSessionLifetimeIsReadAsMinutes(t *testing.T) {
 	}
 }
 
-// The cookie is not configurable on its own, and this pins it.
-//
-// The CSRF token is bound to the session, and a cookie name set independently
-// breaks the binding with no error anywhere -- forms start answering 419 and
-// nothing says why.
-func TestTheSessionCookieFollowsTheApplicationNameAndNothingElse(t *testing.T) {
-	env(t, "APP_KEY", testKey, "APP_NAME", "Loja Grande", "SESSION_COOKIE", "somethingelse")
+// Unset, empty and blank are two hours, as every other setting here keeps its
+// default for a variable a template rendered to nothing.
+func TestSessionLifetimeDefaultsToTwoHours(t *testing.T) {
+	for _, value := range []string{"unset", "", "   "} {
+		env(t, "APP_KEY", testKey)
+		if value == "unset" {
+			unset(t, "SESSION_LIFETIME")
+		} else {
+			t.Setenv("SESSION_LIFETIME", value)
+		}
+
+		cfg, err := bootstrap.LoadConfiguration()
+		if err != nil {
+			t.Fatalf("SESSION_LIFETIME %q: LoadConfiguration: %v", value, err)
+		}
+		if got, want := cfg.Session.Lifetime, 2*time.Hour; got != want {
+			t.Errorf("SESSION_LIFETIME %q became %v, want the default %v", value, got, want)
+		}
+	}
+}
+
+// A lifetime that is not a whole number of minutes greater than zero stops the
+// boot. The reader this replaced fell back on a word it could not parse and
+// kept a zero, which is a session that expires as it is written; and a number
+// too large for a duration wraps around to a negative one, which is the same.
+func TestASessionLifetimeThatIsNotWholeMinutesStopsTheBoot(t *testing.T) {
+	for _, value := range []string{"0", "-5", "two-hours", "1.5", "90m", "153722867280912931"} {
+		t.Run(value, func(t *testing.T) {
+			env(t, "APP_KEY", testKey, "SESSION_LIFETIME", value)
+
+			_, err := bootstrap.LoadConfiguration()
+			if err == nil {
+				t.Fatalf("SESSION_LIFETIME=%q was accepted", value)
+			}
+			for _, want := range []string{
+				"SESSION_LIFETIME is " + strconv.Quote(value),
+				"whole number of minutes greater than zero",
+				"SESSION_LIFETIME=120",
+				"Leave it\nunset to keep the default",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the error does not say %q:\n%v", want, err)
+				}
+			}
+		})
+	}
+}
+
+// The largest lifetime a duration holds is still read, so the bound refuses
+// only what would wrap around.
+func TestTheLongestSessionLifetimeIsRead(t *testing.T) {
+	longest := int64(1<<63-1) / int64(time.Minute)
+	env(t, "APP_KEY", testKey, "SESSION_LIFETIME", strconv.FormatInt(longest, 10))
 
 	cfg, err := bootstrap.LoadConfiguration()
 	if err != nil {
 		t.Fatalf("LoadConfiguration: %v", err)
 	}
+	if got, want := cfg.Session.Lifetime, time.Duration(longest)*time.Minute; got != want {
+		t.Errorf("Lifetime = %v, want %v", got, want)
+	}
+}
 
-	if got, want := cfg.Session.Cookie, "loja_grande_session"; got != want {
-		t.Errorf("cookie is %q, want %q -- SESSION_COOKIE must not be a way to set it", got, want)
+// Every session variable the record store does not read is refused when it
+// asks for a cookie or a store the record store does not write, and the
+// message names it and says what the cookie is.
+//
+// Each of these used to be read into a struct nothing built a store from:
+// SESSION_ENCRYPT=true booted and encrypted nothing, SESSION_DOMAIN booted and
+// wrote a host-only cookie, and SESSION_TTL was a second lifetime beside
+// SESSION_LIFETIME.
+func TestASessionSettingNothingReadsStopsTheBoot(t *testing.T) {
+	for _, tc := range []struct{ key, value string }{
+		{"SESSION_ENCRYPT", "true"},
+		{"SESSION_ENCRYPT", "yes"},
+		{"SESSION_EXPIRE_ON_CLOSE", "1"},
+		{"SESSION_EXPIRE_ON_CLOSE", "ON"},
+		{"SESSION_FILES", "storage/framework/sessions"},
+		{"SESSION_TABLE", "sessions"},
+		{"SESSION_CONNECTION", "pgsql"},
+		{"SESSION_STORE", "redis"},
+		{"SESSION_PATH", "/app"},
+		{"SESSION_PATH", "//"},
+		{"SESSION_DOMAIN", "example.com"},
+		{"SESSION_DOMAIN", ".example.com"},
+		{"SESSION_SAME_SITE", "strict"},
+		{"SESSION_SAME_SITE", "none"},
+		{"SESSION_TTL", "43200"},
+		{"SESSION_TTL", "12h"},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			env(t, "APP_KEY", testKey, tc.key, tc.value)
+
+			_, err := bootstrap.LoadConfiguration()
+			if err == nil {
+				t.Fatalf("%s=%q was accepted, and nothing reads it", tc.key, tc.value)
+			}
+			// The message is wrapped for a terminal, so it is compared with
+			// the line breaks folded into spaces.
+			said := strings.Join(strings.Fields(err.Error()), " ")
+			for _, want := range []string{
+				tc.key + " is " + strconv.Quote(tc.value),
+				"nothing reads it",
+				"written by the record store",
+				"on path /",
+				"for the host that answered and no other",
+				"SameSite=Lax",
+				"signed and not encrypted",
+				"expires with SESSION_LIFETIME",
+			} {
+				if !strings.Contains(said, want) {
+					t.Errorf("the error does not say %q:\n%v", want, err)
+				}
+			}
+		})
+	}
+}
+
+// SESSION_TTL was seconds, and the refusal says what to write instead, in
+// minutes, so the session lasts what it lasted.
+func TestSessionTTLIsRefusedInFavourOfSessionLifetimeInMinutes(t *testing.T) {
+	for value, want := range map[string]string{
+		"43200":  "SESSION_LIFETIME=720",
+		"90":     "SESSION_LIFETIME=2",
+		"12h":    "SESSION_LIFETIME=120",
+		"-1":     "SESSION_LIFETIME=120",
+		" 3600 ": "SESSION_LIFETIME=60",
+	} {
+		env(t, "APP_KEY", testKey, "SESSION_TTL", value)
+
+		_, err := bootstrap.LoadConfiguration()
+		if err == nil {
+			t.Fatalf("SESSION_TTL=%q was accepted", value)
+		}
+		for _, w := range []string{want, "in minutes", "was a count of\nseconds"} {
+			if !strings.Contains(err.Error(), w) {
+				t.Errorf("SESSION_TTL=%q: the error does not say %q:\n%v", value, w, err)
+			}
+		}
+	}
+}
+
+// The value that asks for what the record store already writes is kept, and so
+// is a variable left blank: an older .env carries SESSION_PATH=/ and
+// SESSION_DOMAIN= with nothing after it, and neither asks for anything.
+func TestASessionSettingThatAsksForWhatTheStoreWritesIsKept(t *testing.T) {
+	for _, tc := range []struct{ key, value string }{
+		{"SESSION_ENCRYPT", "false"},
+		{"SESSION_ENCRYPT", "0"},
+		{"SESSION_EXPIRE_ON_CLOSE", "off"},
+		{"SESSION_EXPIRE_ON_CLOSE", "No"},
+		{"SESSION_PATH", "/"},
+		{"SESSION_PATH", " / "},
+		{"SESSION_SAME_SITE", "lax"},
+		{"SESSION_SAME_SITE", "Lax"},
+		{"SESSION_SAME_SITE", "LAX"},
+		{"SESSION_DOMAIN", ""},
+		{"SESSION_DOMAIN", "  "},
+		{"SESSION_FILES", ""},
+		{"SESSION_TABLE", ""},
+		{"SESSION_CONNECTION", " "},
+		{"SESSION_STORE", ""},
+		{"SESSION_TTL", ""},
+		{"SESSION_TTL", "   "},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			env(t, "APP_KEY", testKey, tc.key, tc.value)
+
+			if _, err := bootstrap.LoadConfiguration(); err != nil {
+				t.Errorf("%s=%q was refused, and it asks for what the store already writes: %v", tc.key, tc.value, err)
+			}
+		})
+	}
+}
+
+// SESSION_DRIVER is the application's: it names the handler the application
+// builds its store with. The loader neither reads it nor refuses it, whatever
+// it says, and the Repository does not publish a driver or a lifetime for
+// anything to read instead of the struct.
+func TestSessionDriverIsNeitherReadNorRefused(t *testing.T) {
+	for _, value := range []string{"memory", "redis", "kv", "database", "anything"} {
+		env(t, "APP_KEY", testKey, "SESSION_DRIVER", value)
+
+		cfg, err := bootstrap.LoadConfiguration()
+		if err != nil {
+			t.Fatalf("SESSION_DRIVER=%s: LoadConfiguration: %v", value, err)
+		}
+		for _, key := range []string{"session.driver", "session.lifetime", "session"} {
+			if cfg.Repository.Has(key) {
+				t.Errorf("the Repository publishes %s, and nothing reads it", key)
+			}
+		}
+	}
+}
+
+// And a refused session variable is refused from .env as well, which is where
+// it will be written.
+func TestASessionSettingFromTheDotenvFileIsRefusedAsWell(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeFile(dir+"/.env", "SESSION_DOMAIN=example.com\n"); err != nil {
+		t.Fatal(err)
+	}
+	chdir(t, dir)
+	env(t, "APP_KEY", testKey)
+	unset(t, "SESSION_DOMAIN")
+
+	_, err := bootstrap.LoadConfiguration()
+	if err == nil {
+		t.Fatal("SESSION_DOMAIN=example.com in .env was accepted; the refusal has to run after the file is loaded")
+	}
+	if !strings.Contains(err.Error(), `SESSION_DOMAIN is "example.com"`) {
+		t.Errorf("the error does not name the variable and the value:\n%v", err)
 	}
 }
 
@@ -619,13 +816,15 @@ func TestTheReloadScriptFollowsDebugAndNothingElse(t *testing.T) {
 //
 // APP_DEBUG is read by config.Load and not by a field here, so it is checked
 // through what it decides; the others are fields of the Configuration.
+// SESSION_ENCRYPT and SESSION_EXPIRE_ON_CLOSE have no field: nothing reads
+// them, so false is kept and true is refused, and read is nil for both.
 var loaderBooleans = []struct {
 	key  string
 	read func(bootstrap.Configuration) bool
 }{
 	{"APP_DEBUG", func(c bootstrap.Configuration) bool { return c.App.Debug }},
-	{"SESSION_EXPIRE_ON_CLOSE", func(c bootstrap.Configuration) bool { return c.Session.ExpireOnClose }},
-	{"SESSION_ENCRYPT", func(c bootstrap.Configuration) bool { return c.Session.Encrypt }},
+	{"SESSION_EXPIRE_ON_CLOSE", nil},
+	{"SESSION_ENCRYPT", nil},
 	{"SESSION_SECURE_COOKIE", func(c bootstrap.Configuration) bool { return c.Session.Secure }},
 	{"FILESYSTEM_SERVE_SIGNED", func(c bootstrap.Configuration) bool { return c.Filesystem.ServeSigned }},
 }
@@ -634,9 +833,11 @@ var loaderBooleans = []struct {
 //
 // The reader underneath falls back on a word it does not know, so
 // SESSION_SECURE_COOKIE=sometimes was false in dev and true everywhere else,
-// SESSION_ENCRYPT=yes-please was an unencrypted session, and nothing anywhere
-// said the value had been dropped. A value padded with a space is one the
-// reader does not know either, and the quoted value in the message shows it.
+// and nothing anywhere said the value had been dropped. A value padded with a
+// space is one the reader does not know either, and the quoted value in the
+// message shows it. The two booleans nothing reads are held to the same rule:
+// a word that is neither true nor false is refused as unreadable before it is
+// refused as unread.
 //
 // The message is asserted and not merely the error, because an error that does
 // not name the variable sends somebody through six files looking for it.
@@ -669,24 +870,39 @@ func TestABooleanThatCannotBeReadStopsTheBoot(t *testing.T) {
 // value rather than the default.
 //
 // Each one is written against the default it would otherwise get, so a
-// spelling the loader dropped to the default would read wrong here.
+// spelling the loader dropped to the default would read wrong here. For the two
+// booleans nothing reads, every false spelling boots and every true one is
+// refused as unread.
 func TestEverySpellingTheRefusalOffersIsRead(t *testing.T) {
 	for _, b := range loaderBooleans {
 		for value, want := range map[string]bool{
 			"true": true, "TRUE": true, "1": true, "yes": true, "On": true,
 			"false": false, "False": false, "0": false, "no": false, "OFF": false,
 		} {
-			// Production refuses debug, so APP_DEBUG is read in staging, where
-			// both of its answers boot.
-			env(t, "APP_KEY", testKey, "APP_ENV", "staging", b.key, value)
+			t.Run(b.key+"="+value, func(t *testing.T) {
+				// Production refuses debug, so APP_DEBUG is read in staging,
+				// where both of its answers boot.
+				env(t, "APP_KEY", testKey, "APP_ENV", "staging", b.key, value)
 
-			cfg, err := bootstrap.LoadConfiguration()
-			if err != nil {
-				t.Fatalf("%s=%q: LoadConfiguration: %v", b.key, value, err)
-			}
-			if got := b.read(cfg); got != want {
-				t.Errorf("%s=%q read as %v, want %v", b.key, value, got, want)
-			}
+				cfg, err := bootstrap.LoadConfiguration()
+				if b.read == nil {
+					switch {
+					case want && err == nil:
+						t.Errorf("%s=%q was accepted, and nothing reads it", b.key, value)
+					case want && !strings.Contains(err.Error(), "nothing reads it"):
+						t.Errorf("%s=%q was refused for the wrong reason: %v", b.key, value, err)
+					case !want && err != nil:
+						t.Errorf("%s=%q was refused, and it asks for what the store already writes: %v", b.key, value, err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("%s=%q: LoadConfiguration: %v", b.key, value, err)
+				}
+				if got := b.read(cfg); got != want {
+					t.Errorf("%s=%q read as %v, want %v", b.key, value, got, want)
+				}
+			})
 		}
 	}
 }
@@ -696,8 +912,6 @@ func TestEverySpellingTheRefusalOffersIsRead(t *testing.T) {
 func TestAnUnsetOrBlankBooleanKeepsItsDefault(t *testing.T) {
 	defaults := map[string]bool{
 		"APP_DEBUG":               false,
-		"SESSION_EXPIRE_ON_CLOSE": false,
-		"SESSION_ENCRYPT":         false,
 		"SESSION_SECURE_COOKIE":   true,
 		"FILESYSTEM_SERVE_SIGNED": true,
 	}
@@ -713,6 +927,9 @@ func TestAnUnsetOrBlankBooleanKeepsItsDefault(t *testing.T) {
 			cfg, err := bootstrap.LoadConfiguration()
 			if err != nil {
 				t.Fatalf("%s %q: LoadConfiguration: %v", b.key, value, err)
+			}
+			if b.read == nil {
+				continue
 			}
 			if got := b.read(cfg); got != defaults[b.key] {
 				t.Errorf("%s %q read as %v, want the default %v", b.key, value, got, defaults[b.key])
