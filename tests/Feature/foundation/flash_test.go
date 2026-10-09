@@ -43,7 +43,9 @@ func (m flashModule) Routes(r *fhttp.Router) {
 // built to fix.
 func TestTheFlashMiddlewareIsInstalledWithoutTheApplicationWiringIt(t *testing.T) {
 	seen := make(chan fhttp.State, 1)
-	k := foundation.New(testConfig(config.EnvProd)).Register(flashModule{seen: seen})
+	cfg := testConfig(config.EnvProd)
+	cfg.Session.Secure = true
+	k := foundation.New(cfg).Register(flashModule{seen: seen})
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
@@ -69,9 +71,9 @@ func TestTheFlashMiddlewareIsInstalledWithoutTheApplicationWiringIt(t *testing.T
 	if flash == nil {
 		t.Fatal("no flash cookie: the Application did not wire one into the router")
 	}
-	// Secure outside development, because it carries what somebody typed.
+	// Secure when the session cookie is, because it carries what somebody typed.
 	if !flash.Secure {
-		t.Error("the flash cookie is not Secure in production")
+		t.Error("the flash cookie is not Secure beside a Secure session cookie")
 	}
 
 	get := httptest.NewRequest(http.MethodGet, "http://example.test/posts/new", nil)

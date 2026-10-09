@@ -19,6 +19,34 @@ down here fails the build.
 
 ---
 
+## Unreleased — the flash cookie takes `Secure` from the session configuration
+
+Nothing stops compiling, and `apidiff` reports only the addition of
+`Router.Flash`. The entry is here because a cookie attribute a browser acts on
+changed.
+
+### The flash cookie is `Secure` exactly when `cfg.Session.Secure` is
+
+The flash the Application builds used to be `Secure` outside development and
+never in it. It now takes `cfg.Session.Secure`, the value the loader decides
+for the session cookie: `SESSION_SECURE_COOKIE` when it is set, and otherwise
+whether `APP_URL` is https. Two configurations answer differently:
+
+- `APP_ENV=staging` or `prod` with an `APP_URL` that is not https, or with
+  `SESSION_SECURE_COOKIE=false`: the flash is no longer `Secure`. Set
+  `APP_URL` to the https address the browser uses, or
+  `SESSION_SECURE_COOKIE=true` behind a proxy that ends TLS.
+- `APP_ENV=dev` with an https `APP_URL`, or with `SESSION_SECURE_COOKIE=true`:
+  the flash is now `Secure`, and a browser on `http://localhost` stops sending
+  it back. Leave `APP_URL` on http there.
+
+An application that builds its session store from a value of its own, rather
+than from `cfg.Session.Secure`, has to give it the same answer, or the two
+cookies disagree.
+
+A module that writes flash messages of its own takes `r.Flash()` in `Routes`
+when it is not nil, instead of building one with `security.NewFlash`.
+
 ## v0.52.0 — `CSRFProtect` takes options, and leaves a bearer request with no session to its guard
 
 ### `CSRFProtect` is variadic

@@ -86,7 +86,7 @@ type Application struct {
 	// flash carries the messages of a rejected form across the redirect that
 	// answers it. The Application builds it rather than the project, for the
 	// reason the renderer is found rather than passed: it takes no decision --
-	// the key and the environment are already here -- and a wiring line an
+	// the key and the session's Secure are already here -- and a wiring line an
 	// application can leave out is one an application leaves out, with a form
 	// that comes back blank as the only symptom.
 	flash *security.Flash
@@ -120,10 +120,17 @@ func New(cfg bootstrap.Configuration) *Application {
 
 	// The flash is built here, before any route exists, because the router is
 	// wired with it and a route is wired with the router it was registered on.
-	// Secure outside development, for the reason the session cookie is: it
-	// carries what somebody typed into a form, and without the attribute it
-	// travels over plain HTTP.
-	a.flash = security.NewFlash(cfg.App.Key, !a.isDev())
+	//
+	// Secure is the session cookie's own value, cfg.Session.Secure, and not a
+	// second reading of the environment. The flash carries what somebody typed
+	// into a form, which is worth exactly what the session is worth, so the two
+	// cookies take the attribute from one decision and cannot disagree: a flash
+	// marked Secure beside a session that is not never reaches a browser on
+	// http, and the form comes back blank; a session marked Secure beside a
+	// flash that is not puts the typed input on the network in the clear.
+	// Development over http://localhost keeps working because that decision
+	// defaults to false for an application URL that is not https.
+	a.flash = security.NewFlash(cfg.App.Key, cfg.Session.Secure)
 	a.router = fhttp.NewRouter().WithFlash(a.flash)
 
 	// The Application owns the recorder because it mounts the console route.
