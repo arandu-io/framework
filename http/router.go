@@ -186,14 +186,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) { r.inner.S
 //
 // It is a routing.Adapter[hhttp.Context], which is the parameter hesape/routing
 // takes so that it can register an action without knowing what a request
-// context is -- the same reason hesape/http.Renderer is an interface. hesape
-// names the function it expects here hhttp.Action, in the doc comment on
-// routing.Adapter and in four others, and no such function is declared in
-// hesape/http. Nor could it be in the shape those comments show, a unary
-// hhttp.Action(c.Show): the three values the body below closes over -- the
-// renderer, the route table and the flash -- reach it from the router, and a
-// free function taking only the action reaches none of them. So this is where
-// it is written, once, for both Action and Resource.
+// context is -- the same reason hesape/http.Renderer is an interface.
+// hesape/routing neither declares that adapter nor names one: it leaves it to
+// the layer that owns the request context, and this is that layer. It is a
+// method rather than a free function because the three values the body below
+// closes over -- the renderer, the route table and the flash -- reach it from
+// the router, and a function taking only the action reaches none of them; the
+// method value r.adapt is the one-argument function routing.Adapter asks for.
+// So this is where it is written, once, for both Action and Resource.
 //
 // An error reaching here that nothing below claims is one the handler could
 // not handle, so it goes to the panic path: the error page in development, 500

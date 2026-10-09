@@ -39,9 +39,11 @@
 //
 // None of the four could alias, and none of the four may change shape here. A
 // driver implements Queue by these method names and marshals a Job by these
-// field names, both in a module of its own; `aru make:job` emits a Handler with
-// this signature, and every handler in a project is written against it. An
-// alias would compile in this module and break all of them in silence, which is
+// field names, both in a module of its own, and a handler a project wrote
+// against this package implements this Handler. A new job is not written here:
+// the job generator emits a handler against hesape/queue/jobs directly, taking
+// a *jobs.Job, so what these names hold up is code that already exists. An
+// alias would compile in this module and break all of it in silence, which is
 // the one failure a build of the framework cannot catch.
 //
 // What crosses to hesape is the adapter in worker.go, and it is the only thing
