@@ -19,7 +19,7 @@ down here fails the build.
 
 ---
 
-## Unreleased — a boolean setting that does not read as one stops the boot, and a hijacked connection is logged as one
+## v0.54.0 — a boolean setting that does not read as one stops the boot, and a hijacked connection is logged as one
 
 Nothing stops compiling, and `apidiff` reports no change. The entry is here
 because a deployment that booted before can stop booting, and because an
