@@ -247,7 +247,11 @@ func (m idempotency) serve(next http.Handler, w http.ResponseWriter, r *http.Req
 		// headers as they are now.
 		status, header = http.StatusOK, keptHeaders(w.Header())
 	}
-	if status >= http.StatusBadRequest {
+	// Only 200-399 is kept, which is also what load accepts. 101 is the one
+	// final status below that range: it switched this connection to another
+	// protocol, and there is nothing in it a retry on a new connection could be
+	// answered with, so the retry runs again.
+	if status < http.StatusOK || status >= http.StatusBadRequest {
 		return
 	}
 	encoded, err := json.Marshal(storedResponse{Fingerprint: fp, Status: status, Header: header, Body: rec.body.Bytes()})
@@ -381,7 +385,8 @@ type recordingWriter struct {
 
 func (w *recordingWriter) WriteHeader(code int) {
 	// An informational status is not the answer; the final one comes after it.
-	if w.status == 0 && code >= http.StatusOK {
+	// 101 is final, by the same rule Observe applies.
+	if w.status == 0 && !informational(code) {
 		w.status = code
 		w.header = keptHeaders(w.ResponseWriter.Header())
 	}

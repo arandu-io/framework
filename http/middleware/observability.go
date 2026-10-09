@@ -134,7 +134,18 @@ type statusWriter struct {
 	hijacked bool
 }
 
+// WriteHeader records the final status and passes every status through.
+//
+// An informational status is sent and not recorded: 103 Early Hints comes
+// before the answer, not instead of it. Recording it used to cost the answer
+// itself, because the wrapper then swallowed the final WriteHeader as a second
+// one and net/http sent an implicit 200 in its place -- a 404 after Early Hints
+// reached the client as a 200 and was logged as a 103.
 func (w *statusWriter) WriteHeader(code int) {
+	if informational(code) {
+		w.ResponseWriter.WriteHeader(code)
+		return
+	}
 	if w.wrote {
 		return
 	}
@@ -179,6 +190,18 @@ func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // Unwrap lets http.ResponseController reach the original writer, which is how
 // deadlines keep working behind the wrapper.
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// informational reports whether code is sent ahead of the answer rather than
+// as the answer.
+//
+// The test is net/http's own -- a 1xx status other than 101 -- because net/http
+// is what decides it: it writes such a status and keeps waiting for the final
+// one, while 101 Switching Protocols is the final status of an upgrade. A
+// wrapper that drew the line anywhere else would record what the client did not
+// receive as the answer.
+func informational(code int) bool {
+	return code >= 100 && code <= 199 && code != http.StatusSwitchingProtocols
+}
 
 // upgradeRequested reports whether r asked to switch protocols: an Upgrade
 // header naming one, and a Connection header carrying the upgrade token.

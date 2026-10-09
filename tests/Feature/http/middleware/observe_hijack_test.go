@@ -281,3 +281,32 @@ func TestARefusedHijackLogsTheAnswerTheHandlerGave(t *testing.T) {
 		t.Errorf("a refused takeover is marked hijacked: %v", entry)
 	}
 }
+
+// An informational status is not the answer. 103 Early Hints followed by the
+// real status logs the real status, and the client receives it.
+//
+// The wrapper recorded the first status it saw and ignored every later one, so
+// the 404 below never left the process: net/http sent an implicit 200 on the
+// first write, and the access line said 103.
+func TestEarlyHintsDoNotTakeThePlaceOfTheAnswer(t *testing.T) {
+	srv, next := observed(t, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Link", "</app.css>; rel=preload; as=style")
+		w.WriteHeader(http.StatusEarlyHints)
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, "gone")
+	}))
+
+	res, err := srv.Client().Get(srv.URL + "/hinted")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Errorf("the client received %d, want 404", res.StatusCode)
+	}
+
+	entry := next()
+	if entry["status"] != float64(http.StatusNotFound) {
+		t.Errorf("status = %v, want 404; line: %v", entry["status"], entry)
+	}
+}
