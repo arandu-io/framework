@@ -19,7 +19,7 @@ down here fails the build.
 
 ---
 
-## Unreleased — a cookie is `Secure` unless the environment is dev, and the flash takes that one decision
+## v0.53.0 — a cookie is `Secure` unless the environment is dev, and the flash takes that one decision
 
 Nothing stops compiling, and `apidiff` reports only the addition of
 `Router.Flash`. The entry is here because a cookie attribute a browser acts on
