@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -13,6 +14,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -104,6 +106,8 @@ type IdempotencyStore interface {
 // request and send it again under the same key. A server error is not kept
 // either, so the client can retry it; making the handler safe to run again
 // after one is the handler's transaction, not something a replay can supply.
+// A request whose handler took the connection over keeps nothing either: what
+// it sent went past the writer, so there is no answer to replay.
 //
 // GET, HEAD, OPTIONS and TRACE pass through untouched, and so does a request
 // with no key. A key is one header value of 1 to 255 visible ASCII characters,
@@ -232,6 +236,11 @@ func (m idempotency) serve(next http.Handler, w http.ResponseWriter, r *http.Req
 	rec := &recordingWriter{ResponseWriter: w}
 	next.ServeHTTP(rec, r)
 
+	if rec.hijacked {
+		// The handler took the connection, and what it sent on it went past
+		// the recorder. There is no answer to replay, so a retry runs again.
+		return
+	}
 	status, header := rec.status, rec.header
 	if status == 0 {
 		// The handler wrote nothing, which net/http sends as 200 with the
@@ -364,9 +373,10 @@ func keptHeaders(h http.Header) map[string][]string {
 // written, and the body.
 type recordingWriter struct {
 	http.ResponseWriter
-	status int
-	header map[string][]string
-	body   bytes.Buffer
+	status   int
+	header   map[string][]string
+	body     bytes.Buffer
+	hijacked bool
 }
 
 func (w *recordingWriter) WriteHeader(code int) {
@@ -399,3 +409,19 @@ func (w *recordingWriter) Flush() {
 
 // Unwrap lets http.ResponseController reach the writer underneath.
 func (w *recordingWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// Hijack takes the connection over through the writer underneath, and marks
+// the request as one with no answer to keep.
+//
+// It is a method rather than left to Unwrap because http.ResponseController
+// asks the outermost writer for Hijack before it unwraps, and a takeover that
+// went around this writer would leave it with no status, which reads as the
+// empty 200 net/http sends for a handler that wrote nothing -- and that would
+// be kept and replayed to every retry.
+func (w *recordingWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, brw, err := http.NewResponseController(w.ResponseWriter).Hijack()
+	if err == nil {
+		w.hijacked = true
+	}
+	return conn, brw, err
+}
