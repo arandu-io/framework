@@ -71,8 +71,32 @@ const StatusCSRFExpired = 419
 // the browser to reload would send it round the same refusal again.
 //
 // There is no list of trusted origins to configure. A state-changing request
-// from another site is exactly what this refuses, so an exception to it is a
-// decision about an application rather than a setting on a middleware.
+// from another site is exactly what this refuses.
+//
+// # A bearer token is not ambient
+//
+// A request that carries Authorization: Bearer and no valid session cookie is
+// not asked for a token, and binds no guest cookie: it is left to the guard on
+// its route, RequireToken, which authenticates it or answers 401. The scheme is
+// read by the same reader RequireToken uses, so the two cannot disagree about
+// which requests carry one.
+//
+// The token check exists against ambient authority -- a credential the browser
+// attaches by itself to a request another site started. A bearer token is not
+// one: a page on another site cannot attach an Authorization header without a
+// CORS preflight, and a client that attaches it holds the token. Basic, Digest
+// and Negotiate are ambient, because a browser attaches them again by itself
+// after a 401 challenge, and those requests are checked like any other.
+//
+// The origin check still applies, so a browser reporting the request as
+// cross-origin is refused whatever header it carries.
+//
+// With a valid session cookie the full check applies, bearer or not: the route
+// behind may honour the cookie and ignore the header, and the cookie is exactly
+// what a forged request rides on. A cookie sessionIDFrom does not accept -- a
+// signature that does not verify -- carries no session, so it is as though
+// there were none: a forged request with a junk cookie and no bearer token is
+// still refused for carrying no CSRF token.
 //
 // # The token a page draws
 //
@@ -133,6 +157,12 @@ func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) fun
 				return
 			}
 
+			sessionID := sessionIDFrom(r)
+			if sessionID == "" && hhttp.NewContext(w, r, nil, nil).BearerToken() != "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			token := r.Header.Get("X-CSRF-Token")
 			if token == "" {
 				var release func()
@@ -156,7 +186,7 @@ func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) fun
 				fhttp.Refuse(w, r, StatusCSRFExpired, "this request carried no CSRF token: add the hidden _token field to the form, or send it as the X-CSRF-Token header")
 				return
 			}
-			if err := c.Validate(c.Binding(nil, r, sessionIDFrom(r)), token); err != nil {
+			if err := c.Validate(c.Binding(nil, r, sessionID), token); err != nil {
 				fhttp.Refuse(w, r, StatusCSRFExpired, "this CSRF token is no longer valid: the session it belongs to expired or was replaced. Reload the page and submit again")
 				return
 			}
