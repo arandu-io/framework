@@ -3,6 +3,10 @@ package middleware
 import (
 	"mime"
 	"net/http"
+	"net/url"
+	"path"
+	"strconv"
+	"strings"
 
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/security"
@@ -71,7 +75,13 @@ const StatusCSRFExpired = 419
 // the browser to reload would send it round the same refusal again.
 //
 // There is no list of trusted origins to configure. A state-changing request
-// from another site is exactly what this refuses.
+// from another site is exactly what this refuses. The one exception is by path,
+// and it is the application's: CSRFExcept, passed in opts, names the paths a
+// request is never checked on -- a webhook a provider posts to, which carries
+// no session and no token and proves itself with a signature the route
+// verifies. It is written where the middleware is wired, so the paths that
+// skip the check are read in one line of the application's bootstrap rather
+// than discovered in a handler.
 //
 // # A bearer token is not ambient
 //
@@ -131,7 +141,18 @@ const StatusCSRFExpired = 419
 //
 // sessionIDFrom must return the id only for a valid session cookie -- pass
 // SessionStore.IDFromRequest, which verifies the signature first.
-func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) func(http.Handler) http.Handler {
+//
+// opts is variadic so that the call with none is the call every application
+// already writes. A nil option panics here, at wiring, rather than on the first
+// request.
+func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string, opts ...CSRFOption) func(http.Handler) http.Handler {
+	var o csrfOptions
+	for _, opt := range opts {
+		if opt == nil {
+			panic("middleware: CSRFProtect was given a nil CSRFOption. Pass the option, such as CSRFExcept(\"/webhooks/\"), or pass none")
+		}
+		opt(&o)
+	}
 	safe := map[string]bool{
 		http.MethodGet: true, http.MethodHead: true, http.MethodOptions: true, http.MethodTrace: true,
 	}
@@ -148,6 +169,11 @@ func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) fun
 						r = r.WithContext(hhttp.WithCSRFToken(r.Context(), token))
 					}
 				}
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			if o.exempt(r.URL) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -193,6 +219,87 @@ func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string) fun
 			next.ServeHTTP(w, r.WithContext(hhttp.WithCSRFToken(r.Context(), token)))
 		})
 	}
+}
+
+// CSRFOption changes what CSRFProtect checks. CSRFExcept is the one there is.
+type CSRFOption func(*csrfOptions)
+
+// csrfOptions is what the options passed to CSRFProtect accumulate.
+type csrfOptions struct {
+	except []string
+}
+
+// CSRFExcept returns the option that exempts the paths the application names
+// from the CSRF check: a state-changing request on one of them passes with no
+// origin check and no token. A GET on one is still issued a token, like any
+// other page.
+//
+// A prefix that ends in '/' covers every path under it; one that does not
+// covers exactly that path. "/webhooks/" exempts /webhooks/stripe, and
+// "/webhooks" exempts /webhooks and never /webhooksx nor /webhooks/stripe:
+// matching is by whole segments, never across a segment boundary.
+//
+// The request path is cleaned before it is compared, the way the router cleans
+// it, so /webhooks/../notes is /notes and is checked. A path that arrived with
+// an escape its decoded form does not round-trip to -- %2F, %2E, anything that
+// leaves url.URL.RawPath set -- is never exempt: the router matches the escaped
+// path segment by segment, so /notes/%2E%2E/webhooks/x decodes to a path under
+// /webhooks/ while it is routed under /notes/. Such a request is checked like
+// any other.
+//
+// An exempt route carries no protection from this middleware, so it has to
+// prove the request itself, by the signature a provider computes over the
+// body. The exemption is a decision about an application, which is why it is
+// an argument written in its bootstrap and not a setting read from anywhere.
+//
+// A prefix that is empty, does not begin with '/', is "/" -- which would turn
+// the check off for every route -- or is not already clean, so that no cleaned
+// path could ever equal it, panics: each is a wiring mistake, and a panic at
+// start names it before any request is served.
+func CSRFExcept(prefixes ...string) CSRFOption {
+	for _, p := range prefixes {
+		switch {
+		case p == "" || p[0] != '/':
+			panic("middleware: CSRFExcept was given " + strconv.Quote(p) + ", which does not begin with '/'. Write the path as the request carries it, such as \"/webhooks/\"")
+		case p == "/":
+			panic("middleware: CSRFExcept was given \"/\", which exempts every route and turns the CSRF check off. Name the paths that skip it, such as \"/webhooks/\"")
+		case cleanPath(p) != p:
+			panic("middleware: CSRFExcept was given " + strconv.Quote(p) + ", which is not a clean path: a request path is cleaned before it is compared, so this prefix would never match. Write it as " + strconv.Quote(cleanPath(p)))
+		}
+	}
+	kept := append([]string(nil), prefixes...)
+	return func(o *csrfOptions) { o.except = append(o.except, kept...) }
+}
+
+// exempt reports whether the request's path is one CSRFExcept named.
+func (o csrfOptions) exempt(u *url.URL) bool {
+	if len(o.except) == 0 || u.RawPath != "" {
+		return false
+	}
+	p := cleanPath(u.Path)
+	for _, prefix := range o.except {
+		if p == prefix || (strings.HasSuffix(prefix, "/") && strings.HasPrefix(p, prefix)) {
+			return true
+		}
+	}
+	return false
+}
+
+// cleanPath is the canonical form of a request path as the router computes
+// it: rooted, with dot segments and repeated slashes resolved, and the trailing
+// slash kept when the path had one.
+func cleanPath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	if p[0] != '/' {
+		p = "/" + p
+	}
+	np := path.Clean(p)
+	if strings.HasSuffix(p, "/") && np != "/" {
+		np += "/"
+	}
+	return np
 }
 
 // multipartMemory is how much of a multipart body is held in memory before the

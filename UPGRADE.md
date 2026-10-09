@@ -19,6 +19,34 @@ down here fails the build.
 
 ---
 
+## v0.52.0 — `CSRFProtect` takes options, and leaves a bearer request with no session to its guard
+
+### `CSRFProtect` is variadic
+
+`apidiff` reports `http/middleware.CSRFProtect` as changed: it gained
+`opts ...CSRFOption`. Every call written as
+`middleware.CSRFProtect(csrf, sessions.IDFromRequest)` compiles unchanged. What
+stops compiling is code that kept the function itself as a value of the old
+type — `var protect func(*security.CSRF, func(*http.Request) string) func(http.Handler) http.Handler = middleware.CSRFProtect`.
+Call it instead, or give the variable the new type.
+
+The option there is is `CSRFExcept`, for a path a provider posts to with no
+session and no token, such as a webhook. The route it exempts has to verify
+the request itself, by its signature:
+
+```go
+middleware.CSRFProtect(csrf, sessions.IDFromRequest, middleware.CSRFExcept("/webhooks/"))
+```
+
+### A bearer request with no session is not asked for a CSRF token
+
+A write that carries `Authorization: Bearer` and no valid session cookie is now
+passed to its route without a CSRF token, and `RequireToken` authenticates it
+or answers 401. A route that relied on `CSRFProtect` to refuse such a request
+has to be behind a guard: one with no guard at all now takes the write. Basic,
+Digest and Negotiate are still checked, the origin check still applies, and a
+request with a valid session cookie is checked exactly as before.
+
 ## Unreleased — an API request authenticates by bearer token, a write can be replayed by its Idempotency-Key, and an action's error is answered by the one status table, as JSON when JSON was asked for
 
 This release requires `hesape` v0.50.1. Nothing stops compiling, and `apidiff`
