@@ -19,7 +19,7 @@ down here fails the build.
 
 ---
 
-## Unreleased — the guards carry the subject, an action's error is answered with its status, a guest's CSRF token is bound to the guest, and the rate limit asks the store
+## v0.50.0 — the guards carry the subject, an action's error is answered with its status, a guest's CSRF token is bound to the guest, and the rate limit asks the store
 
 This release requires `hesape` v0.44.0. One signature changes and stops
 compiling — `middleware.KeyBySession` — and `apidiff` reports it. The rest is
