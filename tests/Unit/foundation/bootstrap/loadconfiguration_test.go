@@ -614,3 +614,128 @@ func TestTheReloadScriptFollowsDebugAndNothingElse(t *testing.T) {
 		t.Error("fragments are off; every HTMX swap would re-render the chrome around the part that changed")
 	}
 }
+
+// Every boolean the loader reads, with the value it has when nothing is set.
+//
+// APP_DEBUG is read by config.Load and not by a field here, so it is checked
+// through what it decides; the others are fields of the Configuration.
+var loaderBooleans = []struct {
+	key  string
+	read func(bootstrap.Configuration) bool
+}{
+	{"APP_DEBUG", func(c bootstrap.Configuration) bool { return c.App.Debug }},
+	{"SESSION_EXPIRE_ON_CLOSE", func(c bootstrap.Configuration) bool { return c.Session.ExpireOnClose }},
+	{"SESSION_ENCRYPT", func(c bootstrap.Configuration) bool { return c.Session.Encrypt }},
+	{"SESSION_SECURE_COOKIE", func(c bootstrap.Configuration) bool { return c.Session.Secure }},
+	{"FILESYSTEM_SERVE_SIGNED", func(c bootstrap.Configuration) bool { return c.Filesystem.ServeSigned }},
+}
+
+// A boolean that is written and cannot be read stops the boot.
+//
+// The reader underneath falls back on a word it does not know, so
+// SESSION_SECURE_COOKIE=sometimes was false in dev and true everywhere else,
+// SESSION_ENCRYPT=yes-please was an unencrypted session, and nothing anywhere
+// said the value had been dropped. A value padded with a space is one the
+// reader does not know either, and the quoted value in the message shows it.
+//
+// The message is asserted and not merely the error, because an error that does
+// not name the variable sends somebody through six files looking for it.
+func TestABooleanThatCannotBeReadStopsTheBoot(t *testing.T) {
+	for _, b := range loaderBooleans {
+		for _, value := range []string{"sometimes", "yes-please", "t", "2", " true"} {
+			t.Run(b.key+"="+value, func(t *testing.T) {
+				env(t, "APP_KEY", testKey, "APP_ENV", "staging", b.key, value)
+
+				_, err := bootstrap.LoadConfiguration()
+				if err == nil {
+					t.Fatalf("%s=%q was accepted; it reads as neither true nor false, and the default would have been used in silence", b.key, value)
+				}
+				for _, want := range []string{
+					b.key + " is " + strconv.Quote(value),
+					"read as a boolean",
+					"true, false, 1, 0, yes, no, on and off",
+					"Leave it unset to keep the default",
+				} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("the error does not say %q:\n%v", want, err)
+					}
+				}
+			})
+		}
+	}
+}
+
+// Every spelling the message offers is read, in any case, and decides the
+// value rather than the default.
+//
+// Each one is written against the default it would otherwise get, so a
+// spelling the loader dropped to the default would read wrong here.
+func TestEverySpellingTheRefusalOffersIsRead(t *testing.T) {
+	for _, b := range loaderBooleans {
+		for value, want := range map[string]bool{
+			"true": true, "TRUE": true, "1": true, "yes": true, "On": true,
+			"false": false, "False": false, "0": false, "no": false, "OFF": false,
+		} {
+			// Production refuses debug, so APP_DEBUG is read in staging, where
+			// both of its answers boot.
+			env(t, "APP_KEY", testKey, "APP_ENV", "staging", b.key, value)
+
+			cfg, err := bootstrap.LoadConfiguration()
+			if err != nil {
+				t.Fatalf("%s=%q: LoadConfiguration: %v", b.key, value, err)
+			}
+			if got := b.read(cfg); got != want {
+				t.Errorf("%s=%q read as %v, want %v", b.key, value, got, want)
+			}
+		}
+	}
+}
+
+// Unset, empty and blank are the default, as they are for every other setting
+// here: a template that rendered a key to nothing is not somebody choosing.
+func TestAnUnsetOrBlankBooleanKeepsItsDefault(t *testing.T) {
+	defaults := map[string]bool{
+		"APP_DEBUG":               false,
+		"SESSION_EXPIRE_ON_CLOSE": false,
+		"SESSION_ENCRYPT":         false,
+		"SESSION_SECURE_COOKIE":   true,
+		"FILESYSTEM_SERVE_SIGNED": true,
+	}
+	for _, value := range []string{"", "   ", "unset"} {
+		for _, b := range loaderBooleans {
+			env(t, "APP_KEY", testKey, "APP_ENV", "staging")
+			if value == "unset" {
+				unset(t, b.key)
+			} else {
+				t.Setenv(b.key, value)
+			}
+
+			cfg, err := bootstrap.LoadConfiguration()
+			if err != nil {
+				t.Fatalf("%s %q: LoadConfiguration: %v", b.key, value, err)
+			}
+			if got := b.read(cfg); got != defaults[b.key] {
+				t.Errorf("%s %q read as %v, want the default %v", b.key, value, got, defaults[b.key])
+			}
+		}
+	}
+}
+
+// And it is refused when it comes from .env, which is where it will be written.
+func TestABooleanFromTheDotenvFileIsRefusedAsWell(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeFile(dir+"/.env", "SESSION_ENCRYPT=yes-please\n"); err != nil {
+		t.Fatal(err)
+	}
+	chdir(t, dir)
+	env(t, "APP_KEY", testKey)
+	unset(t, "SESSION_ENCRYPT")
+
+	_, err := bootstrap.LoadConfiguration()
+	if err == nil {
+		t.Fatal("SESSION_ENCRYPT=yes-please in .env was accepted; the refusal has to run after the file is loaded")
+	}
+	if !strings.Contains(err.Error(), `SESSION_ENCRYPT is "yes-please"`) {
+		t.Errorf("the error does not name the variable and the value:\n%v", err)
+	}
+}
