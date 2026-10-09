@@ -86,7 +86,7 @@ has to be behind a guard: one with no guard at all now takes the write. Basic,
 Digest and Negotiate are still checked, the origin check still applies, and a
 request with a valid session cookie is checked exactly as before.
 
-## Unreleased — an API request authenticates by bearer token, a write can be replayed by its Idempotency-Key, and an action's error is answered by the one status table, as JSON when JSON was asked for
+## v0.51.0 — an API request authenticates by bearer token, a write can be replayed by its Idempotency-Key, and an action's error is answered by the one status table, as JSON when JSON was asked for
 
 This release requires `hesape` v0.50.1. Nothing stops compiling, and `apidiff`
 reports only additions. The entry is here because an application that wrote
