@@ -19,6 +19,114 @@ down here fails the build.
 
 ---
 
+## Unreleased — the session is configured by what the session store reads, and nothing else
+
+This release requires `hesape` v0.51.0. `apidiff` reports one incompatible
+change, the type of `Configuration.Session`, and an application that reads
+only `cfg.Session.Secure` compiles unchanged. The rest of the entry is here
+because a deployment that booted before can stop booting.
+
+### `Configuration.Session` is `bootstrap.Session`
+
+```
+- ./foundation/bootstrap.Configuration.Session: changed from github.com/arandu-io/hesape/session.Config to Session
+```
+
+`Configuration.Session` was `hesape/session.Config`, the input of a session
+manager nothing builds. The session store every application uses —
+`security.NewSessionStore`, over hesape's record store — takes two values, and
+the field now holds those two:
+
+```go
+type Session struct {
+	Secure   bool          // SESSION_SECURE_COOKIE, true outside dev by default
+	Lifetime time.Duration // SESSION_LIFETIME, in minutes, two hours by default
+}
+```
+
+What stops compiling is a read of any other field — `Driver`, `Cookie`,
+`Encrypt`, `ExpireOnClose`, `Files`, `Connection`, `Table`, `Store`, `Path`,
+`Domain` and the rest — and a `Configuration` built by hand with
+`Session: session.Config{…}`; write `Session: bootstrap.Session{Secure: …,
+Lifetime: …}`. None of those fields reached the cookie: the record store writes
+it as `arandu_session`, on path `/`, host-only, with `SameSite=Lax`, signed and
+not encrypted, and takes none of them. The `Repository` no longer answers
+`session.driver` or `session.lifetime`; nothing read either.
+
+### Build the session store with `cfg.Session.Lifetime`, and write `SESSION_LIFETIME`
+
+`SESSION_LIFETIME` is read in minutes, two hours when it is not set, and a
+value that is not a whole number of minutes greater than zero now stops the
+boot; it used to fall back to two hours on a word and to keep a zero.
+
+`SESSION_TTL` is refused whatever it says, and the message gives its value in
+minutes. An application that read `SESSION_TTL` into a lifetime of its own, in
+seconds, builds the store with `cfg.Session.Lifetime` instead and moves the
+value across:
+
+```
+SESSION_TTL=43200     →     SESSION_LIFETIME=720
+```
+
+```go
+sessions := security.NewSessionStore(fw.App.Key, fw.Session.Lifetime, fw.Session.Secure, backend)
+```
+
+Leaving `SESSION_LIFETIME` out is two hours, not the twelve the starter
+application's `SESSION_TTL` defaulted to; write 720 to keep twelve.
+
+### A session variable nothing reads stops the boot
+
+Each of these was read and dropped, so `SESSION_ENCRYPT=true` booted and
+encrypted nothing and `SESSION_DOMAIN=example.com` booted and wrote a host-only
+cookie. Each now stops `LoadConfiguration` when it asks for something the store
+does not write, and the value that asks for what it already writes is kept:
+
+| variable | refused | kept |
+|---|---|---|
+| `SESSION_ENCRYPT`, `SESSION_EXPIRE_ON_CLOSE` | a true spelling | a false spelling, unset, blank |
+| `SESSION_FILES`, `SESSION_TABLE`, `SESSION_CONNECTION`, `SESSION_STORE` | any value | unset, blank |
+| `SESSION_PATH` | anything but `/` | `/`, unset, blank |
+| `SESSION_DOMAIN` | any value | unset, blank |
+| `SESSION_SAME_SITE` | anything but `lax`, in any case | `lax`, unset, blank |
+| `SESSION_TTL` | any value | unset, blank |
+
+```
+SESSION_DOMAIN is "example.com", and nothing reads it.
+
+The session cookie is written by the record store: on path /, for the host
+that answered and no other, with SameSite=Lax, signed and not encrypted, and it
+expires with SESSION_LIFETIME. None of that is a setting, so this value would
+be read here and then ignored while the .env says otherwise.
+
+Remove it. The store does not write a session shared across subdomains, and
+with this kept and ignored every subdomain would sign in on its own.
+```
+
+Remove the variable, or write the value in the last column. An application
+that refused `SESSION_PATH`, `SESSION_DOMAIN` or `SESSION_SAME_SITE` itself can
+drop its own check: the loader makes it now.
+
+`SESSION_DRIVER` is neither read nor refused. It names the handler the
+application builds its store with, and the application reads it.
+
+### `APP_DEBUG` is refused by `hesape/config`
+
+The check that refused an `APP_DEBUG` it could not read moved into
+`config.Load`, with the same message. The error now starts with
+`loading the application configuration: `, as every error from `config.Load`
+does.
+
+### Early Hints no longer replace the answer, and a 101 is not replayed
+
+Behind `Observe`, a handler that wrote `103 Early Hints` and then its status
+used to send a 200 in place of that status, and log 103. The final status now
+reaches the client and the log.
+
+Behind `Idempotent`, an answer of `101 Switching Protocols` written without
+taking the connection used to be kept as an empty 200 and replayed to every
+retry. It is not kept now, and a retry runs again.
+
 ## v0.54.0 — a boolean setting that does not read as one stops the boot, and a hijacked connection is logged as one
 
 Nothing stops compiling, and `apidiff` reports no change. The entry is here
@@ -30,24 +138,29 @@ access-log line changes its keys.
 `APP_DEBUG`, `SESSION_SECURE_COOKIE`, `SESSION_ENCRYPT`,
 `SESSION_EXPIRE_ON_CLOSE` and `FILESYSTEM_SERVE_SIGNED` used to fall back to
 their default on a value they could not read, with nothing saying so:
-`SESSION_ENCRYPT=yes-please` was an unencrypted session, and
+`SESSION_ENCRYPT=yes-please` was read as false, and
 `SESSION_SECURE_COOKIE=sometimes` was a cookie without `Secure` in dev and with
 it everywhere else. Such a value now stops the boot:
 
 ```
-SESSION_ENCRYPT is "yes-please", and it is read as a boolean.
+SESSION_SECURE_COOKIE is "sometimes", and it is read as a boolean.
 
-    SESSION_ENCRYPT=true
+    SESSION_SECURE_COOKIE=true
 
 The accepted spellings are true, false, 1, 0, yes, no, on and off, in any case. Leave it unset to keep the default.
 ```
+
+`SESSION_ENCRYPT` and `SESSION_EXPIRE_ON_CLOSE` were read in this release and
+never acted on: no value of either encrypted the session or ended it with the
+browser, because the session store does neither. The next release refuses them
+when they are true.
 
 The spellings are the ones that were already read, so a value that worked
 before means what it meant. What changes is a value that never worked: write
 one of those words, or remove the variable to keep the default. Unset, empty
 and blank keep the default as before. A value padded with spaces —
-`SESSION_ENCRYPT=" true"` — was never read either, and is refused with it; the
-quoted value in the message shows the space.
+`SESSION_SECURE_COOKIE=" true"` — was never read either, and is refused with
+it; the quoted value in the message shows the space.
 
 ### A hijacked connection is logged as hijacked, with 101 for an upgrade
 
