@@ -21,7 +21,7 @@ down here fails the build.
 
 ## Unreleased — an API request authenticates by bearer token, a write can be replayed by its Idempotency-Key, and an action's error is answered by the one status table, as JSON when JSON was asked for
 
-This release requires `hesape` v0.50.0. Nothing stops compiling, and `apidiff`
+This release requires `hesape` v0.50.1. Nothing stops compiling, and `apidiff`
 reports only additions. The entry is here because an application that wrote
 any of these by hand has code to delete, and because the answers a client
 receives are part of the contract.
@@ -123,10 +123,10 @@ What to check:
 - **An error type whose `HTTPStatus()` was written as a fallback**, counting on
   the sentinel it wraps to decide the answer. Return the sentinel, or declare
   the status you mean.
-- **The `Headers` of an `*exception.HTTPError` are not read here**: in `hesape`
-  v0.50.0 that type has the field and no `GetHeaders`. A 429 that must carry
-  `Retry-After` through an action is a type of your own with both methods, or
-  a `ThrottleRequestsException`.
+- **The `Headers` of an `*exception.HTTPError` now reach the response**:
+  `hesape` v0.50.1 gave that type `GetHeaders`, so an action that returns one
+  with `Retry-After` sends it, like a `ThrottleRequestsException` or a type of
+  your own with both methods.
 
 ### A request that wants JSON gets a problem document
 

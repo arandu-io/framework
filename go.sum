@@ -1,5 +1,5 @@
-github.com/arandu-io/hesape v0.50.0 h1:uUDJ2h31Va1HgMAFDT0u6ct5WR6/6mudmZXGToJEmN4=
-github.com/arandu-io/hesape v0.50.0/go.mod h1:EGvD/xu7BKqX/sT4p/XN+igAb5tBagA/VwoEqeVV1b0=
+github.com/arandu-io/hesape v0.50.1 h1:1DoqqHRkVr/vWdwRDyFGFGlA71oMCUwSdsthqy80F6U=
+github.com/arandu-io/hesape v0.50.1/go.mod h1:EGvD/xu7BKqX/sT4p/XN+igAb5tBagA/VwoEqeVV1b0=
 golang.org/x/crypto v0.57.0 h1:3ZVCjf8Ggz7zneR/EHRVx68Ctf+2pmIMP2UFhh9cC6M=
 golang.org/x/crypto v0.57.0/go.mod h1:Fdz0i5U6CoizGwLda9DttjSk6qlZo25zYNtR+ycvuZA=
 golang.org/x/sys v0.48.0 h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=
