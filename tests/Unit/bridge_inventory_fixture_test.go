@@ -191,9 +191,14 @@ var allowedHesapeImports = bridgeSurface{
 	//
 	// exception also writes the problem document a refused JSON client gets,
 	// through exception.WriteProblem, the one writer of that shape.
+	//
+	// cache is here because Idempotent takes its store by the hesape cache's own
+	// method names, cache.Locking among them, and branches on cache.ErrNotFound:
+	// any store that can hold a lock is accepted as it stands, and there is no
+	// framework name for either.
 	"http/middleware": inventoryItems(`
-		github.com/arandu-io/hesape/auth github.com/arandu-io/hesape/exception
-		github.com/arandu-io/hesape/http
+		github.com/arandu-io/hesape/auth github.com/arandu-io/hesape/cache
+		github.com/arandu-io/hesape/exception github.com/arandu-io/hesape/http
 		github.com/arandu-io/hesape/http/middleware github.com/arandu-io/hesape/routing/middleware
 	`),
 	"jobs": inventoryItems(`
