@@ -19,6 +19,48 @@ down here fails the build.
 
 ---
 
+## Unreleased — a boolean setting that does not read as one stops the boot, and a hijacked connection is logged as one
+
+Nothing stops compiling, and `apidiff` reports no change. The entry is here
+because a deployment that booted before can stop booting, and because an
+access-log line changes its keys.
+
+### A malformed boolean stops `LoadConfiguration`
+
+`APP_DEBUG`, `SESSION_SECURE_COOKIE`, `SESSION_ENCRYPT`,
+`SESSION_EXPIRE_ON_CLOSE` and `FILESYSTEM_SERVE_SIGNED` used to fall back to
+their default on a value they could not read, with nothing saying so:
+`SESSION_ENCRYPT=yes-please` was an unencrypted session, and
+`SESSION_SECURE_COOKIE=sometimes` was a cookie without `Secure` in dev and with
+it everywhere else. Such a value now stops the boot:
+
+```
+SESSION_ENCRYPT is "yes-please", and it is read as a boolean.
+
+    SESSION_ENCRYPT=true
+
+The accepted spellings are true, false, 1, 0, yes, no, on and off, in any case. Leave it unset to keep the default.
+```
+
+The spellings are the ones that were already read, so a value that worked
+before means what it meant. What changes is a value that never worked: write
+one of those words, or remove the variable to keep the default. Unset, empty
+and blank keep the default as before. A value padded with spaces —
+`SESSION_ENCRYPT=" true"` — was never read either, and is refused with it; the
+quoted value in the message shows the space.
+
+### A hijacked connection is logged as hijacked, with 101 for an upgrade
+
+A handler that takes the connection over through `http.ResponseController`,
+as a websocket server does, used to be logged by `Observe` as `status=200`,
+with `duration_ms` covering the whole connection. That line now carries
+`hijacked=true` and `connection_ms` instead of `duration_ms` and `bytes`. When
+the request asked for an upgrade it also carries `status=101` and the
+`Upgrade` value, and the console records 101; any other takeover has no
+`status` key. A dashboard that charts `duration_ms` stops counting websocket
+connections as slow requests, and one that filters on `status=200` stops
+counting them as successes.
+
 ## v0.53.0 — a cookie is `Secure` unless the environment is dev, and the flash takes that one decision
 
 Nothing stops compiling, and `apidiff` reports only the addition of
