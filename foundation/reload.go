@@ -39,9 +39,12 @@ import (
 // it happens the copy stays, with this note, so that nobody deletes it believing
 // an alias will do.
 //
-// The copy is not byte for byte: htmlRecorder here also answers Unwrap and
-// Hijack, so a handler behind it can lift its write deadline and take the
-// connection over the way it can in production, where the recorder is absent.
+// The two copies of htmlRecorder answer the same methods, Unwrap and Hijack
+// among them, so a handler behind either can lift its write deadline and take
+// the connection over the way it can in production, where the recorder is
+// absent. What differs is where the injected tag comes from: there it is a
+// package variable filled at Boot, and here the Application hands it to
+// devReload, which hands it to each recorder.
 //
 // # Why it asks rather than listens
 //
@@ -199,9 +202,9 @@ func (h *htmlRecorder) Write(p []byte) (int, error) {
 	return h.buf.Write(p)
 }
 
-// Flush is what makes an event stream work through this. Reaching it means the
-// handler is streaming, so the response stops being a candidate for injection
-// and whatever was buffered goes out as it is.
+// Flush is what makes a streamed response work through this. Reaching it means
+// the handler is streaming, so the response stops being a candidate for
+// injection and whatever was buffered goes out as it is.
 func (h *htmlRecorder) Flush() {
 	if !h.passing {
 		h.passing = true
@@ -240,7 +243,7 @@ func (h *htmlRecorder) finish() {
 	}
 	body := h.buf.Bytes()
 	// The close tag is the test for a whole document. An HTMX fragment has no
-	// </body>, and injecting into one would add an EventSource per swap.
+	// </body>, and injecting into one would add a listener per swap.
 	if at := bytes.LastIndex(body, []byte("</body>")); at >= 0 && len(h.reloadTag) > 0 {
 		out := make([]byte, 0, len(body)+len(h.reloadTag))
 		out = append(out, body[:at]...)
