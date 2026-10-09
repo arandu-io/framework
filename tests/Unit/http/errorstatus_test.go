@@ -16,6 +16,7 @@ import (
 	"github.com/arandu-io/hesape/database"
 	"github.com/arandu-io/hesape/database/model"
 	"github.com/arandu-io/hesape/exception"
+	"github.com/arandu-io/hesape/http/exceptions"
 	hvalidation "github.com/arandu-io/hesape/validation"
 )
 
@@ -179,6 +180,61 @@ func TestTheAdapterReadsTheOneStatusTable(t *testing.T) {
 		if rec := serve(t, err, false); rec.Code != want {
 			t.Errorf("%v, page: answered %d, exception.StatusOf reads %d", tc.err, rec.Code, want)
 		}
+	}
+}
+
+// carrying is an application's own failure that declares its status and the
+// headers its answer carries, the two by method set. It imports nothing from
+// the framework to do it.
+type carrying struct {
+	status  int
+	headers http.Header
+	cause   error
+}
+
+func (e carrying) Error() string           { return fmt.Sprintf("carrying %d", e.status) }
+func (e carrying) HTTPStatus() int         { return e.status }
+func (e carrying) GetHeaders() http.Header { return e.headers }
+func (e carrying) Unwrap() error           { return e.cause }
+
+// A 429 tells the client to wait, and Retry-After tells it how long. The
+// headers an error carries go out with its status in every representation,
+// and they are the first carrier's in the chain, as the status is the first
+// declarer's.
+func TestTheHeadersAnErrorCarriesGoOutWithItsStatus(t *testing.T) {
+	retry := http.Header{"Retry-After": {"30"}}
+	carriers := map[string]error{
+		"own type":          carrying{status: http.StatusTooManyRequests, headers: retry},
+		"own type, wrapped": fmt.Errorf("exporting invoices: %w", carrying{status: http.StatusTooManyRequests, headers: retry}),
+		"the throttle":      exceptions.NewThrottleRequestsException("", nil, retry, 0),
+		"first in the chain wins": carrying{
+			status:  http.StatusTooManyRequests,
+			headers: retry,
+			cause:   carrying{status: http.StatusServiceUnavailable, headers: http.Header{"Retry-After": {"600"}}},
+		},
+	}
+	asks := map[string]func(error) *httptest.ResponseRecorder{
+		"whole page": func(err error) *httptest.ResponseRecorder { return serve(t, err, false) },
+		"htmx":       func(err error) *httptest.ResponseRecorder { return serve(t, err, true) },
+		"json":       func(err error) *httptest.ResponseRecorder { return serveJSON(t, failing(err)) },
+	}
+
+	for name, err := range carriers {
+		for how, ask := range asks {
+			t.Run(name+", "+how, func(t *testing.T) {
+				rec := ask(err)
+				if rec.Code != http.StatusTooManyRequests {
+					t.Fatalf("status = %d, want 429", rec.Code)
+				}
+				if got := rec.Header().Values("Retry-After"); len(got) != 1 || got[0] != "30" {
+					t.Errorf("Retry-After = %q, want [30]: the client is told to wait and not for how long", got)
+				}
+			})
+		}
+	}
+
+	if rec := serve(t, security.ErrForbidden, false); rec.Header().Get("Retry-After") != "" {
+		t.Errorf("an error carrying no headers was answered with Retry-After %q", rec.Header().Get("Retry-After"))
 	}
 }
 

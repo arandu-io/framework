@@ -223,7 +223,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) { r.inner.S
 // reads, so the same error is answered with the same status here and in the
 // exception handler; its doc holds the closed list and its order. The sentence
 // is statusSentence's in both representations, so the error's own text stays
-// out of either.
+// out of either. The headers the error asks to carry -- the Retry-After of a
+// 429 -- go out with it in both; see errorHeaders.
 //
 // Which representation is Context.WantsJSON's answer: the request asked for
 // JSON in Accept, or it is an XHR that is not htmx. It is the rule the exception
@@ -282,12 +283,34 @@ func (r *Router) adapt(h func(*Context) error) http.Handler {
 			// error type, and it is answered like one.
 			panic(fmt.Errorf("http: %T asked to be answered with status %d, and an error is answered with 400-599: %w", err, status, err))
 		}
+		for key, values := range errorHeaders(err) {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
+		}
 		if wantsJSON {
 			exception.WriteProblem(w, req, status, statusSentence(status))
 			return
 		}
 		Refuse(w, req, status, statusSentence(status))
 	})
+}
+
+// errorHeaders answers the headers an error asks its answer to carry: the
+// Retry-After of a 429, the WWW-Authenticate of a 401.
+//
+// They are the GetHeaders of the first error in the chain that has the method,
+// matched by method set the way exception.StatusOf matches HTTPStatus, so the
+// type needs no import of this package; the errors of hesape/http/exceptions,
+// the throttle's among them, answer it. Without them a client is told to wait
+// and not told for how long. The adapter writes them before the status,
+// because a header set after WriteHeader is a header nobody receives.
+func errorHeaders(err error) http.Header {
+	var carrier interface{ GetHeaders() http.Header }
+	if !errors.As(err, &carrier) {
+		return nil
+	}
+	return carrier.GetHeaders()
 }
 
 // statusSentence is what a person reads when an error is answered with a

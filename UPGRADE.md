@@ -111,9 +111,22 @@ statement and wins over a sentinel it wraps, which may be only its cause:
 | a type of your own with `HTTPStatus() int` wrapping `database.ErrRecordNotFound` | 404 | its own status |
 | a failed `Validate`, a `*validation.ValidationException` | panic, 500 | the flash and the redirect back, as `validation.Errors` |
 
-What to check: an error type whose `HTTPStatus()` was written as a fallback,
-counting on the sentinel it wraps to decide the answer. Return the sentinel, or
-declare the status you mean.
+The answer now also carries the headers the error asks for: those of the first
+error in the chain with a method `GetHeaders() http.Header`, matched by method
+set as `HTTPStatus()` is, on a page and in a problem document alike. The errors
+of `hesape/http/exceptions` answer it, so a `ThrottleRequestsException` goes out
+with the `Retry-After` the adapter used to drop, and an application's own error
+declares headers the same way.
+
+What to check:
+
+- **An error type whose `HTTPStatus()` was written as a fallback**, counting on
+  the sentinel it wraps to decide the answer. Return the sentinel, or declare
+  the status you mean.
+- **The `Headers` of an `*exception.HTTPError` are not read here**: in `hesape`
+  v0.50.0 that type has the field and no `GetHeaders`. A 429 that must carry
+  `Retry-After` through an action is a type of your own with both methods, or
+  a `ThrottleRequestsException`.
 
 ### A request that wants JSON gets a problem document
 
