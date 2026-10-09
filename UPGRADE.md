@@ -175,6 +175,20 @@ What to check: a controller registered under a dotted name reads `{task}` where
 it read `{id}`, and loads the parent named by `{project}` under its Grant. To
 keep a dot as a literal segment, register the routes one by one with `Action`.
 
+### `events.Module` hands over hesape's outbox migrations
+
+`events.Module.Migrations` returns the two migrations `hesape/events.Module`
+declares, under the names this module has always used —
+`2026_07_31_000001_create_outbox_table` and
+`2026_07_31_000002_add_outbox_dead_letter` — so a database that ran them does
+not run them again. It used to declare a copy of each: two definitions of one
+table under one name, which the migration registry refuses as a copied file
+when a project registers both modules' lists.
+
+What to check: nothing for a project that registers this module alone. One
+that also registers `hesape/events.Module`'s migrations now gets each name once
+instead of a panic.
+
 ## v0.50.0 — the guards carry the subject, an action's error is answered with its status, a guest's CSRF token is bound to the guest, and the rate limit asks the store
 
 This release requires `hesape` v0.44.0. One signature changes and stops

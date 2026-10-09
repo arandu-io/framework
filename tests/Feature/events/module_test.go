@@ -2,11 +2,14 @@ package feature
 
 import (
 	"context"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/arandu-io/framework/events"
 	"github.com/arandu-io/hesape/database/migrations"
+	hevents "github.com/arandu-io/hesape/events"
 )
 
 // tenant is who the events in these tests belong to. Every outbox row carries
@@ -48,6 +51,56 @@ func TestTheOutboxMigrationIsPortable(t *testing.T) {
 			t.Errorf("%s cannot be rolled back", m.GetName())
 		}
 	}
+}
+
+// TestBothEventsModulesDeclareTheOutboxOnce: the framework's module hands over
+// the migrations hesape's module declares rather than declaring its own, so the
+// two lists are the same values and the outbox has one definition. A project
+// that registers both modules' migrations gets each name once, where two
+// definitions under one name are refused by the registry as a copied file.
+//
+// The names are the ones a database that already migrated has recorded, and
+// they cannot change without the table being created again.
+func TestBothEventsModulesDeclareTheOutboxOnce(t *testing.T) {
+	framework := events.NewModule().Migrations()
+	native := hevents.NewModule().Migrations()
+	if len(framework) != len(native) {
+		t.Fatalf("the framework declares %d migrations and hesape %d", len(framework), len(native))
+	}
+	for i := range native {
+		if framework[i] != native[i] {
+			t.Errorf("migration %d: the framework declares %s %q and hesape %s %q, want the same value",
+				i, qualified(framework[i]), framework[i].GetName(), qualified(native[i]), native[i].GetName())
+		}
+	}
+
+	const group = "tests/feature/events/both-modules"
+	func() {
+		defer func() {
+			if v := recover(); v != nil {
+				t.Fatalf("registering both modules' migrations was refused: %v", v)
+			}
+		}()
+		for _, m := range slices.Concat(framework, native) {
+			migrations.Register(m, group)
+		}
+	}()
+
+	var names []string
+	for _, m := range migrations.Registered(group) {
+		names = append(names, m.GetName())
+	}
+	want := []string{"2026_07_31_000001_create_outbox_table", "2026_07_31_000002_add_outbox_dead_letter"}
+	if !slices.Equal(names, want) {
+		t.Errorf("registered %q, want each of %q once", names, want)
+	}
+}
+
+// qualified names a value's type with its whole package path, so two types
+// that share a name in two packages read as two.
+func qualified(v any) string {
+	t := reflect.TypeOf(v)
+	return t.PkgPath() + "." + t.Name()
 }
 
 // TestTheDiagnosisIsSilentWhenNothingIsWrong: a diagnosis that always says

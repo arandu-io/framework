@@ -152,11 +152,10 @@ var allowedHesapeImports = bridgeSurface{
 		github.com/arandu-io/hesape/auth github.com/arandu-io/hesape/database
 		github.com/arandu-io/hesape/database/migrations
 	`),
-	// database/schema is here because a migration that writes DDL names the
-	// Blueprint. It is the standard path since ADR 0097, and it is a dependency
-	// on a package that compiles strings -- not a second route to the database.
+	// The outbox migrations are hesape/events.Module's, handed over by
+	// Module.Migrations, so this package names neither database/migrations nor
+	// database/schema: it no longer writes a migration of its own.
 	"events": inventoryItems(`
-		github.com/arandu-io/hesape/database/migrations github.com/arandu-io/hesape/database/schema
 		github.com/arandu-io/hesape/events
 	`),
 	"foundation": inventoryItems(`

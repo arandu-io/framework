@@ -29,6 +29,7 @@
 //	              options it would otherwise be handed cannot carry one
 //
 // Module stays framework code rather than an envelope. It answers the module
-// contract the kernel collects -- Routes and Migrations included -- so the
-// outbox table travels with the module that owns it.
+// contract the kernel collects, whose Routes takes the framework's router, and
+// its Migrations are hesape/events.Module's, so the outbox table has one
+// definition and travels with the module that owns it.
 package events
