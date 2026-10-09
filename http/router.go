@@ -41,9 +41,10 @@ type Route = routing.Route
 //     there;
 //   - the renderer and the flash are fields here, and hesape/routing
 //     deliberately holds neither;
-//   - Action and Resource do not exist there in this shape, because turning a
-//     func(*Context) error into an http.Handler is the request layer's job and
-//     hesape/routing takes that as a parameter.
+//   - Action, Resource, Singleton, ResourceAction and Invokable do not exist
+//     there as methods, because turning a func(*Context) error into an
+//     http.Handler is the request layer's job and hesape/routing takes that as
+//     a parameter.
 //
 // It stores no routes of its own. Every registration goes straight through to
 // the hesape router, whose table is shared by every sub-router exactly as it

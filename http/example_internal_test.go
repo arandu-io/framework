@@ -4,7 +4,9 @@
 // Route, which is an alias for the route metadata type and has neither method.
 // Both were published to the reference for as long as they stood, because a
 // doc comment is text and nothing in the build reads it. These are the same
-// lines as functions, so the compiler reads them now.
+// lines as functions, so the compiler reads them now, and the lines on
+// Singleton, ResourceAction, Invokable and a nested Resource are here for the
+// same reason.
 
 package http_test
 
@@ -64,4 +66,67 @@ func ExampleRouter_Group() {
 	path, err := r.Table().URL("admin.comments")
 	fmt.Println(path, err)
 	// Output: /admin/comments <nil>
+}
+
+// tasks lists the tasks of a project and shows one.
+type tasks struct{}
+
+func (tasks) Index(*fhttp.Context) error { return nil }
+func (tasks) Show(*fhttp.Context) error  { return nil }
+
+func ExampleRouter_Resource_nested() {
+	r := fhttp.NewRouter()
+	r.Resource("projects.tasks", tasks{})
+
+	list, _ := r.Table().URL("projects.tasks.index", "3")
+	one, _ := r.Table().URL("projects.tasks.show", "9")
+	fmt.Println(list)
+	fmt.Println(one)
+	// Output:
+	// /projects/3/tasks
+	// /tasks/9
+}
+
+// settings shows and updates the one record there is.
+type settings struct{}
+
+func (settings) Show(*fhttp.Context) error   { return nil }
+func (settings) Update(*fhttp.Context) error { return nil }
+
+func ExampleRouter_Singleton() {
+	r := fhttp.NewRouter()
+	for _, route := range r.Singleton("settings", settings{}) {
+		fmt.Println(route.RouteName())
+	}
+
+	path, err := r.Table().URL("settings.show")
+	fmt.Println(path, err)
+	// Output:
+	// settings.show
+	// settings.update
+	// /settings <nil>
+}
+
+func ExampleRouter_ResourceAction() {
+	r := fhttp.NewRouter()
+	publish := func(*fhttp.Context) error { return nil }
+	r.ResourceAction(http.MethodPost, "notes", "publish", publish)
+
+	path, err := r.Table().URL("notes.publish", "7")
+	fmt.Println(path, err)
+	// Output: /notes/7/publish <nil>
+}
+
+// export is a controller with one action.
+type export struct{}
+
+func (export) Invoke(*fhttp.Context) error { return nil }
+
+func ExampleRouter_Invokable() {
+	r := fhttp.NewRouter()
+	r.Invokable(http.MethodPost, "/exports", export{}).Name("exports.store")
+
+	path, err := r.Table().URL("exports.store")
+	fmt.Println(path, err)
+	// Output: /exports <nil>
 }

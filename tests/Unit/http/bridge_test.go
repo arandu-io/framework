@@ -50,6 +50,10 @@ var (
 	_ routing.Destroyer[hhttp.Context] = fhttp.Destroyer(nil)
 	_ fhttp.Indexer                    = (*controller)(nil)
 	_ fhttp.Destroyer                  = (*controller)(nil)
+
+	// The single-action controller, instantiated on the same type.
+	_ fhttp.Invoker                  = routing.Invoker[hhttp.Context](nil)
+	_ routing.Invoker[hhttp.Context] = fhttp.Invoker(nil)
 )
 
 // renderer records what a handler asked to draw.

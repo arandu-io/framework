@@ -157,6 +157,24 @@ What to check:
 - **An application's own problem writer for these errors can go**, along with
   the `if ctx.WantsJSON()` branch in front of it.
 
+### A dot in a `Router.Resource` name nests the resource
+
+`Router.Resource` hands its name to `routing.Resource`, which read it as one
+path segment, dots included, and now reads a dot as nesting, shallow: the list,
+the form and the store under the parent, the four that act on one record at the
+record's own path, every route still named with the whole dotted name. Each
+parameter of a nested resource is the singular of its segment.
+
+| call | before | now |
+| --- | --- | --- |
+| `r.Resource("projects.tasks", c)`, the list | `GET /projects.tasks` | `GET /projects/{project}/tasks` |
+| `r.Resource("projects.tasks", c)`, one record | `GET /projects.tasks/{id}` | `GET /tasks/{task}` |
+| `r.Resource("invoices", c)` | `GET /invoices/{id}` | unchanged |
+
+What to check: a controller registered under a dotted name reads `{task}` where
+it read `{id}`, and loads the parent named by `{project}` under its Grant. To
+keep a dot as a literal segment, register the routes one by one with `Action`.
+
 ## v0.50.0 — the guards carry the subject, an action's error is answered with its status, a guest's CSRF token is bound to the guest, and the rate limit asks the store
 
 This release requires `hesape` v0.44.0. One signature changes and stops
