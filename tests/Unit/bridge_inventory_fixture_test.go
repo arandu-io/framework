@@ -188,6 +188,9 @@ var allowedHesapeImports = bridgeSurface{
 	// http is here because CSRFProtect puts the token it issued on the request
 	// context with http.WithCSRFToken, the key view.New reads. The http bridge is
 	// frozen and does not re-export it.
+	//
+	// exception also writes the problem document a refused JSON client gets,
+	// through exception.WriteProblem, the one writer of that shape.
 	"http/middleware": inventoryItems(`
 		github.com/arandu-io/hesape/auth github.com/arandu-io/hesape/exception
 		github.com/arandu-io/hesape/http

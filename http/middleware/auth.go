@@ -260,7 +260,7 @@ func sendTo(w http.ResponseWriter, r *http.Request, to string) {
 // withSubject returns the request carrying the subject a guard loaded from the
 // session.
 //
-// One function for every guard, so they cannot disagree about where the
+// One function for every session guard, so they cannot disagree about where the
 // subject goes: it goes under auth.WithSubject, which is the key Context.User,
 // auth.SubjectFrom and every policy read. The value is the one the session
 // answered with, not a copy assembled from the request.
@@ -274,5 +274,15 @@ func withSubject(r *http.Request, subject security.Subject) *http.Request {
 	if current, ok := auth.SubjectFrom(r.Context()); ok && current.ID == subject.ID && current.Tenant == subject.Tenant {
 		return r
 	}
+	return carrySubject(r, subject)
+}
+
+// carrySubject returns the request carrying subject, replacing whatever subject
+// it carried before.
+//
+// It is the one place a guard in this package writes the subject, the session
+// guards through withSubject and RequireToken directly, so every guard puts it
+// under the key Context.User reads.
+func carrySubject(r *http.Request, subject security.Subject) *http.Request {
 	return r.WithContext(auth.WithSubject(r.Context(), subject))
 }
