@@ -23,8 +23,8 @@ const DefaultQueue = hjobs.DefaultQueue
 // renamed ID to UUID, added three fields and put a driver behind the job so
 // it can settle itself. Two things outside this module read this shape: a
 // driver writes j.ID into a column or marshals this struct to JSON and back,
-// and `aru make:job` generates against it. An alias would rename a column and a
-// wire field at once.
+// and a handler a project already wrote against this package reads j.ID. An
+// alias would rename a column and a wire field at once.
 //
 // The three fields hesape added -- DisplayName, Exceptions and Attributes --
 // and the settlement bookkeeping behind them have no counterpart here, and
@@ -115,10 +115,11 @@ func (j Job) Decode(v any) error {
 // the database from a worker, which is the whole point of the Grant existing.
 //
 // It stays declared here rather than aliasing hesape/queue.Handler, which takes
-// a *jobs.Job so the handler can release or park its own job. Every handler in
-// a project is written against this signature -- `aru make:job` emits it -- and
-// an alias would ask all of them to be rewritten, which is the opposite of what
-// a bridge is for.
+// a *jobs.Job so the handler can release or park its own job. A handler a
+// project already wrote against this package has this signature, and an alias
+// would ask all of them to be rewritten, which is the opposite of what a bridge
+// is for. A new handler is not written against it: the job generator emits one
+// against hesape/queue directly.
 type Handler interface {
 	Handle(ctx context.Context, g security.Grant, j Job) error
 }
