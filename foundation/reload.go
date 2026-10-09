@@ -1,10 +1,12 @@
 package foundation
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,7 +24,7 @@ import (
 //
 // That package exports exactly one symbol from the file, ReloadTagger, and this
 // package aliases it. Everything the reload actually needs -- devReload,
-// liveReload, htmlRecorder and its five methods, newBootID -- is unexported, and
+// liveReload, htmlRecorder and its methods, newBootID -- is unexported, and
 // so is the whole of hesape/foundation/internal.go, which is where
 // internalPrefix, exceptInternal and requireTracingSecret restated below come
 // from. Go has no way to reach any of them from another module.
@@ -36,6 +38,10 @@ import (
 // and that is a change to a published module rather than a rewrite here. Until
 // it happens the copy stays, with this note, so that nobody deletes it believing
 // an alias will do.
+//
+// The copy is not byte for byte: htmlRecorder here also answers Unwrap and
+// Hijack, so a handler behind it can lift its write deadline and take the
+// connection over the way it can in production, where the recorder is absent.
 //
 // # Why it asks rather than listens
 //
@@ -171,6 +177,7 @@ type htmlRecorder struct {
 	reloadTag []byte
 	passing   bool // decided: not a document, writing straight through
 	wrote     bool // the header has gone out
+	hijacked  bool // the handler took the connection; nothing is sent on it
 }
 
 func (h *htmlRecorder) WriteHeader(status int) {
@@ -211,8 +218,24 @@ func (h *htmlRecorder) Flush() {
 // middleware is not mounted, and not in development, where it is.
 func (h *htmlRecorder) Unwrap() http.ResponseWriter { return h.ResponseWriter }
 
+// Hijack takes the connection over through the writer underneath, and marks
+// the response as one this recorder must not send.
+//
+// It is a method rather than left to Unwrap because http.ResponseController
+// asks the outermost writer for Hijack before it unwraps, and a takeover that
+// went around this recorder would leave it sending its empty buffer, with a
+// status, onto a connection that is no longer the server's once the handler
+// returns.
+func (h *htmlRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, brw, err := http.NewResponseController(h.ResponseWriter).Hijack()
+	if err == nil {
+		h.hijacked = true
+	}
+	return conn, brw, err
+}
+
 func (h *htmlRecorder) finish() {
-	if h.passing {
+	if h.passing || h.hijacked {
 		return
 	}
 	body := h.buf.Bytes()
