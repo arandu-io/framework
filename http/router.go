@@ -17,8 +17,7 @@ import (
 
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
-	"github.com/arandu-io/hesape/database"
-	"github.com/arandu-io/hesape/database/model"
+	"github.com/arandu-io/hesape/exception"
 	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/routing"
 )
@@ -77,9 +76,11 @@ func (r *Router) WithRenderer(rd Renderer) *Router {
 //
 // The kernel calls it at boot, the way it calls WithRenderer, so no application
 // wires it and none can forget to. Without it a handler that returns
-// validation.Errors reaches the panic path, which is the honest answer: a
-// rejection that cannot be flashed is a rejection nobody will see, and a page
-// that fails loudly beats a form that silently comes back blank.
+// validation.Errors to a page reaches the panic path, which is the honest
+// answer: a rejection that cannot be flashed is a rejection nobody will see,
+// and a page that fails loudly beats a form that silently comes back blank. A
+// request that wants JSON does not need it, because its messages travel in the
+// body of the answer rather than to the next page.
 func (r *Router) WithFlash(f *security.Flash) *Router {
 	g := *r
 	g.flash = f
@@ -193,37 +194,62 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) { r.inner.S
 // closes over -- the renderer, the route table and the flash -- reach it from
 // the router, and a function taking only the action reaches none of them; the
 // method value r.adapt is the one-argument function routing.Adapter asks for.
-// So this is where it is written, once, for both Action and Resource.
+// So this is where it is written, once, for every registration that takes a
+// controller action.
 //
 // An error reaching here that nothing below claims is one the handler could
 // not handle, so it goes to the panic path: the error page in development, 500
 // in production. Swallowing it would answer 200 with an empty body, which is
 // the failure nobody debugs.
 //
-// Two kinds of error are not that. validation.Errors is not a failure the
-// handler could not handle, it is the answer: a controller returns it and this
-// turns it into the flash and the redirect back. And an error that says which
-// status it is -- a record that does not exist, a refusal, an expired form, a
-// duplicate key, or an error declaring HTTPStatus, which is how a body over the
-// size limit arrives as 413 -- is answered with that status; see statusFor for
-// the closed list. Both branches are here, once, for the reason Redirect
-// and Refuse are one function each: the last time a decision of this shape
-// lived at every call site there were forty-one copies of it, and the failure
-// they were written to answer is invisible when one of them is wrong.
+// Two kinds of error are not that, and each is answered in the representation
+// the request asked for:
+//
+//	                    a page                 a request that wants JSON
+//	validation.Errors   Reject: flash, back    422 problem, errors member
+//	a named status      Refuse, that status    problem, that status
+//
+// validation.Errors is not a failure the handler could not handle, it is the
+// answer, and a failed Validate reads as one. A page gets the flash and the
+// redirect back, because a 422 with the messages in its body is thrown away by
+// htmx and posted again by a reload. A client that wants JSON has no form to go
+// back to, so it gets the messages keyed by field, through
+// exception.WriteValidationProblem.
+//
+// An error that says which status it is -- a record that does not exist, a
+// refusal, an expired form, a duplicate key, or an error declaring HTTPStatus,
+// which is how a body over the size limit arrives as 413 -- is answered with
+// that status. The status is exception.StatusOf's, the one table every adapter
+// reads, so the same error is answered with the same status here and in the
+// exception handler; its doc holds the closed list and its order. The sentence
+// is statusSentence's in both representations, so the error's own text stays
+// out of either.
+//
+// Which representation is Context.WantsJSON's answer: the request asked for
+// JSON in Accept, or it is an XHR that is not htmx. It is the rule the exception
+// handler applies to a failure that never reached an action, so one request is
+// answered in one representation wherever it failed.
+//
+// Both branches are here, once, for the reason Redirect and Refuse are one
+// function each: the last time a decision of this shape lived at every call
+// site there were forty-one copies of it, and the failure they were written to
+// answer is invisible when one of them is wrong.
 func (r *Router) adapt(h func(*Context) error) http.Handler {
 	renderer, urls, flash := r.render, r.table.inner, r.flash
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		err := h(hhttp.NewContext(w, req, renderer, urls))
+		ctx := hhttp.NewContext(w, req, renderer, urls)
+		err := h(ctx)
 		if err == nil {
 			return
 		}
+		wantsJSON := ctx.WantsJSON()
 
 		var rejected validation.Errors
-		if errors.As(err, &rejected) && flash != nil {
+		if errors.As(err, &rejected) {
 			if !rejected.Any() {
 				// An empty set of errors returned as an error is a handler that
 				// wrote `return errs` without asking whether anything failed.
-				// Redirecting on it sends the person back to the form they just
+				// Answering it sends the person back to the form they just
 				// filled in with nothing on it and no reason given -- the exact
 				// failure this path exists to remove, produced by the path
 				// itself. It is a defect in the handler, so it is answered like
@@ -231,74 +257,37 @@ func (r *Router) adapt(h func(*Context) error) http.Handler {
 				panic("http: a handler returned an empty validation.Errors. " +
 					"Return nil when nothing failed: `if errs.Any() { return errs }`")
 			}
+			if wantsJSON {
+				exception.WriteValidationProblem(w, req, rejected)
+				return
+			}
+			if flash == nil {
+				// A page has nowhere to show the messages but the flash, and a
+				// rejection nobody will see is answered as the defect it is
+				// rather than as a bare 422. See WithFlash.
+				panic(err)
+			}
 			Reject(w, req, flash, rejected)
 			return
 		}
 
-		if status, ok := statusFor(err); ok {
-			if status < 400 || status > 599 {
-				// A status outside the error range is not an answer to a
-				// failure: 200 would tell the client the request worked, and
-				// a 3xx with no Location sends it nowhere. It is a defect in
-				// the error type, and it is answered like one.
-				panic(fmt.Errorf("http: %T asked to be answered with status %d, and an error is answered with 400-599: %w", err, status, err))
-			}
-			Refuse(w, req, status, statusSentence(status))
+		status, ok := exception.StatusOf(err)
+		if !ok {
+			panic(err)
+		}
+		if status < 400 || status > 599 {
+			// A status outside the error range is not an answer to a
+			// failure: 200 would tell the client the request worked, and a
+			// 3xx with no Location sends it nowhere. It is a defect in the
+			// error type, and it is answered like one.
+			panic(fmt.Errorf("http: %T asked to be answered with status %d, and an error is answered with 400-599: %w", err, status, err))
+		}
+		if wantsJSON {
+			exception.WriteProblem(w, req, status, statusSentence(status))
 			return
 		}
-		panic(err)
+		Refuse(w, req, status, statusSentence(status))
 	})
-}
-
-// statusPageExpired is the status of a form whose CSRF token is no longer
-// valid. It is not in any RFC: 403 would say the account may not do this, when
-// the account may and the page is simply old.
-const statusPageExpired = 419
-
-// statusFor reads an error chain and answers the status it asks for, and
-// whether it asked at all.
-//
-// The list is closed, and the order is the order below, first match wins:
-//
-//	model.ErrModelNotFound, database.ErrRecordNotFound   404
-//	security.ErrForbidden                                403
-//	security.ErrCSRF                                     419
-//	database.ErrUniqueViolation                          409
-//	an error with a method HTTPStatus() int              that status
-//
-// errors.Is and errors.As walk the chain, so a sentinel wrapped with
-// fmt.Errorf("loading invoice %d: %w", id, err) keeps its status, and the
-// context it was wrapped with stays out of the answer.
-//
-// A duplicate key is 409 because it is the request that collided with a row
-// already there -- two sign-ups for one address, a slug taken between the form
-// and the insert -- and a 500 would send somebody to the error page for it. The
-// engine decides it from its own error code, never from the message.
-//
-// The last entry is how an application states a status for a failure of its
-// own domain: a type with an HTTPStatus method, matched by its method set, so
-// it needs no import of this package. There is no registry of translators
-// beside it -- a second place to map an error to a status is a second answer
-// for the same error.
-//
-// False means nobody claimed the error, and the caller panics with it.
-func statusFor(err error) (int, bool) {
-	switch {
-	case errors.Is(err, model.ErrModelNotFound), errors.Is(err, database.ErrRecordNotFound):
-		return http.StatusNotFound, true
-	case errors.Is(err, security.ErrForbidden):
-		return http.StatusForbidden, true
-	case errors.Is(err, security.ErrCSRF):
-		return statusPageExpired, true
-	case errors.Is(err, database.ErrUniqueViolation):
-		return http.StatusConflict, true
-	}
-
-	var claimed interface{ HTTPStatus() int }
-	if errors.As(err, &claimed) {
-		return claimed.HTTPStatus(), true
-	}
-	return 0, false
 }
 
 // statusSentence is what a person reads when an error is answered with a
@@ -309,7 +298,7 @@ func statusFor(err error) (int, bool) {
 // context -- an id, a table, a query -- that is not for whoever made the
 // request.
 func statusSentence(status int) string {
-	if status == statusPageExpired {
+	if status == exception.StatusPageExpired {
 		return "this page has expired: reload it and submit again"
 	}
 	if text := http.StatusText(status); text != "" {

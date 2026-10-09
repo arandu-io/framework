@@ -15,6 +15,8 @@ import (
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/hesape/database"
 	"github.com/arandu-io/hesape/database/model"
+	"github.com/arandu-io/hesape/exception"
+	hvalidation "github.com/arandu-io/hesape/validation"
 )
 
 // domainError is an application's own failure, declaring its status the one
@@ -62,9 +64,11 @@ func TestAnErrorThatNamesItsStatusIsAnsweredWithIt(t *testing.T) {
 		{"unique violation", database.ErrUniqueViolation, http.StatusConflict},
 		{"declared status", domainError{status: http.StatusConflict}, http.StatusConflict},
 		{"declared server status", domainError{status: http.StatusServiceUnavailable}, http.StatusServiceUnavailable},
-		// The order is fixed: a sentinel in the chain is matched before the
-		// method of the error that wraps it.
-		{"sentinel before declared status", domainError{status: http.StatusConflict, cause: security.ErrForbidden}, http.StatusForbidden},
+		// The order is exception.StatusOf's: the status an error declares is
+		// the explicit statement and wins over a sentinel it wraps, which may
+		// only be its cause.
+		{"declared status before the sentinel it wraps", domainError{status: http.StatusConflict, cause: security.ErrForbidden}, http.StatusConflict},
+		{"HTTPError before the sentinel it wraps", &exception.HTTPError{Status: http.StatusNotFound, Err: security.ErrForbidden}, http.StatusNotFound},
 	}
 
 	for _, tc := range cases {
@@ -90,6 +94,9 @@ func TestAnErrorThatNamesItsStatusIsAnsweredWithIt(t *testing.T) {
 				if strings.TrimSpace(rec.Body.String()) == "" {
 					t.Error("the answer has no sentence for the person to read")
 				}
+				if got := rec.Header().Get("Content-Type"); got == exception.ProblemContentType {
+					t.Error("a page was answered with a problem document")
+				}
 			})
 
 			t.Run(name+", htmx", func(t *testing.T) {
@@ -102,6 +109,75 @@ func TestAnErrorThatNamesItsStatusIsAnsweredWithIt(t *testing.T) {
 					t.Errorf("HX-Refresh = %q, want true: without it the click does nothing visible", got)
 				}
 			})
+
+			t.Run(name+", json", func(t *testing.T) {
+				rec := serveJSON(t, failing(err))
+				if rec.Code != tc.want {
+					t.Fatalf("status = %d, want %d", rec.Code, tc.want)
+				}
+				p := problemOf(t, rec)
+				if p.Status != tc.want {
+					t.Errorf("the problem says status %d, want %d", p.Status, tc.want)
+				}
+				if p.Errors != nil {
+					t.Errorf("a refusal carries an errors member: %v", p.Errors)
+				}
+				if body := rec.Body.String(); strings.Contains(body, "billing_secret_table") || strings.Contains(body, err.Error()) {
+					t.Errorf("the error's own text reached the client: %q", body)
+				}
+				if got := rec.Header().Get("HX-Refresh"); got != "" {
+					t.Errorf("a JSON client was answered with HX-Refresh %q", got)
+				}
+			})
+		}
+	}
+}
+
+// TestTheAdapterReadsTheOneStatusTable holds the adapter to exception.StatusOf:
+// every error the table claims is answered with the status the table reads off
+// it, in both representations. A table of the adapter's own, even one with the
+// same rows in another order, fails here on the error that declares a status
+// and wraps a sentinel.
+//
+// Validation failures are in the corpus for the JSON representation only. A
+// page answers them with the redirect back, which is not a status the table
+// has an opinion on.
+func TestTheAdapterReadsTheOneStatusTable(t *testing.T) {
+	rejected := validation.Errors{"title": {"this field is required"}}
+	corpus := []struct {
+		err        error
+		validation bool
+	}{
+		{err: model.ErrModelNotFound},
+		{err: &model.ModelNotFoundError{Model: "invoices", IDs: []any{42}}},
+		{err: database.ErrRecordNotFound},
+		{err: security.ErrForbidden},
+		{err: security.ErrCSRF},
+		{err: database.ErrUniqueViolation},
+		{err: domainError{status: http.StatusConflict}},
+		{err: domainError{status: http.StatusConflict, cause: security.ErrForbidden}},
+		{err: domainError{status: http.StatusForbidden, cause: database.ErrRecordNotFound}},
+		{err: &exception.HTTPError{Status: http.StatusNotFound, Err: security.ErrForbidden}},
+		{err: &exception.HTTPError{Status: http.StatusTooManyRequests}},
+		{err: rejected, validation: true},
+		{err: hvalidation.WithMessages(rejected), validation: true},
+	}
+
+	for _, tc := range corpus {
+		err := fmt.Errorf("handling: %w", tc.err)
+		want, claimed := exception.StatusOf(err)
+		if !claimed {
+			t.Fatalf("%T: exception.StatusOf does not claim it, so it does not belong in this corpus", tc.err)
+		}
+
+		if rec := serveJSON(t, failing(err)); rec.Code != want {
+			t.Errorf("%v, json: answered %d, exception.StatusOf reads %d", tc.err, rec.Code, want)
+		}
+		if tc.validation {
+			continue
+		}
+		if rec := serve(t, err, false); rec.Code != want {
+			t.Errorf("%v, page: answered %d, exception.StatusOf reads %d", tc.err, rec.Code, want)
 		}
 	}
 }
@@ -171,6 +247,29 @@ func TestValidationErrorsAreStillFlashedAndRedirected(t *testing.T) {
 	}
 	if got := rec.Header().Get("Location"); got != "/invoices/42/edit" {
 		t.Errorf("Location = %q, want the form it came from", got)
+	}
+}
+
+// A failed Validate is the same rejection as validation.Errors: the exception
+// reads as one, so a page gets the flash and the redirect back where it used to
+// reach the panic path as an error nobody claimed.
+func TestAFailedValidateIsFlashedAndRedirected(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/invoices/42", nil)
+	req.Host = "example.test"
+	req.Header.Set("Referer", "http://example.test/invoices/42/edit")
+
+	failed := hvalidation.WithMessages(map[string][]string{"title": {"this field is required"}})
+	rec := httptest.NewRecorder()
+	failing(fmt.Errorf("saving: %w", failed)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", rec.Code)
+	}
+	if got := rec.Header().Get("Location"); got != "/invoices/42/edit" {
+		t.Errorf("Location = %q, want the form it came from", got)
+	}
+	if !setsCookie(rec, security.FlashCookieName) {
+		t.Error("the messages were not flashed, so the form comes back with no reason given")
 	}
 }
 

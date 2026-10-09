@@ -168,13 +168,16 @@ var allowedHesapeImports = bridgeSurface{
 	"geo": inventoryItems(`
 		github.com/arandu-io/hesape/geo
 	`),
-	// database and database/model are here for two sentinels: the action
-	// adapter answers ErrRecordNotFound and ErrModelNotFound with 404 instead
-	// of the panic path, and errors.Is needs the value it compares against.
+	// exception is here because the action adapter answers an error with the
+	// status exception.StatusOf reads off it, the one status table, and
+	// answers a request that wants JSON with the problem document
+	// exception.WriteProblem and exception.WriteValidationProblem write, the one
+	// writer of that shape. A second table here would be a second answer for
+	// the same error.
 	"http": inventoryItems(`
-		github.com/arandu-io/hesape/database github.com/arandu-io/hesape/database/model
-		github.com/arandu-io/hesape/http github.com/arandu-io/hesape/pipeline
-		github.com/arandu-io/hesape/routing github.com/arandu-io/hesape/validation
+		github.com/arandu-io/hesape/exception github.com/arandu-io/hesape/http
+		github.com/arandu-io/hesape/pipeline github.com/arandu-io/hesape/routing
+		github.com/arandu-io/hesape/validation
 	`),
 	// exception is here because Recover installs hesape/exception.Recover
 	// rather than writing the panic path a second time. It is the one

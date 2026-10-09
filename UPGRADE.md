@@ -19,11 +19,12 @@ down here fails the build.
 
 ---
 
-## Unreleased — an API request authenticates by bearer token, and a write can be replayed by its Idempotency-Key
+## Unreleased — an API request authenticates by bearer token, a write can be replayed by its Idempotency-Key, and an action's error is answered by the one status table, as JSON when JSON was asked for
 
-Nothing stops compiling, and `apidiff` reports only additions. The entry is here
-because an application that wrote either of these by hand has code to delete,
-and because the answers a client receives are part of the contract.
+This release requires `hesape` v0.50.0. Nothing stops compiling, and `apidiff`
+reports only additions. The entry is here because an application that wrote
+any of these by hand has code to delete, and because the answers a client
+receives are part of the contract.
 
 ### `RequireToken` carries the subject of a bearer token
 
@@ -94,6 +95,54 @@ What to check:
   a panic and a 500, never a write run anyway.
 - The body is read in full before the handler runs and handed to it unchanged;
   a limit mounted earlier still applies and is answered 413.
+
+### An action's error is read by `exception.StatusOf`, and a status the error declares wins
+
+The action adapter behind `Router.Action` and `Router.Resource` read a table of
+its own, which matched the sentinels before an error's `HTTPStatus()`. It now
+reads `hesape/exception.StatusOf`, the table `exception.Handler` reads too, so
+an error is answered with the same status wherever it surfaces. The rows are
+the ones it had; the order is not. A status the error declares is the explicit
+statement and wins over a sentinel it wraps, which may be only its cause:
+
+| error an action returns | before | now |
+| --- | --- | --- |
+| `&exception.HTTPError{Status: 404, Err: security.ErrForbidden}` | 403 | 404 |
+| a type of your own with `HTTPStatus() int` wrapping `database.ErrRecordNotFound` | 404 | its own status |
+| a failed `Validate`, a `*validation.ValidationException` | panic, 500 | the flash and the redirect back, as `validation.Errors` |
+
+What to check: an error type whose `HTTPStatus()` was written as a fallback,
+counting on the sentinel it wraps to decide the answer. Return the sentinel, or
+declare the status you mean.
+
+### A request that wants JSON gets a problem document
+
+An action's error is now answered in the representation the request asked for.
+`Context.WantsJSON` decides it: `Accept` names `application/json`, or the
+request is an XHR that is not htmx. It is the rule the exception handler
+already applied to a failure that never reached an action.
+
+| error an action returns | a page, unchanged | a request that wants JSON, before | now |
+| --- | --- | --- | --- |
+| `validation.Errors`, or a failed `Validate` | flash, 303 back | flash, 303 back | 422 `application/problem+json`, the messages in `errors` keyed by field |
+| an error `exception.StatusOf` claims | `Refuse`: the status and a sentence | the same, as `text/plain` | the status as `application/problem+json` |
+
+The problem is written by `exception.WriteProblem` and
+`exception.WriteValidationProblem`, with `Cache-Control: no-store, private`, the
+request id and the path without its query. The sentence in `detail` is the one
+a page shows, never the error's own text.
+
+What to check:
+
+- **A JSON client that followed the 303** and read the flash, or parsed the
+  `text/plain` body of a refusal, reads the problem instead. It receives no
+  `Location` and no flash cookie.
+- **An htmx request is answered as a page** whatever it accepts, because it
+  swaps HTML.
+- **A JSON client no longer needs the flash**: on a router without `WithFlash`
+  its rejection is answered 422. A page's rejection there still panics.
+- **An application's own problem writer for these errors can go**, along with
+  the `if ctx.WantsJSON()` branch in front of it.
 
 ## v0.50.0 — the guards carry the subject, an action's error is answered with its status, a guest's CSRF token is bound to the guest, and the rate limit asks the store
 
