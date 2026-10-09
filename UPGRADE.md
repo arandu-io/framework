@@ -19,7 +19,7 @@ down here fails the build.
 
 ---
 
-## Unreleased — the session is configured by what the session store reads, and nothing else
+## v0.55.0 — the session is configured by what the session store reads, and nothing else
 
 This release requires `hesape` v0.51.0. `apidiff` reports one incompatible
 change, the type of `Configuration.Session`, and an application that reads
