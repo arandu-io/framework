@@ -132,8 +132,9 @@ What to check:
 
 An action's error is now answered in the representation the request asked for.
 `Context.WantsJSON` decides it: `Accept` names `application/json`, or the
-request is an XHR that is not htmx. It is the rule the exception handler
-already applied to a failure that never reached an action.
+request is an XHR that is not htmx. It is the default rule the exception
+handler already applied to a failure that never reached an action; an
+`exception.Config.RenderJSONWhen` an application set is not read here.
 
 | error an action returns | a page, unchanged | a request that wants JSON, before | now |
 | --- | --- | --- | --- |

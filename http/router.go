@@ -228,9 +228,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) { r.inner.S
 // 429 -- go out with it in both; see errorHeaders.
 //
 // Which representation is Context.WantsJSON's answer: the request asked for
-// JSON in Accept, or it is an XHR that is not htmx. It is the rule the exception
-// handler applies to a failure that never reached an action, so one request is
-// answered in one representation wherever it failed.
+// JSON in Accept, or it is an XHR that is not htmx. It is the exception
+// handler's default rule for a failure that never reached an action, so unless
+// an application replaced that default, one request is answered in one
+// representation wherever it failed.
 //
 // Both branches are here, once, for the reason Redirect and Refuse are one
 // function each: the last time a decision of this shape lived at every call
