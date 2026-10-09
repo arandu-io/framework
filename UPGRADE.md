@@ -19,6 +19,82 @@ down here fails the build.
 
 ---
 
+## Unreleased — an API request authenticates by bearer token, and a write can be replayed by its Idempotency-Key
+
+Nothing stops compiling, and `apidiff` reports only additions. The entry is here
+because an application that wrote either of these by hand has code to delete,
+and because the answers a client receives are part of the contract.
+
+### `RequireToken` carries the subject of a bearer token
+
+`middleware.RequireToken(tokens)` reads `Authorization: Bearer`, hands the
+application's `TokenResolver` the SHA-256 of the token — a `TokenDigest`, never
+the token — and puts the subject it returns on the request context, where
+`ctx.User()` reads it exactly as it does behind `RequireAuth`. The tenant is the
+subject's; nothing on the request names it.
+
+Issuing, storing, scoping, expiring and revoking tokens stay the
+application's. What it stores is `middleware.DigestToken(token).String()`, and
+`ResolveToken` looks the digest up and answers the subject, or
+`middleware.ErrUnknownToken`:
+
+```go
+func (r TokenRepo) ResolveToken(ctx context.Context, d middleware.TokenDigest) (security.Subject, error) {
+	// SELECT user_id, tenant_id, actions FROM api_tokens
+	//  WHERE digest = $1 AND revoked_at IS NULL AND expires_at > now()
+	// no row: return security.Subject{}, middleware.ErrUnknownToken
+}
+
+api := r.Group("/api", middleware.RequireToken(tokens))
+```
+
+What to check:
+
+- **A token stored in the clear has to be re-stored as its digest**, or
+  re-issued. The resolver is never handed the token, so a lookup by the token
+  finds nothing and every request is answered 401.
+- **A missing token and an unknown one are the same 401**, with
+  `WWW-Authenticate: Bearer` and the same body; a client that wants JSON gets a
+  problem document. A resolver error other than `ErrUnknownToken` is not a 401:
+  it panics, and the recover middleware answers 500.
+- **The token is the only credential the route takes.** There is no fallback to
+  the session cookie, and a subject already on the request is replaced by the
+  token's rather than kept, so a cookie cannot widen what a token may do.
+- An application helper that parsed the header and called its own token table
+  can go, along with the `actor()` that read the subject back.
+
+### `Idempotent` replays a write by its `Idempotency-Key`
+
+`middleware.Idempotent(store, ttl)` runs the first `POST`, `PUT`, `PATCH` or
+`DELETE` carrying a key and stores its answer — status, the representation
+headers (never `Set-Cookie`), body — for `ttl`. A retry with the same key and
+the same request gets that answer with `Idempotent-Replayed: true` and does not
+run. The same key on another body, method or address is 422; a copy that
+arrives while the first is still running is 409 with `Retry-After`; a malformed
+key is 400. An answer of 400 or above is not kept, so its retry runs.
+
+The key is scoped to the tenant and the id of the subject on the context, so it
+is mounted **after** the guard:
+
+```go
+store := cache.NewDatabaseStore(...) // or the RESP store: shared by every process
+r.Post("/api/charges", charges.Store,
+	middleware.RequireToken(tokens),
+	middleware.Idempotent(store, 24*time.Hour))
+```
+
+What to check:
+
+- **A request with a key and no authenticated subject panics**, naming the fix.
+  Mounted before the guard, or on a public route, the middleware has nobody to
+  scope the key to, and it refuses rather than run the write unprotected.
+- **The store must be shared by every process that serves the route.**
+  `*cache.ArrayStore` keeps keys in one process's memory, and the next process
+  runs the retry again. A store that cannot be read before the handler runs is
+  a panic and a 500, never a write run anyway.
+- The body is read in full before the handler runs and handed to it unchanged;
+  a limit mounted earlier still applies and is answered 413.
+
 ## v0.50.0 — the guards carry the subject, an action's error is answered with its status, a guest's CSRF token is bound to the guest, and the rate limit asks the store
 
 This release requires `hesape` v0.44.0. One signature changes and stops
