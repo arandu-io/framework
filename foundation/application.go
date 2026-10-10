@@ -25,6 +25,7 @@ import (
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/config"
+	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/routing"
 )
 
@@ -505,7 +506,13 @@ func handleLive(w http.ResponseWriter, _ *http.Request) {
 func (a *Application) Handler() http.Handler {
 	// Live reload is outermost after the logger, so it sees the finished
 	// document rather than a handler's intention to write one.
-	outer := append([]fhttp.Middleware{observability.RootLogger(a.log)}, devReload(a.isDev(), a.reloadTag)...)
+	//
+	// The application name goes on the context right below the logger, above
+	// every middleware and every route, so whatever draws a page from here down
+	// -- the application's own controllers, a generated one, a module's screen,
+	// a route no CSRF protection covers -- finds the same brand. See
+	// carryAppName.
+	outer := append([]fhttp.Middleware{observability.RootLogger(a.log), carryAppName(a.cfg.App.Name)}, devReload(a.isDev(), a.reloadTag)...)
 
 	// The framework's own routes skip the application's pipeline, the security
 	// headers an application mounts there included, so they get theirs here.
@@ -539,6 +546,35 @@ func (a *Application) Handler() http.Handler {
 	}
 
 	return fhttp.Chain(a.router, append(outer, app...)...)
+}
+
+// carryAppName puts the application's configured name on every request
+// context, where view.New reads it into Page.AppName.
+//
+// The name is configuration, the same on every request, so it is written once
+// here rather than passed by each controller: a controller that forgot it drew
+// a navigation bar with no brand, and a page drawn by a generated controller or
+// by a module had no way to know the name at all, because neither reads the
+// application's configuration. The Application installs it rather than
+// bootstrap/app.go because there is nothing to decide, and a line an
+// application can leave out is one it leaves out.
+//
+// It is not wrapped in exceptInternal. The framework's own routes draw no
+// page from view.New, so the name costs them one context value and changes
+// nothing they answer.
+//
+// An empty name puts nothing on the context and leaves the request as it came,
+// so a page drawn under it has an empty AppName, as it would with no name at
+// all.
+func carryAppName(name string) fhttp.Middleware {
+	return func(next http.Handler) http.Handler {
+		if name == "" {
+			return next
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(hhttp.WithAppName(r.Context(), name)))
+		})
+	}
 }
 
 // internalPrefix is what this framework mounts for itself: the readiness probe,

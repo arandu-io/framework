@@ -165,9 +165,13 @@ var allowedHesapeImports = bridgeSurface{
 	"events": inventoryItems(`
 		github.com/arandu-io/hesape/events
 	`),
+	// http is here because the Application puts the configured name on every
+	// request context with http.WithAppName, the key view.New reads. The http
+	// bridge is frozen and does not re-export it.
 	"foundation": inventoryItems(`
 		github.com/arandu-io/hesape/cache github.com/arandu-io/hesape/config
-		github.com/arandu-io/hesape/foundation github.com/arandu-io/hesape/routing
+		github.com/arandu-io/hesape/foundation github.com/arandu-io/hesape/http
+		github.com/arandu-io/hesape/routing
 	`),
 	"foundation/bootstrap": inventoryItems(`
 		github.com/arandu-io/hesape/cache github.com/arandu-io/hesape/config
