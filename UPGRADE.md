@@ -19,6 +19,64 @@ down here fails the build.
 
 ---
 
+## v0.56.0 — the application name travels on the request, and the config bridge stops reading `SESSION_TTL`
+
+This release requires `hesape` v0.54.0. `apidiff` reports one incompatible
+change, in the `config` bridge, and an application that boots with
+`bootstrap.LoadConfiguration` compiles and boots unchanged.
+
+### `config.Config.SessionTTL` is removed, and `config.Load` no longer reads `SESSION_TTL`
+
+```
+- ./config.Config.SessionTTL: removed
+```
+
+`config.Load` read `SESSION_TTL` as seconds, twelve hours by default, and
+`Validate` refused a value at zero or below, while `LoadConfiguration`
+refuses `SESSION_TTL` whatever it says and lasts the session
+`SESSION_LIFETIME` minutes. Nothing in the framework built a session store
+from `Config.SessionTTL`.
+
+It is removed rather than deprecated, against the four steps under
+Deprecation below, because a field kept and never filled is a zero: a
+session store built from it would compile, boot, and sign everybody out on
+the next request. A removal stops the build instead.
+
+An application on the bridge that built its session store from
+`cfg.SessionTTL` moves to the boot path and its two values, and writes the
+lifetime in minutes:
+
+```
+SESSION_TTL=43200     →     SESSION_LIFETIME=720
+```
+
+```go
+fw, err := bootstrap.LoadConfiguration()
+sessions := security.NewSessionStore(fw.App.Key, fw.Session.Lifetime, fw.Session.Secure, backend)
+```
+
+`config.Load` now ignores `SESSION_TTL`: a value it used to refuse, such as
+`SESSION_TTL=12h` or `SESSION_TTL=0`, no longer stops it. `LoadConfiguration`
+refuses it exactly as in v0.55.0.
+
+### Every page carries the configured name, with nothing passed
+
+The `Application` puts `cfg.App.Name`, which is `APP_NAME`, on every request
+context with hesape's `http.WithAppName`, below the root logger and above the
+application's middleware and every route. `view.New` reads it into
+`Page.AppName`, so a page drawn by a generated controller, by a module's
+screen, or on a route outside every group and every CSRF protection draws the
+same brand.
+
+Nothing stops compiling. A controller that assigned `AppName` from its own
+configuration can delete the assignment, and a constructor argument that
+carried the name only for that can go with it. A controller that assigns
+another name on the value `New` returns still draws that one. `APP_NAME`
+left unset or empty is `arandu-app`, as it already was in `cfg.App.Name`, so
+the brand an application never named reads `arandu-app` where it was blank;
+set `APP_NAME`. A `Configuration` built by hand with an empty `App.Name` puts
+nothing on the request, and its pages draw no brand.
+
 ## v0.55.0 — the session is configured by what the session store reads, and nothing else
 
 This release requires `hesape` v0.51.0. `apidiff` reports one incompatible
