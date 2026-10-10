@@ -32,8 +32,7 @@ func validConfig() config.Config {
 			Connection: data.DialectSQLite,
 			Database:   "database/database.sqlite",
 		},
-		SessionTTL: time.Hour,
-		CSRFTTL:    time.Hour,
+		CSRFTTL: time.Hour,
 	}
 }
 
@@ -92,16 +91,14 @@ func TestDebugLogIsForbiddenInProduction(t *testing.T) {
 	}
 }
 
-// TestValidateRejectsANonPositiveTTL covers the two durations.
+// TestValidateRejectsANonPositiveTTL covers the CSRF token lifetime.
 //
-// Zero is what a variable that failed to parse leaves behind, and both zeros
-// are invisible until traffic arrives: a session that expires as it is written
-// signs everybody out on their next request, and a token that expires as it is
-// issued answers 419 on every form.
+// Zero is what a variable that failed to parse leaves behind, and it is
+// invisible until traffic arrives: a token that expires as it is issued
+// answers 419 on every form.
 func TestValidateRejectsANonPositiveTTL(t *testing.T) {
 	for name, broken := range map[string]func(*config.Config){
-		"SESSION_TTL": func(c *config.Config) { c.SessionTTL = 0 },
-		"CSRF_TTL":    func(c *config.Config) { c.CSRFTTL = -time.Second },
+		"CSRF_TTL": func(c *config.Config) { c.CSRFTTL = -time.Second },
 	} {
 		cfg := validConfig()
 		broken(&cfg)
@@ -314,9 +311,6 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.HTTPAddr != ":8080" {
 		t.Errorf("default HTTPAddr = %q, want :8080", cfg.HTTPAddr)
 	}
-	if cfg.SessionTTL != 12*time.Hour {
-		t.Errorf("default SessionTTL = %v, want 12h", cfg.SessionTTL)
-	}
 	if cfg.CSRFTTL != 2*time.Hour {
 		t.Errorf("default CSRFTTL = %v, want 2h", cfg.CSRFTTL)
 	}
@@ -328,10 +322,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadReadsTTLsInSeconds(t *testing.T) {
+func TestLoadReadsTheCSRFTTLInSeconds(t *testing.T) {
 	t.Setenv("APP_KEY", strings.Repeat("k", appKeyLen))
 	t.Setenv("DATABASE_URL", "sqlite://database/database.sqlite")
-	t.Setenv("SESSION_TTL", "60")
 	t.Setenv("CSRF_TTL", "90")
 
 	cfg, err := config.Load()
@@ -339,9 +332,6 @@ func TestLoadReadsTTLsInSeconds(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if cfg.SessionTTL != time.Minute {
-		t.Fatalf("SessionTTL = %v, want 1m", cfg.SessionTTL)
-	}
 	if cfg.CSRFTTL != 90*time.Second {
 		t.Fatalf("CSRFTTL = %v, want 1m30s", cfg.CSRFTTL)
 	}
@@ -353,9 +343,6 @@ func TestLoadRejectsInvalidTTLEnvironmentValues(t *testing.T) {
 		key   string
 		value string
 	}{
-		{name: "malformed session TTL", key: "SESSION_TTL", value: "one hour"},
-		{name: "zero session TTL", key: "SESSION_TTL", value: "0"},
-		{name: "negative session TTL", key: "SESSION_TTL", value: "-1"},
 		{name: "malformed CSRF TTL", key: "CSRF_TTL", value: "one hour"},
 		{name: "zero CSRF TTL", key: "CSRF_TTL", value: "0"},
 		{name: "negative CSRF TTL", key: "CSRF_TTL", value: "-1"},
@@ -365,7 +352,6 @@ func TestLoadRejectsInvalidTTLEnvironmentValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("APP_KEY", strings.Repeat("k", appKeyLen))
 			t.Setenv("DATABASE_URL", "sqlite://database/database.sqlite")
-			t.Setenv("SESSION_TTL", "60")
 			t.Setenv("CSRF_TTL", "60")
 			t.Setenv(tt.key, tt.value)
 
@@ -375,6 +361,25 @@ func TestLoadRejectsInvalidTTLEnvironmentValues(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.key) {
 				t.Errorf("the message does not name %s: %v", tt.key, err)
+			}
+		})
+	}
+}
+
+// TestLoadDoesNotReadSessionTTL: the session lasts SESSION_LIFETIME, in
+// minutes, and is configured by bootstrap.LoadConfiguration, which refuses
+// SESSION_TTL. This bridge reading it too, in seconds, was a second answer to
+// one setting: a value it could not parse stopped Load here while the other
+// loader said something else about it.
+func TestLoadDoesNotReadSessionTTL(t *testing.T) {
+	for _, value := range []string{"43200", "12h", "0", "-1", "one hour"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("APP_KEY", strings.Repeat("k", appKeyLen))
+			t.Setenv("DATABASE_URL", "sqlite://database/database.sqlite")
+			t.Setenv("SESSION_TTL", value)
+
+			if _, err := config.Load(); err != nil {
+				t.Fatalf("SESSION_TTL=%q reached Load: %v", value, err)
 			}
 		})
 	}

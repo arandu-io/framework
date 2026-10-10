@@ -11,8 +11,8 @@
 // This package is a bridge. It is removed in v1.0.0; import
 // github.com/arandu-io/framework/foundation/bootstrap directly.
 //
-// What replaces it is not a rename. Config was one struct of eleven fields that
-// one function read from end to end, and what answers now is one struct per
+// What replaces it is not a rename. Config is one struct of ten fields that
+// one function reads from end to end, and what answers now is one struct per
 // component, filled by bootstrap.LoadConfiguration from the same environment
 // and the same .env:
 //

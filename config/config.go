@@ -55,8 +55,13 @@ type Config struct {
 
 	RedisURL string
 
-	SessionTTL time.Duration
-	CSRFTTL    time.Duration
+	// CSRFTTL is how long an issued CSRF token is accepted.
+	//
+	// There is no session lifetime beside it. The session lasts
+	// bootstrap.Configuration.Session.Lifetime, read from SESSION_LIFETIME in
+	// minutes, and Load does not read SESSION_TTL: one setting read twice, in
+	// two units, answers twice.
+	CSRFTTL time.Duration
 
 	// TracingSecret enables the request Collector outside development for
 	// requests carrying it in the X-Arandu-Trace header. Empty disables it,
@@ -93,10 +98,6 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	sessionTTL, err := duration("SESSION_TTL", 12*time.Hour)
-	if err != nil {
-		return Config{}, err
-	}
 	csrfTTL, err := duration("CSRF_TTL", 2*time.Hour)
 	if err != nil {
 		return Config{}, err
@@ -108,7 +109,6 @@ func Load() (Config, error) {
 		AppKey:        key,
 		Database:      database,
 		RedisURL:      env("REDIS_URL", ""),
-		SessionTTL:    sessionTTL,
 		CSRFTTL:       csrfTTL,
 		TracingSecret: env("ARANDU_TRACING_SECRET", ""),
 		Editor:        env("ARANDU_EDITOR", "vscode"),
@@ -136,9 +136,6 @@ func (c Config) Validate() error {
 	}
 	if c.Env != EnvDev && c.HTTPAddr == "" {
 		return fmt.Errorf("HTTP_ADDR is required outside development")
-	}
-	if c.SessionTTL <= 0 {
-		return fmt.Errorf("SESSION_TTL is %v, and it is a count of seconds greater than zero: a session that expires as it is written signs everybody out on the next request", c.SessionTTL)
 	}
 	if c.CSRFTTL <= 0 {
 		return fmt.Errorf("CSRF_TTL is %v, and it is a count of seconds greater than zero: a token that expires as it is issued answers 419 on every form", c.CSRFTTL)
