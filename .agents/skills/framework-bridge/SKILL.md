@@ -12,7 +12,7 @@ at it, with a death date on every one.
 
 ```sh
 export GOWORK=off
-go list ./... | grep -vc '/tests'                                 # 20
+go list ./... | grep -vc '/tests'                                 # 22
 grep -rl "This package is a bridge" --include='doc.go' . | wc -l  # 15
 ```
 

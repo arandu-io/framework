@@ -15,7 +15,7 @@ Twenty packages, and fifteen of them are bridges.
 
 ```sh
 export GOWORK=off
-go list ./... | grep -vc '/tests'                                 # 20
+go list ./... | grep -vc '/tests'                                 # 22
 grep -rl "This package is a bridge" --include='doc.go' . | wc -l  # 15
 ```
 
