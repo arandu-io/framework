@@ -260,4 +260,10 @@ var allowedHesapeImports = bridgeSurface{
 	"view": inventoryItems(`
 		github.com/arandu-io/hesape/view
 	`),
+	// webhook is a route-only envelope like geo: the native package owns every
+	// action, table and task, and this package registers the actions on the
+	// router type until the envelope is gone. It declares no alias.
+	"webhook": inventoryItems(`
+		github.com/arandu-io/hesape/webhook
+	`),
 }
