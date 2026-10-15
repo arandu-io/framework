@@ -279,3 +279,44 @@ func TestTheModuleDeclaresItsSchema(t *testing.T) {
 		t.Fatalf("the migrations are not returned in the order their names sort in: %v", names)
 	}
 }
+
+// TestARejectedEndpointFormNeverFlashesItsHeaders: an endpoint's headers are
+// "Name: value" lines carrying the credentials it is called with, and a form
+// rejected for any other field put them into the flash cookie, which is
+// signed and not encrypted, and back into the page.
+func TestARejectedEndpointFormNeverFlashesItsHeaders(t *testing.T) {
+	t.Parallel()
+
+	m := mount(t, hwebhook.Config{})
+	cookies := m.signIn(t, administrator())
+
+	form := "name=&url=https%3A%2F%2Fexample.com%2Fhooks&headers=Authorization%3A+Bearer+partner-credential"
+	for _, method := range []string{http.MethodPost, http.MethodPut} {
+		target := hwebhook.DefaultPrefix + "/endpoints"
+		if method == http.MethodPut {
+			target += "/ep-1"
+		}
+		rec := m.answer(t, method, target, form, cookies...)
+		if rec.Code != http.StatusSeeOther {
+			t.Fatalf("%s of a rejected form answered %d, want %d", method, rec.Code, http.StatusSeeOther)
+		}
+		next := httptest.NewRequest(http.MethodGet, "/", nil)
+		next.Header.Set("Accept", "text/html")
+		for _, cookie := range rec.Result().Cookies() {
+			if strings.Contains(cookie.Value, "partner-credential") {
+				t.Fatalf("%s put the headers into the cookie %s", method, cookie.Name)
+			}
+			next.AddCookie(cookie)
+		}
+		errs, old, ok := m.flash.Take(httptest.NewRecorder(), next)
+		if !ok || len(errs["name"]) == 0 {
+			t.Fatalf("%s: the redirect carries no message for name: %v", method, errs)
+		}
+		if got := old.Get("headers"); got != "" {
+			t.Fatalf("%s flashed the headers back as %q", method, got)
+		}
+		if old.Get("url") != "https://example.com/hooks" {
+			t.Fatalf("%s did not flash back what is not a credential: %v", method, old)
+		}
+	}
+}

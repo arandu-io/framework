@@ -1,8 +1,11 @@
 package webhook
 
 import (
+	"errors"
+
 	"github.com/arandu-io/framework/foundation"
 	"github.com/arandu-io/framework/http"
+	"github.com/arandu-io/framework/validation"
 	hwebhook "github.com/arandu-io/hesape/webhook"
 )
 
@@ -48,10 +51,37 @@ func (m *Module) Name() string { return m.native.Name() }
 // router. What differs is who answers an error the action returns: this
 // router's adapter, which sends a page that failed validation back with the
 // messages in the flash, and answers every other status the way the native
-// adapter does.
+// adapter does. A field in withheldFields is never part of what the flash
+// carries back.
 func (m *Module) Routes(r *http.Router) {
 	for _, action := range m.native.HTTPActions() {
-		r.Action(action.Method, action.Path, action.Action, action.Middleware...).Name(action.Name)
+		r.Action(action.Method, action.Path, withholding(action.Action), action.Middleware...).Name(action.Name)
+	}
+}
+
+// withheldFields are the fields of the management forms whose value never goes
+// into the flash. An endpoint's headers are "Name: value" lines that carry the
+// credentials the endpoint is called with -- an Authorization, an API key --
+// and the flash cookie is signed, not encrypted.
+var withheldFields = []string{"headers"}
+
+// withholding removes withheldFields from the posted form when the action
+// answers a rejected input, which is the one answer the router puts the form
+// into the flash for. The body is read first, as the router would read it, so
+// what is removed stays removed when the router reads it again.
+func withholding(action func(*http.Context) error) func(*http.Context) error {
+	return func(ctx *http.Context) error {
+		err := action(ctx)
+		var rejected validation.Errors
+		if err == nil || !errors.As(err, &rejected) {
+			return err
+		}
+		_ = ctx.Input(withheldFields[0])
+		for _, field := range withheldFields {
+			ctx.Request.PostForm.Del(field)
+			ctx.Request.Form.Del(field)
+		}
+		return err
 	}
 }
 
