@@ -19,6 +19,53 @@ down here fails the build.
 
 ---
 
+## v0.56.1 — `view` builds against hesape v0.57.0 and later, and a page says an operator is inside somebody's account
+
+This release requires `hesape` v0.58.0. `apidiff` reports no incompatible
+change against v0.56.0; everything below is an addition, written down because
+the requirement moves every application that takes this release up to it.
+
+### An application that requires a newer hesape builds again
+
+`view.New` converted hesape's `view.Page` to this package's `Page`, which
+compiles only while the two structs have exactly the same fields. hesape
+v0.57.0 added four, so an application importing `framework/view` stopped
+building as soon as anything in its graph required hesape v0.57.0 or later:
+
+```
+view/page.go:373:62: cannot convert hview.New(ctx, title) (value of struct type "github.com/arandu-io/hesape/view".Page) to type Page
+```
+
+The only way out was holding hesape at v0.56.0 or below. Requiring this release
+removes that hold: delete any `require` or `replace` that pinned hesape lower
+for this reason, and `go get github.com/arandu-io/framework@v0.56.1`.
+
+`New` now copies hesape's page by name, so a field a later hesape adds no
+longer breaks a build; this module's tests fail instead until `Page` carries it.
+
+### `Page` carries the impersonation fields, and only the fields
+
+`Page` gains the four fields hesape v0.58.0 fills from the subject on the
+request — `Impersonating`, `ImpersonationActs`, `Impersonator` and
+`LeaveImpersonationURL`, the route named `impersonate.leave` when one is
+registered — and `New` fills them. `MarshalJSON` carries them; `LogValue` is
+unchanged. A page drawn for an ordinary session leaves them empty, so nothing
+changes for a screen that does not read them.
+
+The four accessors and the `Impersonation` interface are not added here: this
+package is a bridge, and its surface is frozen. A layout that draws the
+impersonation bar with hesape's type assertion,
+`data.(hview.Impersonation)`, is answered by `hesape/view.Page` and not by
+this one; a layout drawn for this `Page` reads the four fields directly.
+
+Two things to check while moving hesape to v0.58.0:
+
+- a layout written against the v0.57.0 names (`Inspecting`, `Inspection`,
+  `IsInspecting`, the route `inspect.leave`) renames them, as hesape's own
+  upgrade guide lists;
+- a `view.Page` written as an unkeyed composite literal stops compiling, as it
+  would for any added field; name the fields.
+
 ## v0.56.0 — the application name travels on the request, and the config bridge stops reading `SESSION_TTL`
 
 This release requires `hesape` v0.54.0. `apidiff` reports one incompatible
