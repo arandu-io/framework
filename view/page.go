@@ -107,7 +107,8 @@ type Layout interface {
 //
 // The struct carries the same fields as hesape/view.Page, in the same order
 // and of the same types -- Errors included, because Context and State are
-// aliases here, so New fills this one from exactly what fills that one. What
+// aliases here, so New fills this one from exactly what fills that one, copied
+// field by field so that a field hesape adds later never stops a build. What
 // is not the same is the method set. The four error accessors were renamed on
 // the way over -- FieldError to First, FieldErrors to Get, HasErrors to Any,
 // ErrorSummary to All -- and the component library calls FieldError from a
@@ -396,9 +397,52 @@ func (p Page) AdminLink() string { return p.AdminURL }
 // they are decisions -- see the Layout interface on why the layout is never
 // allowed to go and fetch them.
 //
-// It is hesape's view.New converted to this type, which the identical fields
-// allow: the two constructors cannot disagree about what a page starts with.
-func New(ctx *http.Context, title string) Page { return Page(hview.New(ctx, title)) }
+// It is hesape's view.New copied into this type, field by field: the two
+// constructors cannot disagree about what a page starts with.
+func New(ctx *http.Context, title string) Page { return fromHesape(hview.New(ctx, title)) }
+
+// fromHesape copies a page built by hesape's New into this Page, by name.
+//
+// A conversion, Page(p), says the same in one expression, and it compiles only
+// while the two structs have exactly the same fields. hesape is required at a
+// minimum version and not an exact one, so an application that takes a newer
+// release for any other reason gets that release's Page along with it -- and a
+// field added there turned the conversion into a build failure inside the
+// application, in a file it never wrote. Copied by name, a field hesape adds is
+// one this Page does not carry yet, and every application still builds.
+//
+// The two structs are held to the same fields, in the same order, by a test
+// at the version this module requires; when hesape adds one, that test is what
+// fails, here, on the change that requires the new release.
+func fromHesape(p hview.Page) Page {
+	return Page{
+		Title:       p.Title,
+		Description: p.Description,
+		Canonical:   p.Canonical,
+		AppName:     p.AppName,
+		Token:       p.Token,
+
+		Authenticated: p.Authenticated,
+		UserName:      p.UserName,
+
+		HomeURL:     p.HomeURL,
+		LoginURL:    p.LoginURL,
+		LogoutURL:   p.LogoutURL,
+		RegisterURL: p.RegisterURL,
+		PanelURL:    p.PanelURL,
+		AdminURL:    p.AdminURL,
+
+		Impersonating:         p.Impersonating,
+		ImpersonationActs:     p.ImpersonationActs,
+		Impersonator:          p.Impersonator,
+		LeaveImpersonationURL: p.LeaveImpersonationURL,
+
+		Path: p.Path,
+
+		Errors: p.Errors,
+		Old:    p.Old,
+	}
+}
 
 // WithToken replaces the CSRF token New took from the request context.
 //

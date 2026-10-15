@@ -167,6 +167,17 @@ hold that (`tests/Unit/view/page_redaction_test.go`), including
 `Page`, decide which of the two it belongs in before you add it, and add the
 test in that file.
 
+`Page` has exactly the fields of `hesape/view.Page`, in the same order, and
+`New` copies hesape's page into it by name rather than converting it. A
+conversion compiles only while the two structs are identical, and an
+application that requires a newer hesape than this module does gets the newer
+struct: when hesape added four fields, every application importing this
+package stopped building. `TestPageHasExactlyTheFieldsOfHesapesPage`
+(`tests/Unit/view/page_fields_test.go`) fails instead, on the change that
+requires that hesape release, naming the field to add here, to `fromHesape`
+and to `MarshalJSON`. `TestNewCopiesEveryFieldHesapeFills` in the same file
+fails when the copy forgets one.
+
 `TestPageStillSatisfiesLayout` (`tests/Unit/view/page_flash_test.go:138`) is the
 assertion that `Page` is still the implementation the delivered layout asks for.
 Changing the `Layout` interface without changing `Page` fails there rather than
