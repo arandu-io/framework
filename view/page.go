@@ -105,15 +105,15 @@ type Layout interface {
 //
 // # Why this one is declared and not aliased
 //
-// The struct is already the same type as hesape/view.Page, field for field --
-// Errors included, because Context and State are aliases here, so New fills
-// this one from exactly what fills that one. What is not the same is the
-// method set. The four error accessors were renamed on the way over --
-// FieldError to First, FieldErrors to Get, HasErrors to Any, ErrorSummary to
-// All -- and the component library calls FieldError from a module this one
-// does not compile, so an alias would build here and leave every field
-// component with no method to call. It would also drop LogValue and
-// MarshalJSON, which are declared here and have no counterpart there.
+// The struct carries the same fields as hesape/view.Page, in the same order
+// and of the same types -- Errors included, because Context and State are
+// aliases here, so New fills this one from exactly what fills that one. What
+// is not the same is the method set. The four error accessors were renamed on
+// the way over -- FieldError to First, FieldErrors to Get, HasErrors to Any,
+// ErrorSummary to All -- and the component library calls FieldError from a
+// module this one does not compile, so an alias would build here and leave
+// every field component with no method to call. It would also drop LogValue
+// and MarshalJSON, which are declared here and have no counterpart there.
 type Page struct {
 	// Title is the document title.
 	Title string
@@ -151,6 +151,21 @@ type Page struct {
 	// subject it already holds -- see the Layout interface.
 	PanelURL string
 	AdminURL string
+
+	// Impersonating says the person signed in is an operator inside somebody
+	// else's account, and ImpersonationActs whether they may change it.
+	// Impersonator is the operator's identifier, and LeaveImpersonationURL where
+	// the bar that says so sends them back: the route named "impersonate.leave",
+	// empty when none is registered. New fills all four from the subject on the
+	// request.
+	//
+	// They are here so that New can carry what hesape's New fills; the
+	// accessors and the Impersonation interface a layout asserts are hesape's
+	// view.Page, and are not repeated on this one.
+	Impersonating         bool
+	ImpersonationActs     bool
+	Impersonator          string
+	LeaveImpersonationURL string
 
 	// Path is the address this page was served at, so the navigation can say
 	// where you are.
@@ -220,6 +235,9 @@ func redacted(secret string) string {
 // Old and Errors are carried whole. Neither is a secret: the values a form
 // posts back are already drawn into the boxes the browser shows, and the
 // messages carry the limit a rule declared and never what was typed against it.
+// The four impersonation fields are carried too: they describe the session of
+// whoever is reading the page, to that same reader, and the bar the layout
+// draws from them already says as much on the screen.
 //
 // A struct that embeds Page and adds fields of its own inherits this method,
 // and inheriting it means those fields are not serialized -- the token is
@@ -244,6 +262,11 @@ func (p Page) MarshalJSON() ([]byte, error) {
 		PanelURL    string
 		AdminURL    string
 
+		Impersonating         bool
+		ImpersonationActs     bool
+		Impersonator          string
+		LeaveImpersonationURL string
+
 		Path string
 
 		Errors validation.Errors
@@ -264,6 +287,11 @@ func (p Page) MarshalJSON() ([]byte, error) {
 		RegisterURL: p.RegisterURL,
 		PanelURL:    p.PanelURL,
 		AdminURL:    p.AdminURL,
+
+		Impersonating:         p.Impersonating,
+		ImpersonationActs:     p.ImpersonationActs,
+		Impersonator:          p.Impersonator,
+		LeaveImpersonationURL: p.LeaveImpersonationURL,
 
 		Path: p.Path,
 
