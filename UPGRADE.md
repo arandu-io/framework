@@ -19,6 +19,63 @@ down here fails the build.
 
 ---
 
+## v0.57.0 — webhooks register through `framework/webhook`
+
+This release requires `hesape` v0.59.0. `apidiff` reports no incompatible
+change against v0.56.1: the one addition is the package `framework/webhook`,
+and nothing in this module imported `hesape/webhook` before, so the renames
+hesape v0.59.0 makes in that package (`Endpoint` → `ManagerEndpoint`,
+`Delivery` → `ManagerDelivery`, listed in hesape's own upgrade guide) reach an
+application only where it used `hesape/webhook.Manager` itself.
+
+### Moving from `github.com/hyz-is/arandu-webhook`
+
+The webhook module is now `github.com/arandu-io/hesape/webhook`, and
+`framework/webhook` registers it on the router the kernel hands a module.
+Four lines change in `bootstrap/app.go`:
+
+1. Import `github.com/arandu-io/hesape/webhook` in place of
+   `github.com/hyz-is/arandu-webhook`, and `github.com/arandu-io/framework/webhook`
+   beside it (as `fwebhook` below). `Config`, `Receiver`, `Endpoint`,
+   `Delivery`, `Call`, the actions and the services keep their names; the types
+   the separate module re-declared are the collection's (`auth.Grant`,
+   `auth.Subject`, `database.DB`), which `security.Grant`, `security.Subject`
+   and `data.DB` already alias.
+2. `New` takes the guard its management routes sit behind instead of the
+   session store:
+
+   ```go
+   mod, err := webhook.New(cfg, db, middleware.RequireAuth(sessions))
+   ```
+
+   `nil` still mounts the receivers and no management route.
+3. Register the bridge, not the native module, because the kernel calls
+   `Routes` with a `*http.Router` and the native `Routes` takes a
+   `*routing.Router`:
+
+   ```go
+   k.Register(fwebhook.NewModule(mod))
+   ```
+
+   Every route keeps the method, path, middleware and name it had, so a URL
+   built from `webhook.endpoints.show` or `webhook.receive.<name>` is
+   unchanged, and `Migrations` and `Schedule` return the native module's, so
+   `aru migrate` sees nothing pending and the two cleans keep their ids.
+   `Publisher`, `RegisterJobHandlers`, `Send`, `Outgoing`, `EndpointService`
+   and `CallService` are called on `mod`, as before.
+4. Exempt the receivers from the CSRF check with the paths the module names:
+
+   ```go
+   middleware.CSRFExcept(mod.ReceivePaths()...)
+   ```
+
+An error an action returns is answered by this router's adapter, as it was:
+a form that failed validation goes back with the messages in the flash, and
+every other refusal is answered with the status and body the native adapter
+writes. Two recorded failure reasons change, as hesape's guide says: a
+canceled attempt is `request_canceled` and an answer above the client's limit
+`response_too_large`, where the separate module recorded `transport_failure`.
+
 ## v0.56.1 — `view` builds against hesape v0.57.0 and later, and a page says an operator is inside somebody's account
 
 This release requires `hesape` v0.58.0. `apidiff` reports no incompatible
