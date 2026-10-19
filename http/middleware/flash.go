@@ -16,7 +16,8 @@ import (
 )
 
 // Flash consumes the one-shot flash and puts it on the request, so the page
-// about to render can draw the messages of the request that was redirected here.
+// about to render can draw the messages of the request that was redirected here
+// -- the errors of a rejected form, or the status of one that worked.
 //
 // It is the middle of three steps that no application writes any of: fhttp.Reject
 // puts the messages in the browser, this takes them out again, and view.New
@@ -41,7 +42,7 @@ func Flash(f *security.Flash) fhttp.Middleware {
 				return
 			}
 
-			errs, old, ok := f.Take(w, r)
+			flashed, ok := f.Read(w, r)
 			if !ok {
 				next.ServeHTTP(w, r)
 				return
@@ -53,11 +54,12 @@ func Flash(f *security.Flash) fhttp.Middleware {
 			// filled in, with somebody else's errors on it.
 			w.Header().Set("Cache-Control", "no-store, private")
 
-			// errs comes back from the flash as a plain map[string][]string,
-			// which assigns straight to the field: fhttp.State is now an alias
-			// for hesape/http.State and its Errors is hesape/validation.Errors,
-			// the same underlying map this has always carried.
-			state := fhttp.State{Errors: errs, Old: old}
+			// The errors come back from the flash as a plain
+			// map[string][]string, which assigns straight to the field:
+			// fhttp.State is an alias for hesape/http.State and its Errors is
+			// hesape/validation.Errors, the same underlying map. Messages are
+			// what a form that worked said with Context.With.
+			state := fhttp.State{Errors: flashed.Errors, Old: flashed.Old, Messages: flashed.Messages}
 			next.ServeHTTP(w, r.WithContext(fhttp.WithState(r.Context(), state)))
 		})
 	}

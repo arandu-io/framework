@@ -19,6 +19,16 @@ down here fails the build.
 
 ---
 
+## v0.58.0 — the status of a form that worked
+
+This release requires `hesape` v0.64.1. Nothing breaks: `view.Page` gains
+`Messages`, filled from the flash like `Errors`, and the router puts its flash
+on the request, so an action whose form worked writes
+`ctx.With("status", "Saved.")` and redirects to the page that shows the result,
+which draws `.Messages["status"]` (hesape's `view.Page` reads it as
+`.Flashed("status")`). A form that answered its success by drawing a page at
+the address it was posted to can move to post, redirect, get.
+
 ## v0.57.0 — webhooks register through `framework/webhook`
 
 This release requires `hesape` v0.59.0. `apidiff` reports no incompatible

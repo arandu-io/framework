@@ -74,8 +74,9 @@ func TestNewCopiesEveryFieldHesapeFills(t *testing.T) {
 	ctx = hhttp.WithCSRFToken(ctx, "issued-token")
 	ctx = hhttp.WithAppName(ctx, "Example")
 	ctx = fhttp.WithState(ctx, fhttp.State{
-		Errors: validation.Errors{"title": {"is required"}},
-		Old:    url.Values{"title": {"A draft"}},
+		Errors:   validation.Errors{"title": {"is required"}},
+		Old:      url.Values{"title": {"A draft"}},
+		Messages: map[string]string{"status": "Saved."},
 	})
 	r.ServeHTTP(httptest.NewRecorder(), req.WithContext(ctx))
 

@@ -196,6 +196,12 @@ type Page struct {
 	// the MESSAGE for a password survives when the value does not: an empty
 	// password box that does not say why it was rejected is the original bug.
 	Old url.Values
+
+	// Messages is what the request that redirected here said about what it
+	// did, by key: the sentence a form that worked left under "status" with
+	// Context.With. Filled by New from the flash, like Errors; a view reads
+	// .Messages["status"], or hesape's view.Page.Flashed.
+	Messages map[string]string
 }
 
 // Compile-time proof that embedding Page is all a page has to do to fit the
@@ -233,9 +239,10 @@ func redacted(secret string) string {
 // is the direction that cannot leak by accident -- the reverse spelling grows a
 // hole every time somebody adds a field and does not think about this method.
 //
-// Old and Errors are carried whole. Neither is a secret: the values a form
-// posts back are already drawn into the boxes the browser shows, and the
-// messages carry the limit a rule declared and never what was typed against it.
+// Old, Errors and Messages are carried whole. None is a secret: the values a
+// form posts back are already drawn into the boxes the browser shows, the
+// messages carry the limit a rule declared and never what was typed against it,
+// and a status is a sentence the page draws.
 // The four impersonation fields are carried too: they describe the session of
 // whoever is reading the page, to that same reader, and the bar the layout
 // draws from them already says as much on the screen.
@@ -270,8 +277,9 @@ func (p Page) MarshalJSON() ([]byte, error) {
 
 		Path string
 
-		Errors validation.Errors
-		Old    url.Values
+		Errors   validation.Errors
+		Old      url.Values
+		Messages map[string]string
 	}{
 		Title:       p.Title,
 		Description: p.Description,
@@ -296,8 +304,9 @@ func (p Page) MarshalJSON() ([]byte, error) {
 
 		Path: p.Path,
 
-		Errors: p.Errors,
-		Old:    p.Old,
+		Errors:   p.Errors,
+		Old:      p.Old,
+		Messages: p.Messages,
 	})
 }
 
@@ -439,8 +448,9 @@ func fromHesape(p hview.Page) Page {
 
 		Path: p.Path,
 
-		Errors: p.Errors,
-		Old:    p.Old,
+		Errors:   p.Errors,
+		Old:      p.Old,
+		Messages: p.Messages,
 	}
 }
 

@@ -249,6 +249,11 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) { r.inner.S
 // an application replaced that default, one request is answered in one
 // representation wherever it failed.
 //
+// The flash is also put on the request before the action runs, so an action
+// whose form worked can say so with Context.With and redirect: the sentence
+// travels in the same cookie, under the same key, as the messages of a form
+// that did not.
+//
 // Both branches are here, once, for the reason Redirect and Refuse are one
 // function each: the last time a decision of this shape lived at every call
 // site there were forty-one copies of it, and the failure they were written to
@@ -256,6 +261,11 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) { r.inner.S
 func (r *Router) adapt(h func(*Context) error) http.Handler {
 	renderer, urls, flash := r.render, r.table.inner, r.flash
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if flash != nil {
+			// The flash a rejection is answered with is the one the action's
+			// own sentence travels in: Context.With writes to what is here.
+			req = req.WithContext(hhttp.WithFlash(req.Context(), flash))
+		}
 		ctx := hhttp.NewContext(w, req, renderer, urls)
 		err := h(ctx)
 		if err == nil {
