@@ -10,6 +10,11 @@
 //	                   component's settings
 //	HandleExceptions   builds the handler that answers when something fails
 //
+// LoadSettings is the first one followed by the sections an application's
+// drivers are built from -- the cache stores, the disks, the mail transport,
+// the queue, the session backend, the request boundary and the log format --
+// so an application reads them without copying them.
+//
 // Loading the environment is not a bootstrapper of its own. Nothing here is
 // evaluated -- the reading is direct, in LoadConfiguration -- so a second one
 // would be a second way to load one file.
