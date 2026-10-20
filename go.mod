@@ -18,7 +18,15 @@ go 1.26.0
 // and storage -- were folded into hesape by ADR 0048. The heavy driver still
 // sits in a submodule with its own go.mod, because Go has no optional
 // dependency, so a project still pays in go.sum only for what it imports.
-require github.com/arandu-io/hesape v0.71.0
+//
+// The object storage driver is one of those submodules, and the framework
+// requires it because it builds the disk FILESYSTEM_DISK names: it speaks the
+// S3 protocol with a signature written in it, so it brings no SDK and nothing
+// third-party.
+require (
+	github.com/arandu-io/hesape v0.71.0
+	github.com/arandu-io/hesape/filesystem/s3 v0.11.0
+)
 
 require (
 	golang.org/x/crypto v0.57.0 // indirect

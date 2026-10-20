@@ -2,6 +2,7 @@ package feature
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -150,5 +151,60 @@ func TestClosingTheDriversTwiceIsHarmless(t *testing.T) {
 	}
 	if err := d.DB.PingContext(context.Background()); err != nil {
 		t.Errorf("drivers built over the caller's database closed it: %v", err)
+	}
+}
+
+// TestTheLocalDiskIsTheDefaultAndPrivate: with nothing configured, files are
+// kept under FILESYSTEM_ROOT, on the one disk the configuration named.
+func TestTheLocalDiskIsTheDefaultAndPrivate(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "files")
+	d, err := foundation.NewDriversOver(settingsFor(t, "FILESYSTEM_ROOT", root), pingDB(t))
+	if err != nil {
+		t.Fatalf("NewDriversOver: %v", err)
+	}
+	disk, err := d.Disks.Disk("")
+	if err != nil {
+		t.Fatalf("the default disk: %v", err)
+	}
+	if disk.Name() != "local" || strings.Join(d.Disks.Names(), ",") != "local" {
+		t.Errorf("default disk %q among %v, want local alone", disk.Name(), d.Disks.Names())
+	}
+	if info, err := os.Stat(root); err != nil || !info.IsDir() {
+		t.Errorf("the local root %s was not created: %v", root, err)
+	}
+	if _, err := d.Disks.Cloud(); err == nil {
+		t.Error("a local disk was handed out as the cloud disk")
+	}
+}
+
+// TestABucketDiskIsBuiltFromItsConfiguration: FILESYSTEM_DISK=r2 is an
+// object storage disk built by the framework from the four variables, with no
+// directory created for a local disk nobody asked for and nothing dialled.
+func TestABucketDiskIsBuiltFromItsConfiguration(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "never")
+	for _, name := range []string{"r2", "s3"} {
+		t.Run(name, func(t *testing.T) {
+			d, err := foundation.NewDriversOver(settingsFor(t,
+				"FILESYSTEM_DISK", name,
+				"FILESYSTEM_ROOT", root,
+				"FILESYSTEM_BUCKET", "kuaa-dev",
+				"FILESYSTEM_ENDPOINT", "https://account.r2.cloudflarestorage.com",
+				"FILESYSTEM_ACCESS_KEY_ID", "key",
+				"FILESYSTEM_SECRET_ACCESS_KEY", "secret",
+			), pingDB(t))
+			if err != nil {
+				t.Fatalf("NewDriversOver: %v", err)
+			}
+			disk, err := d.Disks.Disk("")
+			if err != nil || disk.Name() != name {
+				t.Fatalf("default disk = %v, %v; want %s", disk, err, name)
+			}
+			if cloud, err := d.Disks.Cloud(); err != nil || cloud.Name() != name {
+				t.Errorf("cloud disk = %v, %v; want %s", cloud, err, name)
+			}
+			if _, err := os.Stat(root); !os.IsNotExist(err) {
+				t.Errorf("a bucket deployment created the local root %s", root)
+			}
+		})
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/arandu-io/hesape/auth"
 	"github.com/arandu-io/hesape/cache"
 	"github.com/arandu-io/hesape/database"
+	"github.com/arandu-io/hesape/filesystem"
 	"github.com/arandu-io/hesape/queue"
 	"github.com/arandu-io/hesape/session"
 	"github.com/arandu-io/hesape/view"
@@ -22,8 +23,8 @@ import (
 
 // Drivers is everything the framework builds from the typed configuration: the
 // database connection, the cache stores, the lock every replica shares, the
-// session store and the CSRF issuer, the rate limiter, the queue and the
-// mailer.
+// session store and the CSRF issuer, the rate limiter, the queue, the mailer and
+// the disks.
 //
 // An application changes a driver by changing its configuration, never by
 // writing a factory: CACHE_STORE, SESSION_DRIVER, QUEUE_CONNECTION, MAIL_URL and
@@ -103,6 +104,11 @@ type Drivers struct {
 	// Mail is what sends, over the transport MAIL_URL named, from
 	// MAIL_FROM_ADDRESS and MAIL_FROM_NAME.
 	Mail *mail.Mailer
+
+	// Disks is where files are kept: the disk FILESYSTEM_DISK named, which is
+	// the default. A bucket disk -- r2 or s3 -- is built over the S3 protocol and
+	// is also the cloud disk; the local disk writes under FILESYSTEM_ROOT.
+	Disks *filesystem.Disks
 
 	closeDB   func()
 	closeOnce sync.Once
@@ -220,6 +226,9 @@ func newDrivers(s bootstrap.Settings, db *database.DB) (*Drivers, error) {
 		Email: s.Mail.FromAddress,
 		Name:  s.Mail.FromName,
 	})
+	if d.Disks, err = newDisks(s.Filesystems); err != nil {
+		return nil, err
+	}
 	return d, nil
 }
 
