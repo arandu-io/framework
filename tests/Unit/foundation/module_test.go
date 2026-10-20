@@ -30,6 +30,7 @@ func TestTheVocabularyIsTheHesapeVocabulary(t *testing.T) {
 		"Task":         {reflect.TypeFor[foundation.Task](), reflect.TypeFor[hfoundation.Task]()},
 		"Scope":        {reflect.TypeFor[foundation.Scope](), reflect.TypeFor[hfoundation.Scope]()},
 		"ReloadTagger": {reflect.TypeFor[foundation.ReloadTagger](), reflect.TypeFor[hfoundation.ReloadTagger]()},
+		"Commandable":  {reflect.TypeFor[foundation.Commandable](), reflect.TypeFor[hfoundation.Commandable]()},
 	} {
 		if pair[0] != pair[1] {
 			t.Errorf("foundation.%s is %s and hesape/foundation.%s is %s", name, pair[0], name, pair[1])

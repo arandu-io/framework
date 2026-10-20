@@ -8,6 +8,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -107,6 +108,16 @@ type Application struct {
 	// place, so a process serving for a month holds what it held on the first
 	// request.
 	gauges *observability.Gauges
+
+	// kernel is the console the application answers through HandleCommand,
+	// composed by Configure. Nil for an Application made by New, which answers
+	// the commands that need nothing but itself.
+	kernel *consoleKernel
+	// consoleOut, consoleErr and consoleIn are the streams WithConsole set; nil
+	// is the process's own.
+	consoleOut io.Writer
+	consoleErr io.Writer
+	consoleIn  io.Reader
 }
 
 // New assembles the Application. It opens no connection and listens on no port

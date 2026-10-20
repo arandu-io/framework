@@ -14,8 +14,8 @@
 //
 // The composition vocabulary is github.com/arandu-io/hesape/foundation and is
 // aliased, not restated: Bootable, Background, Closable, Diagnostic, Health,
-// Schedulable, Migratable, Scope, Global, PerTenant, Task, Migration and
-// ReloadTagger are the hesape types under the same names. A module written
+// Schedulable, Migratable, Commandable, Scope, Global, PerTenant, Task,
+// Migration and ReloadTagger are the hesape types under the same names. A module written
 // against either name is one type to the compiler.
 //
 // The publishing vocabulary arrives the same way: Publishable, Publication,
@@ -49,17 +49,24 @@
 // hesape/routing.FormatRoutes, which the alias on http.Route makes possible
 // without translating anything.
 //
-// # There is no list of built-in commands
+// # The configuration and the console
 //
-// This package answers no Builtins() []console.Command -- the set a project's
-// own binary would dispatch without the aru CLI. Of the eleven commands a
-// project dispatches today, only serve, routes and Version are answerable from
-// an Application at all; the rest need a *data.DB it does not hold, project code
-// it does not know, or a queue store from a module that imports this one.
-// Letting them register themselves would be a container under another name, and
-// there is no container.
+// An application is configured in the shape of a builder and answers its
+// command line through a kernel, and both are here:
 //
-// What is written instead is the switch in the skeleton's bootstrap/console.go.
-// It is in the project's own repository, the whole set reads at once, and
-// adding one is writing a case.
+//	drivers, err := foundation.NewDrivers(cfg.Settings)
+//	app, err := foundation.Configure(drivers).WithProviders(...).WithRouting(...).Create()
+//	os.Exit(app.HandleCommand(ctx, os.Args[1:]))
+//
+// [NewDrivers] builds every driver the typed configuration names -- the
+// database, the cache stores and the shared lock, the session store and the
+// CSRF issuer, the rate limiter, the queue, the mailer and the disks -- so an
+// application changes a driver by changing its configuration, never by writing
+// a factory. [Configure] composes the Application over them, and
+// [Application.HandleCommand] dispatches against one list: the built-in
+// commands, written in one file of this package, the application's own, and
+// those of every [Commandable] module, each name declared once. It is not a
+// registry and nothing is discovered: the built-ins are a closed set, the
+// application hands its commands to WithCommands, and a module declares its own
+// by implementing an interface the Application asks for by type assertion.
 package foundation
