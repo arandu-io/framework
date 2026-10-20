@@ -47,6 +47,12 @@ func TestTheOutboxMigrationIsPortable(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", m.GetName(), err)
 		}
+		// A widening has no way back by design: the code before it reads and
+		// writes the wider column as it did, and narrowing would round what
+		// was stored since. Every other migration of the outbox has a Down.
+		if _, widening := m.(migrations.WidenTimePrecision); widening {
+			continue
+		}
 		if len(down) == 0 {
 			t.Errorf("%s cannot be rolled back", m.GetName())
 		}
@@ -68,7 +74,7 @@ func TestBothEventsModulesDeclareTheOutboxOnce(t *testing.T) {
 		t.Fatalf("the framework declares %d migrations and hesape %d", len(framework), len(native))
 	}
 	for i := range native {
-		if framework[i] != native[i] {
+		if !reflect.DeepEqual(framework[i], native[i]) {
 			t.Errorf("migration %d: the framework declares %s %q and hesape %s %q, want the same value",
 				i, qualified(framework[i]), framework[i].GetName(), qualified(native[i]), native[i].GetName())
 		}
@@ -90,7 +96,8 @@ func TestBothEventsModulesDeclareTheOutboxOnce(t *testing.T) {
 	for _, m := range migrations.Registered(group) {
 		names = append(names, m.GetName())
 	}
-	want := []string{"2026_07_31_000001_create_outbox_table", "2026_07_31_000002_add_outbox_dead_letter"}
+	want := []string{"2026_07_31_000001_create_outbox_table", "2026_07_31_000002_add_outbox_dead_letter",
+		"2026_10_19_000003_widen_outbox_time_precision"}
 	if !slices.Equal(names, want) {
 		t.Errorf("registered %q, want each of %q once", names, want)
 	}
