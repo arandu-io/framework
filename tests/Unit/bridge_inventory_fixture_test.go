@@ -163,6 +163,9 @@ var allowedHesapeImports = bridgeSurface{
 	// translation is here because the Application puts the configured
 	// catalogue on every request with translation.WithTranslator, beside the
 	// name, where view.New reads it.
+	//
+	// queue/middleware is here because the worker queue:work starts runs
+	// ReportToBatch, so a batch finishes without its handlers reporting.
 	"foundation": inventoryItems(`
 		github.com/arandu-io/hesape/auth github.com/arandu-io/hesape/bus
 		github.com/arandu-io/hesape/cache github.com/arandu-io/hesape/cache/console
@@ -178,6 +181,7 @@ var allowedHesapeImports = bridgeSurface{
 		github.com/arandu-io/hesape/http/middleware github.com/arandu-io/hesape/log
 		github.com/arandu-io/hesape/publish/console github.com/arandu-io/hesape/queue
 		github.com/arandu-io/hesape/queue/console github.com/arandu-io/hesape/queue/failed
+		github.com/arandu-io/hesape/queue/middleware
 		github.com/arandu-io/hesape/routing github.com/arandu-io/hesape/routing/middleware
 		github.com/arandu-io/hesape/session github.com/arandu-io/hesape/translation
 		github.com/arandu-io/hesape/view

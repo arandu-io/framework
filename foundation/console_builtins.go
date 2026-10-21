@@ -20,6 +20,7 @@ import (
 	"github.com/arandu-io/hesape/queue"
 	qconsole "github.com/arandu-io/hesape/queue/console"
 	"github.com/arandu-io/hesape/queue/failed"
+	qmiddleware "github.com/arandu-io/hesape/queue/middleware"
 	"github.com/arandu-io/hesape/routing"
 )
 
@@ -224,6 +225,7 @@ func versionCommand(a *Application, version, commit string) console.Command {
 // recording a pause no worker in another process would see.
 func queueDeps(a *Application, d *Drivers, jobs func(*queue.Worker)) qconsole.Deps {
 	s := d.Settings.Queue
+	batches := bus.NewDatabaseBatchRepository(d.DB)
 	manager := queue.NewQueueManager().Extend(string(s.Connection), d.Queue)
 	if d.SharedCache != nil {
 		manager = manager.SetCache(d.SharedCache)
@@ -231,7 +233,7 @@ func queueDeps(a *Application, d *Drivers, jobs func(*queue.Worker)) qconsole.De
 	return qconsole.Deps{
 		Manager:  manager,
 		Failures: failed.NewDatabaseFailedJobProvider(d.DB, ""),
-		Batches:  bus.NewDatabaseBatchRepository(d.DB),
+		Batches:  batches,
 		Worker: qconsole.WorkerDeps{
 			Queue: d.Queue,
 			Options: queue.WorkerOptions{
@@ -240,7 +242,7 @@ func queueDeps(a *Application, d *Drivers, jobs func(*queue.Worker)) qconsole.De
 				Lease:       s.RetryAfter,
 				MaxTries:    s.MaxAttempts,
 			},
-			Register: jobs,
+			Register: reportingToBatches(jobs, batches, d.Queue),
 			// Asked when the worker starts, after the boot that built it: a
 			// finished job lands on the debug console exactly like a request,
 			// and only when something is recording.
@@ -309,4 +311,24 @@ func (a *Application) moduleCommands() []declared {
 		}
 	}
 	return out
+}
+
+// reportingToBatches is the registration queue:work runs: the handlers, then
+// the middleware that reports every job to its batch and its chain, outermost,
+// so a batch finishes and a chain moves on without its handlers calling
+// bus.Handled. It reports to the repository the batch commands read and pushes
+// what an outcome triggers on the queue the worker drains.
+//
+// Nil stays nil: with no handler there is no worker to report from, and
+// queue:work refuses to start one.
+func reportingToBatches(jobs func(*queue.Worker), batches bus.BatchRepository, q queue.Queue) func(*queue.Worker) {
+	if jobs == nil {
+		return nil
+	}
+	return func(w *queue.Worker) {
+		jobs(w)
+		o := w.Options()
+		o.Middleware = append([]qmiddleware.Middleware{qmiddleware.NewReportToBatch(batches, queue.NewBusAdapter(q), w)}, o.Middleware...)
+		w.SetOptions(o)
+	}
 }
