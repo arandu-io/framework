@@ -8,8 +8,6 @@
 package events
 
 import (
-	"context"
-
 	"github.com/arandu-io/framework/data"
 	hevents "github.com/arandu-io/hesape/events"
 )
@@ -50,24 +48,8 @@ var ErrNoTransaction = hevents.ErrNoTransaction
 
 // NewOutbox returns an outbox over the application's database handle.
 //
-// An envelope rather than a call through: hesape/events.NewOutbox takes an
-// interface, whose fourth method asks whether the context is inside a
-// transaction on this handle, and *data.DB answers that question through
-// data.InTransaction instead of through a method. The signature here is the one
-// the framework has always had, so every service that builds an outbox from its
-// repository's handle is untouched.
-func NewOutbox(db *data.DB) *Outbox { return hevents.NewOutbox(outboxDB{db}) }
-
-// outboxDB is a *data.DB seen through the interface hesape asks for.
-//
-// The three statements are promoted from the embedded handle, so an outbox
-// write is still rebound for the dialect and still recorded on the Collector --
-// which is what puts it on the debug page next to the row it describes.
-type outboxDB struct {
-	*data.DB
-}
-
-// InTransaction reports whether ctx is inside a transaction on this handle.
-func (o outboxDB) InTransaction(ctx context.Context) bool {
-	return data.InTransaction(ctx, o.DB)
-}
+// It is hesape/events.NewOutbox, which takes the *data.DB as it is: the handle
+// answers whether a context is inside a transaction on it with its own
+// InTransaction method. An outbox write is still rebound for the dialect and
+// still recorded on the Collector, next to the row it describes.
+func NewOutbox(db *data.DB) *Outbox { return hevents.NewOutbox(db) }
