@@ -28,6 +28,7 @@ import (
 	"github.com/arandu-io/hesape/config"
 	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/routing"
+	"github.com/arandu-io/hesape/translation"
 )
 
 // Limits of the HTTP server. They are set rather than left at the zero value
@@ -118,6 +119,10 @@ type Application struct {
 	consoleOut io.Writer
 	consoleErr io.Writer
 	consoleIn  io.Reader
+
+	// translator is the application's catalogue, put on every request
+	// context beside the name; nil puts none. See WithTranslator.
+	translator *translation.Translator
 }
 
 // New assembles the Application. It opens no connection and listens on no port
@@ -523,7 +528,7 @@ func (a *Application) Handler() http.Handler {
 	// -- the application's own controllers, a generated one, a module's screen,
 	// a route no CSRF protection covers -- finds the same brand. See
 	// carryAppName.
-	outer := append([]fhttp.Middleware{observability.RootLogger(a.log), carryAppName(a.cfg.App.Name)}, devReload(a.isDev(), a.reloadTag)...)
+	outer := append([]fhttp.Middleware{observability.RootLogger(a.log), carryAppName(a.cfg.App.Name), carryTranslator(a.translator)}, devReload(a.isDev(), a.reloadTag)...)
 
 	// The framework's own routes skip the application's pipeline, the security
 	// headers an application mounts there included, so they get theirs here.
@@ -586,6 +591,37 @@ func carryAppName(name string) fhttp.Middleware {
 			next.ServeHTTP(w, r.WithContext(hhttp.WithAppName(r.Context(), name)))
 		})
 	}
+}
+
+// carryTranslator puts the application's catalogue on every request context,
+// where view.New reads it into the page a component asks for the words it
+// draws itself, and where anything else reads it with
+// translation.TranslatorFrom.
+//
+// It is carryAppName's reason again: the catalogue is the same on every
+// request, and a page drawn by a module or a generated controller has no other
+// way to reach it. A nil translator leaves the request as it came, so a
+// component draws its English.
+func carryTranslator(t *translation.Translator) fhttp.Middleware {
+	return func(next http.Handler) http.Handler {
+		if t == nil {
+			return next
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(translation.WithTranslator(r.Context(), t)))
+		})
+	}
+}
+
+// WithTranslator sets the catalogue every request carries, beside the
+// application name: view.New reads it, so a component that draws its own words
+// -- "Cancel", "Next page" -- draws them in the request's language. The
+// language is the one translation.Middleware or translation.InLocale put on the
+// request; with neither, the translator's own default. Without a translator a
+// component draws its English.
+func (a *Application) WithTranslator(t *translation.Translator) *Application {
+	a.translator = t
+	return a
 }
 
 // internalPrefix is what this framework mounts for itself: the readiness probe,

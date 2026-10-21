@@ -17,6 +17,7 @@ import (
 	httpmiddleware "github.com/arandu-io/hesape/http/middleware"
 	"github.com/arandu-io/hesape/queue"
 	hmiddleware "github.com/arandu-io/hesape/routing/middleware"
+	"github.com/arandu-io/hesape/translation"
 )
 
 // ApplicationBuilder configures an Application: its providers, its routes,
@@ -54,6 +55,7 @@ type ApplicationBuilder struct {
 	seed       func(context.Context, []string) (string, error)
 	tenants    func(context.Context) ([]string, error)
 	prunables  map[string]func(context.Context) (int, error)
+	translator *translation.Translator
 
 	version, commit string
 
@@ -172,6 +174,17 @@ func (b *ApplicationBuilder) WithPrunables(prunables map[string]func(ctx context
 	return b
 }
 
+// WithTranslator is the application's catalogue, which every request carries
+// beside the application name, so a component draws its own words in the
+// request's language. See Application.WithTranslator.
+func (b *ApplicationBuilder) WithTranslator(t *translation.Translator) *ApplicationBuilder {
+	if b.translator != nil {
+		b.errs = append(b.errs, errors.New("arandu: WithTranslator was called twice, and a request carries one catalogue"))
+	}
+	b.translator = t
+	return b
+}
+
 // WithVersion is what the version command prints: the version and the commit
 // the build stamped.
 func (b *ApplicationBuilder) WithVersion(version, commit string) *ApplicationBuilder {
@@ -206,6 +219,7 @@ func (b *ApplicationBuilder) Create() (*Application, error) {
 	fw := s.Framework
 
 	a := New(fw)
+	a.WithTranslator(b.translator)
 	a.Register(driversModule{drivers: d})
 
 	// The one handler that answers a failed request: whether the debug page may

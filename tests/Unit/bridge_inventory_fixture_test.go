@@ -159,6 +159,10 @@ var allowedHesapeImports = bridgeSurface{
 	// drivers are hesape's stores, queue, session, mail and disks built from the
 	// typed settings. Composing them is this package's job; implementing any of
 	// them is not.
+	//
+	// translation is here because the Application puts the configured
+	// catalogue on every request with translation.WithTranslator, beside the
+	// name, where view.New reads it.
 	"foundation": inventoryItems(`
 		github.com/arandu-io/hesape/auth github.com/arandu-io/hesape/bus
 		github.com/arandu-io/hesape/cache github.com/arandu-io/hesape/cache/console
@@ -175,7 +179,8 @@ var allowedHesapeImports = bridgeSurface{
 		github.com/arandu-io/hesape/publish/console github.com/arandu-io/hesape/queue
 		github.com/arandu-io/hesape/queue/console github.com/arandu-io/hesape/queue/failed
 		github.com/arandu-io/hesape/routing github.com/arandu-io/hesape/routing/middleware
-		github.com/arandu-io/hesape/session github.com/arandu-io/hesape/view
+		github.com/arandu-io/hesape/session github.com/arandu-io/hesape/translation
+		github.com/arandu-io/hesape/view
 	`),
 	"foundation/bootstrap": inventoryItems(`
 		github.com/arandu-io/hesape/cache github.com/arandu-io/hesape/config
