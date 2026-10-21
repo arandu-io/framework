@@ -229,6 +229,15 @@ func (b *ApplicationBuilder) Create() (*Application, error) {
 	fw := s.Framework
 
 	a := New(fw)
+	// The root logger is the logging section's, built once here. New has only
+	// the environment and the level to build one from, so LOG_FORMAT reaches
+	// the logger here and not there.
+	logger, err := rootLogger(s)
+	if err != nil {
+		_ = d.Close()
+		return nil, err
+	}
+	a.log = logger
 	a.WithTranslator(b.translator)
 	a.Register(driversModule{drivers: d})
 
