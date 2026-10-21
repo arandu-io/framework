@@ -300,7 +300,7 @@ func (a *Application) applicationKernel() (*consoleKernel, error) {
 func (a *Application) moduleCommands() []declared {
 	var out []declared
 	for _, m := range a.modules {
-		c, ok := m.(Commandable)
+		c, ok := capable[Commandable](m)
 		if !ok {
 			continue
 		}

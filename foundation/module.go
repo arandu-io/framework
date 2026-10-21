@@ -29,17 +29,16 @@ import (
 //
 // # Why this one is declared and not aliased
 //
-// hesape/foundation.Module names a *routing.Router, and this one names a
-// *http.Router. Those are two types: http.Router is the one envelope the
-// request bridge could not turn into an alias -- it carries the renderer and
-// the flash, and hesape/routing.Router deliberately carries neither -- so the
-// two interfaces cannot be the same interface while that envelope exists.
+// hesape/foundation.Module names the handler-only *routing.Router, and this one
+// names *http.Router, which is hesape's *controllers.Router: the router that
+// runs controller actions. So this interface is Name plus
+// hesape/foundation.Routable, and a module written against hesape that
+// implements Routable is a Module as it stands. A hesape module still on the
+// handler-only router is registered through Component.
 //
-// Aliasing this name to the hesape one would change the signature every module
-// in every project is written against, in the two repositories this framework
-// ships and in every application built on it. A bridge that changes a signature
-// is not a bridge. It becomes an alias the day http.Router stops being an
-// envelope, and not before.
+// Aliasing this name to hesape/foundation.Module would change the signature
+// every module in every project is written against. A bridge that changes a
+// signature is not a bridge.
 type Module interface {
 	// Name is the stable identifier of the module: a lowercase slug, no spaces.
 	Name() string

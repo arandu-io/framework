@@ -250,7 +250,7 @@ func (a *Application) Boot(ctx context.Context) error {
 		}
 		seen[name] = struct{}{}
 
-		if b, ok := m.(Bootable); ok {
+		if b, ok := capable[Bootable](m); ok {
 			start := time.Now()
 			if err := b.Boot(ctx); err != nil {
 				return fmt.Errorf("arandu: booting module %q: %w", name, err)
@@ -294,7 +294,7 @@ func (a *Application) findRenderer() error {
 	var by string
 
 	for _, m := range a.modules {
-		p, ok := m.(RendererProvider)
+		p, ok := capable[RendererProvider](m)
 		if !ok {
 			continue
 		}
@@ -319,7 +319,7 @@ func (a *Application) findRenderer() error {
 // the invoices are a day late.
 func (a *Application) startBackground(ctx context.Context) error {
 	for _, m := range a.modules {
-		b, ok := m.(Background)
+		b, ok := capable[Background](m)
 		if !ok {
 			continue
 		}
@@ -362,7 +362,7 @@ func (a *Application) mountInternalRoutes() {
 	if a.isDev() {
 		internal.Get(reloadPath, a.handleReload).Name("arandu.reload")
 		for _, m := range a.modules {
-			if t, ok := m.(ReloadTagger); ok {
+			if t, ok := capable[ReloadTagger](m); ok {
 				a.reloadTag = []byte(t.ReloadTag(reloadPath))
 				break
 			}
@@ -467,11 +467,11 @@ func (a *Application) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	for _, m := range a.modules {
 		var err error
-		if h, ok := m.(Health); ok {
+		if h, ok := capable[Health](m); ok {
 			err = h.Health(ctx)
 		}
 		if err == nil {
-			if rd, ok := m.(Ready); ok {
+			if rd, ok := capable[Ready](m); ok {
 				err = rd.Ready(ctx)
 			}
 		}
@@ -834,7 +834,7 @@ func (a *Application) shutdown(ctx context.Context) error {
 	// an RPC-owning module can expose the handler's CloseAdmission without making
 	// foundation import a transport package.
 	for _, module := range a.modules {
-		if closer, ok := module.(interface{ CloseAdmission() }); ok {
+		if closer, ok := capable[interface{ CloseAdmission() }](module); ok {
 			closer.CloseAdmission()
 		}
 	}
@@ -853,7 +853,7 @@ func (a *Application) shutdown(ctx context.Context) error {
 		}
 	}
 	for i := len(a.modules) - 1; i >= 0; i-- {
-		if c, ok := a.modules[i].(Closable); ok {
+		if c, ok := capable[Closable](a.modules[i]); ok {
 			if err := c.Close(ctx); err != nil {
 				errs = append(errs, fmt.Errorf("closing %s: %w", a.modules[i].Name(), err))
 			}
@@ -874,7 +874,7 @@ func (a *Application) shutdown(ctx context.Context) error {
 func (a *Application) Migrations() []Migration {
 	var out []Migration
 	for _, m := range a.modules {
-		if mm, ok := m.(Migratable); ok {
+		if mm, ok := capable[Migratable](m); ok {
 			out = append(out, mm.Migrations()...)
 		}
 	}
@@ -890,7 +890,7 @@ func (a *Application) Migrations() []Migration {
 func (a *Application) Tasks() []Task {
 	var out []Task
 	for _, m := range a.modules {
-		s, ok := m.(Schedulable)
+		s, ok := capable[Schedulable](m)
 		if !ok {
 			continue
 		}
@@ -914,7 +914,7 @@ func (a *Application) Tasks() []Task {
 func (a *Application) Publications() ([]Publication, error) {
 	var out []Publication
 	for _, m := range a.modules {
-		published, err := Publications(m)
+		published, err := Publications(unwrapped(m))
 		if err != nil {
 			return nil, fmt.Errorf("publications of %s: %w", m.Name(), err)
 		}
@@ -931,7 +931,7 @@ func (a *Application) Publications() ([]Publication, error) {
 func (a *Application) Diagnose(ctx context.Context) []string {
 	var out []string
 	for _, m := range a.modules {
-		d, ok := m.(Diagnostic)
+		d, ok := capable[Diagnostic](m)
 		if !ok {
 			continue
 		}
