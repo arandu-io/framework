@@ -343,6 +343,7 @@ const defaultThrottle = 300
 //	TrustProxies               the visitor's address, from a proxy TRUSTED_PROXIES lists
 //	Observe                    the request id, the logger, the debug console's recording
 //	SecurityHeaders            the content security policy and the rest
+//	what BeforeThrottle added
 //	Throttle                   the global budget, per session or address
 //	CSRFProtect                every write checked, every page given its token
 //	OverrideMethod             a form's _method
@@ -354,13 +355,14 @@ const defaultThrottle = 300
 // -- the body limit, the trusted proxies, the environment, the session store, the
 // CSRF issuer -- so what an application adjusts is only what is a decision.
 type Middleware struct {
-	sentences    exception.Sentences
-	observe      func(dev bool, tracingSecret string, recorder *observability.Recorder) func(http.Handler) http.Handler
-	prepend      []fhttp.Middleware
-	append       []fhttp.Middleware
-	csrfExcept   []string
-	throttle     cache.Limit
-	imageOrigins []string
+	sentences      exception.Sentences
+	observe        func(dev bool, tracingSecret string, recorder *observability.Recorder) func(http.Handler) http.Handler
+	prepend        []fhttp.Middleware
+	beforeThrottle []fhttp.Middleware
+	append         []fhttp.Middleware
+	csrfExcept     []string
+	throttle       cache.Limit
+	imageOrigins   []string
 }
 
 // Sentences are the words a person reads when a request is refused -- the
@@ -389,6 +391,17 @@ func (m *Middleware) Observer(observe func(dev bool, tracingSecret string, recor
 // Prepend adds middleware right after Recover, before the body limits.
 func (m *Middleware) Prepend(mw ...fhttp.Middleware) *Middleware {
 	m.prepend = append(m.prepend, mw...)
+	return m
+}
+
+// BeforeThrottle adds middleware after the visitor's address is known and
+// before the global budget is counted: after TrustProxies, Observe and
+// SecurityHeaders, before Throttle and CSRFProtect. It is the place for what
+// has to hold on a refused request too -- a no-store on a path that carries a
+// bearer link is still needed on the 429 that turns it away -- and for what
+// reads the real address.
+func (m *Middleware) BeforeThrottle(mw ...fhttp.Middleware) *Middleware {
+	m.beforeThrottle = append(m.beforeThrottle, mw...)
 	return m
 }
 
@@ -442,6 +455,9 @@ func (m *Middleware) pipeline(a *Application, d *Drivers, exceptions *exception.
 		// and then nothing is recorded.
 		observe(dev, s.Framework.Observability.TracingSecret, a.Recorder()),
 		httpmiddleware.SecurityHeaders(dev, m.imageOrigins...),
+	)
+	out = append(out, m.beforeThrottle...)
+	out = append(out,
 		// The refusal adds HX-Refresh, without which somebody over the limit
 		// presses the button and the screen does not change.
 		hmiddleware.Throttle(d.Limiter, m.throttle, middleware.KeyBySession(d.Sessions), hhttp.Refuse),

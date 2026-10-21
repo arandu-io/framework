@@ -10,6 +10,7 @@ import (
 	"github.com/arandu-io/framework/foundation"
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/observability"
+	"github.com/arandu-io/hesape/cache"
 )
 
 // serveConfigured boots a configured application and answers one request.
@@ -84,5 +85,55 @@ func TestTheObserverIsReplaceable(t *testing.T) {
 	}
 	if !handedDev || !handedRecorder {
 		t.Errorf("the observer was handed dev=%v recorder=%v, want what Observe is handed in development", handedDev, handedRecorder)
+	}
+}
+
+// TestBeforeThrottleRunsBetweenTheProxiesAndTheBudget: what BeforeThrottle
+// added reads the visitor's address TrustProxies resolved, and its headers
+// hold on the 429 the budget answers, because it ran first.
+func TestBeforeThrottleRunsBetweenTheProxiesAndTheBudget(t *testing.T) {
+	var prepended, before []string
+	app := bootConfigured(t, func(b *foundation.ApplicationBuilder) {
+		b.WithMiddleware(func(m *foundation.Middleware) {
+			m.Throttle(cache.PerMinute(1)).
+				Prepend(func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						prepended = append(prepended, r.RemoteAddr)
+						next.ServeHTTP(w, r)
+					})
+				}).
+				BeforeThrottle(func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						before = append(before, r.RemoteAddr)
+						w.Header().Set("Cache-Control", "no-store")
+						next.ServeHTTP(w, r)
+					})
+				})
+		}).WithRouting(func(r *fhttp.Router) {
+			r.Get("/checkout/abc", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+		})
+	}, "TRUSTED_PROXIES", "192.0.2.0/24")
+
+	visit := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/checkout/abc", nil)
+		req.RemoteAddr = "192.0.2.10:4000"
+		req.Header.Set("X-Forwarded-For", "203.0.113.7")
+		return serveConfigured(t, app, req)
+	}
+	if rec := visit(); rec.Code != http.StatusNoContent {
+		t.Fatalf("the first visit answered %d", rec.Code)
+	}
+	rec := visit()
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("the second visit answered %d, want the budget's 429", rec.Code)
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("the 429 carries Cache-Control %q: BeforeThrottle did not run before the budget", rec.Header().Get("Cache-Control"))
+	}
+	if len(before) == 0 || !strings.HasPrefix(before[0], "203.0.113.7") {
+		t.Errorf("BeforeThrottle saw %v, want the address the trusted proxy forwarded", before)
+	}
+	if len(prepended) == 0 || !strings.HasPrefix(prepended[0], "192.0.2.10") {
+		t.Errorf("Prepend saw %v, want the peer: it runs before the proxies are read", prepended)
 	}
 }
