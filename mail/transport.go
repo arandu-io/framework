@@ -11,12 +11,15 @@ package mail
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
 	"time"
 
 	"github.com/arandu-io/hesape/mail/transport"
 )
 
-// SMTP sends over SMTP, with STARTTLS.
+// SMTP sends over SMTP: over implicit TLS when Encryption is "tls", and
+// otherwise with STARTTLS when the server offers it.
 //
 // # Why this one is declared and not aliased
 //
@@ -41,6 +44,20 @@ type SMTP struct {
 	// request that triggered it until the client gives up -- and net/smtp has no
 	// deadline of its own.
 	Timeout time.Duration
+
+	// Encryption is how the connection is protected, as MAIL_URL names it.
+	// "tls" is implicit TLS from the first byte, what smtps:// and port 465
+	// mean: the handshake comes before any SMTP is spoken, and a server that
+	// does not complete it is sent nothing. "starttls", what smtp:// and port
+	// 587 mean, and empty both upgrade a plain connection when the server
+	// offers STARTTLS; a password is never sent over one that was not
+	// upgraded, except to a relay on this machine.
+	Encryption string
+
+	// TLSConfig verifies the server over implicit TLS. Nil checks the
+	// certificate against the system roots for Host; a test, or a relay with a
+	// private authority, passes its own.
+	TLSConfig *tls.Config
 }
 
 func (t SMTP) hesape() transport.SMTP {
@@ -58,6 +75,15 @@ func (t SMTP) Name() string { return t.hesape().Name() }
 
 // Send delivers the message.
 func (t SMTP) Send(ctx context.Context, m Message) error {
+	switch t.Encryption {
+	case "", encryptionStartTLS:
+	case encryptionTLS:
+		return t.sendImplicitTLS(ctx, m.hesape())
+	default:
+		// A misspelt "tsl" read as anything would be the failure the field
+		// exists to rule out.
+		return fmt.Errorf("mail: SMTP Encryption is %q; expected %q or %q", t.Encryption, encryptionTLS, encryptionStartTLS)
+	}
 	_, err := t.hesape().Send(ctx, m.hesape())
 	return err
 }

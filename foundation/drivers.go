@@ -340,10 +340,11 @@ func mailTransport(cfg bootstrap.Mail) mail.Transport {
 	switch cfg.Mailer {
 	case bootstrap.MailerSMTP:
 		return mail.SMTP{
-			Host:     cfg.Host,
-			Port:     strconv.Itoa(cfg.Port),
-			Username: cfg.Username,
-			Password: cfg.Password,
+			Host:       cfg.Host,
+			Port:       strconv.Itoa(cfg.Port),
+			Username:   cfg.Username,
+			Password:   cfg.Password,
+			Encryption: cfg.Encryption,
 		}
 	case bootstrap.MailerArray:
 		return &mail.Array{}

@@ -60,7 +60,11 @@ func TestTheMailURLPicksTheTransport(t *testing.T) {
 		{"sendgrid://SG.key", func(tr mail.Transport) bool { r, ok := tr.(mail.SendGrid); return ok && r.Key == "SG.key" }},
 		{"smtp://u:p@smtp.example.test:2525", func(tr mail.Transport) bool {
 			s, ok := tr.(mail.SMTP)
-			return ok && s.Host == "smtp.example.test" && s.Port == "2525" && s.Username == "u" && s.Password == "p"
+			return ok && s.Host == "smtp.example.test" && s.Port == "2525" && s.Username == "u" && s.Password == "p" && s.Encryption == "starttls"
+		}},
+		{"smtps://u:p@smtp.example.test", func(tr mail.Transport) bool {
+			s, ok := tr.(mail.SMTP)
+			return ok && s.Port == "465" && s.Encryption == "tls"
 		}},
 	} {
 		t.Run(c.url, func(t *testing.T) {
