@@ -411,11 +411,17 @@ func (m *Middleware) Append(mw ...fhttp.Middleware) *Middleware {
 	return m
 }
 
-// ValidateCSRFTokensExcept leaves the paths under the given prefixes to their
-// own guard: a provider posting a webhook carries no session and no token, and
-// every route under the prefix verifies the provider's signature instead. A
-// request with a bearer token and no session cookie is already left to the
-// token guard.
+// ValidateCSRFTokensExcept leaves the paths it names to their own guard: a
+// provider posting a webhook carries no session and no token, and the route
+// verifies the provider's signature instead. A request with a bearer token and
+// no session cookie is already left to the token guard.
+//
+// Each entry is a prefix or an exact path, by its last character. One that
+// ends in '/' covers every path under it: "/webhooks/" exempts
+// /webhooks/stripe. One that does not covers exactly that path: "/v1/usage"
+// exempts /v1/usage, and never /v1/usage/x nor /v1/usagex. Matching is by whole
+// segments on the cleaned path. An exempt write passes this middleware
+// untouched, so the Cache-Control its handler sets is the one it answers with.
 func (m *Middleware) ValidateCSRFTokensExcept(prefixes ...string) *Middleware {
 	m.csrfExcept = append(m.csrfExcept, prefixes...)
 	return m

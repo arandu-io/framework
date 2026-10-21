@@ -137,3 +137,35 @@ func TestBeforeThrottleRunsBetweenTheProxiesAndTheBudget(t *testing.T) {
 		t.Errorf("Prepend saw %v, want the peer: it runs before the proxies are read", prepended)
 	}
 }
+
+// TestCSRFExemptionsTakeExactPathsAndPrefixes: an entry without a trailing
+// slash exempts exactly that path and nothing that merely starts with it; one
+// with the slash exempts what is under it. An exempt write keeps the
+// Cache-Control its handler chose.
+func TestCSRFExemptionsTakeExactPathsAndPrefixes(t *testing.T) {
+	app := bootConfigured(t, func(b *foundation.ApplicationBuilder) {
+		b.WithMiddleware(func(m *foundation.Middleware) {
+			m.ValidateCSRFTokensExcept("/v1/usage", "/webhooks/")
+		}).WithRouting(func(r *fhttp.Router) {
+			ok := func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				w.WriteHeader(http.StatusNoContent)
+			}
+			for _, p := range []string{"/v1/usage", "/v1/usage/batch", "/v1/usagex", "/webhooks/stripe"} {
+				r.Post(p, ok)
+			}
+		})
+	})
+
+	for path, exempt := range map[string]bool{
+		"/v1/usage": true, "/v1/usage/batch": false, "/v1/usagex": false, "/webhooks/stripe": true,
+	} {
+		rec := serveConfigured(t, app, httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}")))
+		if got := rec.Code == http.StatusNoContent; got != exempt {
+			t.Errorf("POST %s answered %d; exempt = %v, want %v", path, rec.Code, got, exempt)
+		}
+		if exempt && rec.Header().Get("Cache-Control") != "no-store" {
+			t.Errorf("POST %s answered Cache-Control %q, want the handler's own", path, rec.Header().Get("Cache-Control"))
+		}
+	}
+}
