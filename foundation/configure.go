@@ -333,6 +333,7 @@ const defaultThrottle = 300
 //
 // The order is the order of execution, outermost first:
 //
+//	LocalizeSentences          the Sentences given, so every refusal below reads them
 //	exception.Recover          a panic anywhere below answers with a page
 //	what Prepend added
 //	ValidatePostSize           413 for a body that declares itself too large
@@ -345,16 +346,29 @@ const defaultThrottle = 300
 //	OverrideMethod             a form's _method
 //	what Append added
 //
-// Recover is first and stays first: a panic in a middleware above it escapes
-// without a page. Each layer takes its settings from the configuration -- the
-// body limit, the trusted proxies, the environment, the session store, the
+// Recover is first after the sentences and stays there: a panic in a
+// middleware above it escapes without a page, and LocalizeSentences only puts
+// a value on the context. Each layer takes its settings from the configuration
+// -- the body limit, the trusted proxies, the environment, the session store, the
 // CSRF issuer -- so what an application adjusts is only what is a decision.
 type Middleware struct {
+	sentences    exception.Sentences
 	prepend      []fhttp.Middleware
 	append       []fhttp.Middleware
 	csrfExcept   []string
 	throttle     cache.Limit
 	imageOrigins []string
+}
+
+// Sentences are the words a person reads when a request is refused -- the
+// status pages, the problem documents, every Refuse -- chosen per request, for
+// the language of the application. They are put on the request outside
+// Recover, because a refusal the exception handler answers reads the request
+// Recover was handed, and Sentences mounted anywhere further in never reach it.
+// A second call replaces the first; nil leaves the standard sentences.
+func (m *Middleware) Sentences(s exception.Sentences) *Middleware {
+	m.sentences = s
+	return m
 }
 
 // Prepend adds middleware right after Recover, before the body limits.
@@ -399,7 +413,7 @@ func (m *Middleware) pipeline(a *Application, d *Drivers, exceptions *exception.
 	s := d.Settings
 	dev := s.App.IsDev()
 
-	out := []fhttp.Middleware{exception.Recover(exceptions)}
+	out := []fhttp.Middleware{exception.LocalizeSentences(m.sentences), exception.Recover(exceptions)}
 	out = append(out, m.prepend...)
 	out = append(out,
 		httpmiddleware.ValidatePostSize(s.HTTP.MaxBodyBytes),
