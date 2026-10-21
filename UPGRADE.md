@@ -21,7 +21,7 @@ down here fails the build.
 
 ## v0.61.0 — the kernel collects what a module declares, and the logger comes from the configuration
 
-This release requires `hesape` v0.74.0. `apidiff` reports no incompatible
+This release requires `hesape` v0.75.0. `apidiff` reports no incompatible
 change against v0.60.0: two names are added, `foundation.CSRFExempt` and
 `foundation.JobHandlers`, the hesape interfaces under the same names. What
 `Create` now does for an application is what it used to write by hand:
@@ -41,8 +41,12 @@ change against v0.60.0: two names are added, `foundation.CSRFExempt` and
   batch finishes and a chain moves on with no `bus.Handled` in the handler.
 - **The root logger.** It is built with `log.FromConfig` over the logging
   section: one `stdout` channel at `LOG_LEVEL`, in `LOG_FORMAT`.
+- **A CSRF exemption with a parameter.** `ValidateCSRFTokensExcept` and a
+  module's `CSRFExemptPaths` take a whole `{name}` segment, as a route
+  pattern does: `"/checkout/{token}/sessions"` exempts that route for any
+  token, and none of its siblings. An entry may not begin with one.
 
-Four things change for an application that does not move:
+Five things change for an application that does not move:
 
 - **A job name registered twice stops the boot.** An application that lists a
   `JobHandlers` module in `WithProviders` and also calls its
@@ -61,6 +65,12 @@ Four things change for an application that does not move:
   environment (`channel=dev`, `"channel":"production"`); hesape's channels do
   not write the source position. A query on the aggregator that reads
   `source` reads nothing from now on.
+- **`mail.SMTP.TLSConfig` verifies a STARTTLS upgrade too.** Implicit TLS is
+  hesape's transport now, which checks the server against `TLSConfig` in
+  both modes; before, a `TLSConfig` was read for `smtps://` alone and a
+  STARTTLS upgrade was checked against the system roots. An application that
+  passes a `TLSConfig` for a private relay on 587 is now verified by it. The
+  transport `NewDrivers` builds from `MAIL_URL` sets none, and is unchanged.
 
 The deprecated `webhook.Module` envelope (`webhook.NewModule`) declares
 neither interface: what it wraps is collected only when the native module is
