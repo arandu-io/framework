@@ -19,6 +19,65 @@ down here fails the build.
 
 ---
 
+## v0.61.0 — the kernel collects what a module declares, and the logger comes from the configuration
+
+This release requires `hesape` v0.74.0. `apidiff` reports no incompatible
+change against v0.60.0: two names are added, `foundation.CSRFExempt` and
+`foundation.JobHandlers`, the hesape interfaces under the same names. What
+`Create` now does for an application is what it used to write by hand:
+
+- **The CSRF exemptions of every provider.** A module listed in
+  `WithProviders` that implements `CSRFExempt` -- hesape's webhook module
+  does -- has the paths it declares exempted beside the ones
+  `ValidateCSRFTokensExcept` names, read the same way. A path the check
+  refuses (`/`, empty, relative, not clean) stops `Create` naming the module.
+- **The job handlers of every provider.** A module that implements
+  `JobHandlers` registers its handlers on the worker `queue:work` starts,
+  beside `WithJobs`. The worker is no longer refused for having no handler
+  when only modules register them.
+- **The batch report.** The worker runs `queue/middleware.ReportToBatch`
+  outermost: a job of a batch or a chain is reported after it runs -- a
+  success at once, a failure on the attempt the worker parks it for -- so a
+  batch finishes and a chain moves on with no `bus.Handled` in the handler.
+- **The root logger.** It is built with `log.FromConfig` over the logging
+  section: one `stdout` channel at `LOG_LEVEL`, in `LOG_FORMAT`.
+
+Four things change for an application that does not move:
+
+- **A job name registered twice stops the boot.** An application that lists a
+  `JobHandlers` module in `WithProviders` and also calls its
+  `RegisterJobHandlers` from `WithJobs` registers each name twice, and
+  `Create` answers `arandu: the job "webhook.process" is given a handler by
+  the application and by the module "webhook", and a job runs one handler`.
+  Delete the call. Before, a name registered twice inside `WithJobs`
+  panicked; now it is the same error, naming the declarer.
+- **A handler that calls `bus.Handled` reports twice.** The worker already
+  reported the job, so a batch counts it twice and a chain pushes its next
+  link twice. Delete the call; read the payload with `bus.Batched` as before.
+- **`LOG_FORMAT` is honoured.** It was read and validated and never reached
+  the logger, which followed `APP_ENV` alone. Empty keeps that: text in
+  development, JSON elsewhere, on the standard output, from `info` up.
+- **A log line carries `channel` and no longer `source`.** The channel is the
+  environment (`channel=dev`, `"channel":"production"`); hesape's channels do
+  not write the source position. A query on the aggregator that reads
+  `source` reads nothing from now on.
+
+The deprecated `webhook.Module` envelope (`webhook.NewModule`) declares
+neither interface: what it wraps is collected only when the native module is
+registered with `foundation.Component(native)`, which v0.60.0 already asked
+for. An application on the envelope keeps its lines until it moves.
+
+### The lines an application deletes
+
+| an application wrote | is now |
+| --- | --- |
+| `m.ValidateCSRFTokensExcept(webhooks.ReceivePaths()...)`, or the literal prefix a module's receivers answer under, in `WithMiddleware` | nothing: `Create` asks the module. The application's own routes -- a controller that verifies a provider's signature itself -- are still named here |
+| `webhooks.RegisterJobHandlers(w)` (or any `JobHandlers` module's) inside the function given to `WithJobs` | nothing: `Create` registers it. A `WithJobs` left with nothing to register is deleted with it |
+| `errors.Join(err, bus.Handled(ctx, g, repo, queue, m, err))` at the end of a batched handler | `return err`: the worker reports |
+| a logger built by hand to honour `LOG_FORMAT` | nothing |
+
+---
+
 ## v0.60.0 — the HTTP envelope becomes hesape's, and the pipeline gets its missing places
 
 This release requires `hesape` v0.73.0. No line of an application changes:
