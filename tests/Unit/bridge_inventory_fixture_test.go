@@ -32,27 +32,12 @@ var historicalBridgeSurface = bridgeSurface{
 		type.Publisher type.PublisherFunc type.Recorder type.Relay type.RelayOptions type.Stored
 		var.ErrNoTransaction
 	`),
-	// Singleton, ResourceAction, Invokable and Invoker grew this list, and they
-	// are not new API: they are hesape/routing's route shapes, which take the
-	// action adapter as a parameter, and that adapter is unexported here and
-	// exported nowhere. Without these four methods a module, whose Routes
-	// receives this Router, could not reach the shapes at all. They forward and
-	// hold nothing, as Action and Resource do, and go with them.
-	//
-	// Flash is the other growth, and it has no hesape counterpart to point at
-	// because hesape/routing deliberately holds no flash: the flash is a field
-	// of this envelope, set by WithFlash, and Flash only reads it back so a
-	// module reuses the one the kernel wired instead of building a second with
-	// its own Secure. It holds nothing new and goes with WithFlash.
+	// Router and Routes are Go aliases of hesape/routing/controllers, so their
+	// methods are declared there and reached through these names; the
+	// twenty-six entries this list held for them went when the envelopes did.
 	"http": inventoryItems(`
 		func.Back func.Chain func.NewRouter func.Redirect func.Refuse func.Reject func.StateFrom
-		func.WithState method.Router.Action method.Router.Delete method.Router.Flash
-		method.Router.ForModule method.Router.Get method.Router.Group method.Router.Invokable
-		method.Router.Patch
-		method.Router.Post method.Router.Put method.Router.Resource method.Router.ResourceAction
-		method.Router.Routes method.Router.ServeHTTP method.Router.Singleton method.Router.Table
-		method.Router.WithFlash method.Router.WithRenderer method.Routes.All method.Routes.Must
-		method.Routes.URL type.Context type.Creator type.Destroyer type.Editor type.Indexer
+		func.WithState type.Context type.Creator type.Destroyer type.Editor type.Indexer
 		type.Invoker type.Middleware type.Renderer type.Route type.Router type.Routes type.Shower
 		type.State type.Storer type.Updater
 	`),
@@ -205,15 +190,12 @@ var allowedHesapeImports = bridgeSurface{
 	"geo": inventoryItems(`
 		github.com/arandu-io/hesape/geo
 	`),
-	// exception is here because the action adapter answers an error with the
-	// status exception.StatusOf reads off it, the one status table, and
-	// answers a request that wants JSON with the problem document
-	// exception.WriteProblem and exception.WriteValidationProblem write, the one
-	// writer of that shape. A second table here would be a second answer for
-	// the same error.
+	// routing/controllers is here because Router, NewRouter, Routes and the
+	// controller interfaces are its names under the old ones. The adapter that
+	// answers an action's error is hesape/http.NewAdapter, behind that router.
 	"http": inventoryItems(`
-		github.com/arandu-io/hesape/exception github.com/arandu-io/hesape/http
-		github.com/arandu-io/hesape/pipeline github.com/arandu-io/hesape/routing
+		github.com/arandu-io/hesape/http github.com/arandu-io/hesape/pipeline
+		github.com/arandu-io/hesape/routing github.com/arandu-io/hesape/routing/controllers
 		github.com/arandu-io/hesape/validation
 	`),
 	// exception is here because Recover installs hesape/exception.Recover

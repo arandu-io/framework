@@ -22,6 +22,7 @@ import (
 	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/pipeline"
 	"github.com/arandu-io/hesape/routing"
+	"github.com/arandu-io/hesape/routing/controllers"
 	hvalidation "github.com/arandu-io/hesape/validation"
 )
 
@@ -54,6 +55,15 @@ var (
 	// The single-action controller, instantiated on the same type.
 	_ fhttp.Invoker                  = routing.Invoker[hhttp.Context](nil)
 	_ routing.Invoker[hhttp.Context] = fhttp.Invoker(nil)
+
+	// The controller router and its table are hesape's under the old names:
+	// one type each, so a module handed one is handed the other.
+	_ *controllers.Router = (*fhttp.Router)(nil)
+	_ *fhttp.Router       = (*controllers.Router)(nil)
+	_ *controllers.Routes = (*fhttp.Routes)(nil)
+	_ *fhttp.Routes       = (*controllers.Routes)(nil)
+	_ controllers.Indexer = fhttp.Indexer(nil)
+	_ controllers.Invoker = fhttp.Invoker(nil)
 )
 
 // renderer records what a handler asked to draw.
