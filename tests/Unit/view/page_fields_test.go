@@ -13,6 +13,7 @@ import (
 	"github.com/arandu-io/framework/view"
 	"github.com/arandu-io/hesape/auth"
 	hhttp "github.com/arandu-io/hesape/http"
+	"github.com/arandu-io/hesape/translation"
 	hview "github.com/arandu-io/hesape/view"
 )
 
@@ -73,6 +74,7 @@ func TestNewCopiesEveryFieldHesapeFills(t *testing.T) {
 	ctx := auth.WithSubject(req.Context(), acting)
 	ctx = hhttp.WithCSRFToken(ctx, "issued-token")
 	ctx = hhttp.WithAppName(ctx, "Example")
+	ctx = translation.WithLocale(translation.WithTranslator(ctx, translation.New(translation.NewArrayLoader(), "en", "en")), "pt-BR")
 	ctx = fhttp.WithState(ctx, fhttp.State{
 		Errors:   validation.Errors{"title": {"is required"}},
 		Old:      url.Values{"title": {"A draft"}},
@@ -91,8 +93,8 @@ func TestNewCopiesEveryFieldHesapeFills(t *testing.T) {
 			t.Errorf("view.Page has no field %s", name)
 			continue
 		}
-		if !reflect.DeepEqual(got.Interface(), h.Field(i).Interface()) {
-			t.Errorf("New dropped %s: got %#v, hesape filled %#v", name, got.Interface(), h.Field(i).Interface())
+		if !sameField(got, h.Field(i)) {
+			t.Errorf("New dropped %s: got %v, hesape filled %v", name, got, h.Field(i))
 		}
 
 		// Every field hesape's New fills from the request has to be set here,
@@ -104,5 +106,26 @@ func TestNewCopiesEveryFieldHesapeFills(t *testing.T) {
 		if h.Field(i).IsZero() {
 			t.Errorf("hesape's New left %s empty, so this test does not cover its copy", name)
 		}
+	}
+}
+
+// sameField compares one field of each page. An unexported field cannot be
+// handed to Interface, so the two the page keeps to itself -- the translator
+// and the locale -- are compared by what reflect can read without it: the
+// pointer and the string.
+func sameField(a, b reflect.Value) bool {
+	if a.CanInterface() && b.CanInterface() {
+		return reflect.DeepEqual(a.Interface(), b.Interface())
+	}
+	if a.Kind() != b.Kind() {
+		return false
+	}
+	switch a.Kind() {
+	case reflect.Pointer:
+		return a.Pointer() == b.Pointer()
+	case reflect.String:
+		return a.String() == b.String()
+	default:
+		return false
 	}
 }

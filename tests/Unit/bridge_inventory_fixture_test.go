@@ -137,6 +137,7 @@ var historicalBridgeSurface = bridgeSurface{
 		method.Module.Renderer method.Module.Routes method.Page.AdminLink method.Page.BrandName
 		method.Page.CSRFToken method.Page.CanonicalURL method.Page.ErrorSummary
 		method.Page.FieldError method.Page.FieldErrors method.Page.HasErrors method.Page.HomeLink
+		method.Page.Locale method.Page.Translator method.Page.WithTranslator
 		method.Page.IsCurrent method.Page.LogValue method.Page.LoginLink method.Page.LogoutLink
 		method.Page.MarshalJSON method.Page.OldOr method.Page.OldValue method.Page.PageDescription
 		method.Page.PageTitle method.Page.PanelLink method.Page.RegisterLink method.Page.SignedIn
@@ -276,8 +277,11 @@ var allowedHesapeImports = bridgeSurface{
 	"validation": inventoryItems(`
 		github.com/arandu-io/hesape/str github.com/arandu-io/hesape/validation
 	`),
+	// translation is here because view.Page carries the translator and the
+	// locale hesape's Page carries, field for field, and answers the same
+	// Translator and Locale a component asks a page for.
 	"view": inventoryItems(`
-		github.com/arandu-io/hesape/view
+		github.com/arandu-io/hesape/translation github.com/arandu-io/hesape/view
 	`),
 	// webhook is a route-only envelope like geo: the native package owns every
 	// action, table and task, and this package registers the actions on the

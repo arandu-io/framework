@@ -9,6 +9,7 @@ import (
 
 	"github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/validation"
+	"github.com/arandu-io/hesape/translation"
 	hview "github.com/arandu-io/hesape/view"
 )
 
@@ -202,6 +203,14 @@ type Page struct {
 	// Context.With. Filled by New from the flash, like Errors; a view reads
 	// .Messages["status"], or hesape's view.Page.Flashed.
 	Messages map[string]string
+
+	// translator and locale are what Translator and Locale answer: the
+	// application's catalogue and the language of the request, filled by New
+	// from the request context. They are unexported because they are read
+	// through the two methods a component asks a page for, and a field and a
+	// method may not share a name.
+	translator *translation.Translator
+	locale     string
 }
 
 // Compile-time proof that embedding Page is all a page has to do to fit the
@@ -362,6 +371,28 @@ func (p Page) BrandName() string { return p.AppName }
 // interpolated into hx-headers, and one name cannot be both.
 func (p Page) CSRFToken() string { return p.Token }
 
+// Translator is the application's catalogue, or nil when the request carried
+// none (see translation.WithTranslator).
+//
+// It is what a component asks a page for when it draws a word nobody wrote --
+// "Cancel", "Next page" -- so a screen that embeds Page says those words in the
+// request's language without a line of its own.
+func (p Page) Translator() *translation.Translator { return p.translator }
+
+// Locale is the language of the request being drawn, as translation.Locale
+// read it from the request context. Empty asks the translator for its own.
+func (p Page) Locale() string { return p.locale }
+
+// WithTranslator replaces the catalogue and the locale New took from the
+// request context, and returns a copy.
+//
+// A page drawn behind the middleware that puts them on the request never needs
+// it. It is for one that is not -- a test, a mail rendered outside a request.
+func (p Page) WithTranslator(t *translation.Translator, locale string) Page {
+	p.translator, p.locale = t, locale
+	return p
+}
+
 // SignedIn reports whether there is a session behind this render.
 func (p Page) SignedIn() bool { return p.Authenticated }
 
@@ -451,6 +482,9 @@ func fromHesape(p hview.Page) Page {
 		Errors:   p.Errors,
 		Old:      p.Old,
 		Messages: p.Messages,
+
+		translator: p.Translator(),
+		locale:     p.Locale(),
 	}
 }
 
