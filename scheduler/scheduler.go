@@ -44,6 +44,10 @@ import (
 type Tenants = scheduling.Tenants
 
 // Options configures the scheduler.
+//
+// Deprecated: the console kernel takes the lock from foundation.Drivers and the
+// tenants from ApplicationBuilder.WithTenants; hesape/console/scheduling.TaskOptions
+// is the same for an application that composes by hand.
 type Options struct {
 	// Locker makes a Singleton task run on exactly one replica. Nil means a
 	// single replica, and with more than one it means every replica runs
@@ -89,6 +93,9 @@ type entry struct {
 // carried as an Event; here it is collected as a kernel.Task, and the task
 // carries a Timeout, a Recorder and a durable occurrence claim that an Event
 // has no field for.
+//
+// Deprecated: use hesape/console/scheduling.TaskScheduler, which the console
+// kernel runs and schedule:list and schedule:run read.
 type Scheduler struct {
 	entries  []*entry
 	schedule *scheduling.Schedule
@@ -105,6 +112,9 @@ type Scheduler struct {
 // silently never runs -- which is the failure mode of every scheduler that
 // validates lazily. A Singleton task with a non-nil transient-only Locker is
 // also refused here, before any task can execute.
+//
+// Deprecated: use hesape/console/scheduling.NewTaskScheduler, which the console
+// kernel builds through NewTaskModule.
 func New(tasks []kernel.Task, opts Options) (*Scheduler, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now

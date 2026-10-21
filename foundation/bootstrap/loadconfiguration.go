@@ -84,12 +84,30 @@ type Configuration struct {
 	// that writes the cookie takes two values and nothing else -- see the type.
 	Session Session
 
-	Cache      cache.Config
-	Database   database.Config
-	Log        log.Config
+	// Cache is the cache manager's configuration read from CACHE_STORE, whose
+	// values here are the manager's store names.
+	//
+	// Deprecated: nothing builds from it. Read Settings.Cache, which the
+	// drivers are built from: CACHE_STORE memory or redis, and REDIS_URL.
+	Cache cache.Config
+
+	Database database.Config
+	Log      log.Config
+
+	// Filesystem is one disk's configuration read from FILESYSTEM_DISK and
+	// FILESYSTEM_ROOT.
+	//
+	// Deprecated: nothing builds from it. Read Settings.Filesystems, which
+	// foundation.NewDrivers builds the disk from, local or a bucket.
 	Filesystem filesystem.Config
-	Queue      queue.Config
-	View       view.Config
+
+	// Queue is the queue manager's configuration read from QUEUE_CONNECTION.
+	//
+	// Deprecated: nothing builds from it. Read Settings.Queue, which the queue
+	// and queue:work are built from.
+	Queue queue.Config
+
+	View view.Config
 
 	// Observability is what the assembled application needs to explain itself.
 	// It is here, beside the components, and not one of them -- see the type.

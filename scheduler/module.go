@@ -29,6 +29,12 @@ import (
 // *http.Router and answers Diagnose as well, which is the kernel's side of the
 // contract rather than hesape's. The tasks come from kernel.Tasks(), so this
 // half stays here.
+//
+// Deprecated: the console kernel composes the scheduler. An application built
+// with foundation.Configure(...).Create() gets it, over every module's tasks
+// and WithSchedule, with schedule:list and schedule:run; one that composes by
+// hand uses github.com/arandu-io/hesape/console/scheduling.NewTaskModule and
+// TaskCommands.
 type Module struct {
 	tasks     []kernel.Task
 	opts      Options
@@ -44,6 +50,10 @@ type Module struct {
 //	    Locker:  kernel.NewLocker(cache.NewLocks(redis.NewRedisStore(client))),
 //	    Tenants: tenants.Active,
 //	}))
+//
+// Deprecated: foundation.Configure(...).WithSchedule(...).WithTenants(...)
+// composes the scheduler, or hesape/console/scheduling.NewTaskModule for an
+// application that composes by hand.
 func NewModule(tasks []kernel.Task, opts Options) *Module {
 	return &Module{tasks: tasks, opts: opts}
 }
