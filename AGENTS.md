@@ -91,7 +91,7 @@ sent back. None is missing by accident.
 | A model reaches for | What is here instead |
 | --- | --- |
 | a service container, dependency injection | `Application.Register(mods ...Module)`, a slice, booted in the order it was written |
-| service providers, auto-discovery | `foundation.Module` — `Name()` and `Routes()` — plus nine optional interfaces the `Application` asks for by type assertion |
+| service providers, auto-discovery | `foundation.Module` — `Name()` and `Routes()` — plus twelve optional interfaces the `Application` asks for by type assertion |
 | `config("app.name")`, a settings registry | `bootstrap.Configuration`: one typed struct per component, filled once. A wrong field does not compile |
 | a component that loads its own settings at first use | one reader, one moment, one error. See the argument on `Configuration` |
 | middleware that authorizes | a Policy that issues a `security.Grant`. Middleware answers "is there a session" and stops |
