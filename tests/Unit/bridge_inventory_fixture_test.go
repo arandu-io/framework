@@ -198,28 +198,12 @@ var allowedHesapeImports = bridgeSurface{
 		github.com/arandu-io/hesape/validation
 	`),
 	// exception is here because Recover installs hesape/exception.Recover
-	// rather than writing the panic path a second time. It is the one
-	// implementation of that job in the collection, and this package is the
-	// bridge that reaches it until v1.0.0.
-	//
-	// auth is here because the guards put the subject they loaded on the
-	// request context with auth.WithSubject, the key Context.User and every
-	// policy read. The security bridge is frozen and does not re-export it.
-	//
-	// http is here because CSRFProtect puts the token it issued on the request
-	// context with http.WithCSRFToken, the key view.New reads. The http bridge is
-	// frozen and does not re-export it.
-	//
-	// exception also writes the problem document a refused JSON client gets,
-	// through exception.WriteProblem, the one writer of that shape.
-	//
-	// cache is here because Idempotent takes its store by the hesape cache's own
-	// method names, cache.Locking among them, and branches on cache.ErrNotFound:
-	// any store that can hold a lock is accepted as it stands, and there is no
-	// framework name for either.
+	// rather than writing the panic path a second time, and http/middleware
+	// because CSRFProtect, the session and token guards, Idempotent and
+	// KeyBySession are its names under the old ones. routing/middleware
+	// answers KeyByIP, and foundation answers Observe.
 	"http/middleware": inventoryItems(`
-		github.com/arandu-io/hesape/auth github.com/arandu-io/hesape/cache
-		github.com/arandu-io/hesape/exception github.com/arandu-io/hesape/http
+		github.com/arandu-io/hesape/exception github.com/arandu-io/hesape/foundation
 		github.com/arandu-io/hesape/http/middleware github.com/arandu-io/hesape/routing/middleware
 	`),
 	"jobs": inventoryItems(`
