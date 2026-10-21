@@ -1,5 +1,9 @@
 # Release Notes
 
+## [v0.61.0](https://github.com/arandu-io/framework/compare/v0.60.0...v0.61.0) - 2026-10-21
+
+**Full Changelog**: https://github.com/arandu-io/framework/compare/v0.60.0...v0.61.0
+
 ## [v0.60.0](https://github.com/arandu-io/framework/compare/v0.59.0...v0.60.0) - 2026-10-21
 
 **Full Changelog**: https://github.com/arandu-io/framework/compare/v0.59.0...v0.60.0
