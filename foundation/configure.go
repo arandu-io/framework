@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"runtime/debug"
 
 	"github.com/arandu-io/framework/foundation/bootstrap"
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/http/middleware"
+	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/hesape/cache"
 	"github.com/arandu-io/hesape/console"
 	"github.com/arandu-io/hesape/console/scheduling"
@@ -339,7 +341,7 @@ const defaultThrottle = 300
 //	ValidatePostSize           413 for a body that declares itself too large
 //	LimitBodySize              and a cut for one that declares nothing
 //	TrustProxies               the visitor's address, from a proxy TRUSTED_PROXIES lists
-//	Observe                    the debug console's recording
+//	Observe                    the request id, the logger, the debug console's recording
 //	SecurityHeaders            the content security policy and the rest
 //	Throttle                   the global budget, per session or address
 //	CSRFProtect                every write checked, every page given its token
@@ -353,6 +355,7 @@ const defaultThrottle = 300
 // CSRF issuer -- so what an application adjusts is only what is a decision.
 type Middleware struct {
 	sentences    exception.Sentences
+	observe      func(dev bool, tracingSecret string, recorder *observability.Recorder) func(http.Handler) http.Handler
 	prepend      []fhttp.Middleware
 	append       []fhttp.Middleware
 	csrfExcept   []string
@@ -368,6 +371,18 @@ type Middleware struct {
 // A second call replaces the first; nil leaves the standard sentences.
 func (m *Middleware) Sentences(s exception.Sentences) *Middleware {
 	m.sentences = s
+	return m
+}
+
+// Observer replaces Observe in its place in the pipeline: what puts the
+// request id and the request's logger on the context and records the request
+// for the debug console. It is handed what Observe is handed -- whether this is
+// development, the tracing secret and the console's recorder, nil when nothing
+// is recorded -- so an application's own observer, one that redacts what a
+// path carries before it is logged, records exactly where Observe would. Nil
+// keeps Observe.
+func (m *Middleware) Observer(observe func(dev bool, tracingSecret string, recorder *observability.Recorder) func(http.Handler) http.Handler) *Middleware {
+	m.observe = observe
 	return m
 }
 
@@ -412,6 +427,10 @@ func (m *Middleware) ImageOrigins(origins ...string) *Middleware {
 func (m *Middleware) pipeline(a *Application, d *Drivers, exceptions *exception.Handler) []fhttp.Middleware {
 	s := d.Settings
 	dev := s.App.IsDev()
+	observe := m.observe
+	if observe == nil {
+		observe = middleware.Observe
+	}
 
 	out := []fhttp.Middleware{exception.LocalizeSentences(m.sentences), exception.Recover(exceptions)}
 	out = append(out, m.prepend...)
@@ -421,7 +440,7 @@ func (m *Middleware) pipeline(a *Application, d *Drivers, exceptions *exception.
 		httpmiddleware.TrustProxies(s.HTTP.TrustedProxies),
 		// The recorder is nil outside development without a tracing secret,
 		// and then nothing is recorded.
-		middleware.Observe(dev, s.Framework.Observability.TracingSecret, a.Recorder()),
+		observe(dev, s.Framework.Observability.TracingSecret, a.Recorder()),
 		httpmiddleware.SecurityHeaders(dev, m.imageOrigins...),
 		// The refusal adds HX-Refresh, without which somebody over the limit
 		// presses the button and the screen does not change.
