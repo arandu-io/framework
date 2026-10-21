@@ -162,10 +162,15 @@ under `app/Console`. Each goes here:
 9. **`config/{cache,database,filesystems,http,logging,mail,queue,session}.go`**:
    deleted; `config/app.go` embeds `bootstrap.Settings`. `config/auth.go` and
    `config/services.go` stay.
-10. **`cmd/openapi`**: an `openapi:export` command in `app/Console/Commands`,
-    with `--usage`, `--api`, `--check` and `--output`, listed in
-    `routes/console.go`; CI runs `go run . openapi:export --check` instead of
-    `go run ./cmd/openapi --check`.
+10. **`cmd/openapi`**: deleted, and no `openapi:export` of the application's
+    own replaces it -- that name is the swagger module's command, and `Create`
+    refuses a second declarer (ADR-0183). The module built with
+    `swagger.New(swagger.Config{ContractName: "api", ...})` writes the public
+    API's document, and the other two are declared on it with
+    `docs.Contract(registry, swagger.Config{ContractName: "workspace", ...})`
+    and the same for `"usage"`, where `docs` is that `*swagger.Module`.
+    `openapi:export` writes all three under `docs/contracts/`; CI runs
+    `aru openapi:check` instead of `go run ./cmd/openapi --check`.
 11. **`app/Console/*.go`** (`billing:run`, `cielo:sandbox`, `fees:assign`,
     `cielo-costs:assign`, `webhooks:import`, `plans:install`): each `UseX` and its
     package-level `atomic.Pointer` goes. The command becomes a function taking
