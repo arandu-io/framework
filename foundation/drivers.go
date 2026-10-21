@@ -222,10 +222,7 @@ func newDrivers(s bootstrap.Settings, db *database.DB) (*Drivers, error) {
 		return nil, err
 	}
 
-	d.Mail = mail.New(mailTransport(s.Mail), view.NewRenderer(), mail.Address{
-		Email: s.Mail.FromAddress,
-		Name:  s.Mail.FromName,
-	})
+	d.Mail = newMailer(s.Mail, mailTransport(s.Mail))
 	if d.Disks, err = newDisks(s.Filesystems); err != nil {
 		return nil, err
 	}
@@ -332,6 +329,38 @@ func openQueue(s bootstrap.Settings, db *database.DB, endpoint cache.Endpoint) (
 		return nil, fmt.Errorf("QUEUE_CONNECTION has unsupported value %q; expected %s or %s",
 			s.Queue.Connection, bootstrap.QueueDatabase, bootstrap.QueueRedis)
 	}
+}
+
+// newMailer is the mailer over t, from MAIL_FROM_ADDRESS and MAIL_FROM_NAME,
+// drawing with the registered views.
+func newMailer(cfg bootstrap.Mail, t mail.Transport) *mail.Mailer {
+	return mail.New(t, view.NewRenderer(), mail.Address{Email: cfg.FromAddress, Name: cfg.FromName})
+}
+
+// WrapMail puts a transport around the one MAIL_URL named -- one that records
+// every message sent, such as an activity log's -- and rebuilds Mail over it,
+// with the same sender and views.
+//
+//	err := d.WrapMail(func(next mail.Transport) (mail.Transport, error) {
+//		return activitylog.NewMailTransport(next, logger, tenant)
+//	})
+//
+// Call it before Mail is handed to anything: a module or a service that took
+// the mailer earlier keeps the one it took. A wrap that fails, or answers no
+// transport, leaves Mail as it was and says so.
+func (d *Drivers) WrapMail(wrap func(next mail.Transport) (mail.Transport, error)) error {
+	if wrap == nil {
+		return errors.New("foundation: WrapMail was given no function")
+	}
+	wrapped, err := wrap(d.Mail.Transport())
+	if err != nil {
+		return fmt.Errorf("foundation: wrapping the mail transport: %w", err)
+	}
+	if wrapped == nil {
+		return errors.New("foundation: WrapMail's function answered no transport, and the mailer would have nothing to send through")
+	}
+	d.Mail = newMailer(d.Settings.Mail, wrapped)
+	return nil
 }
 
 // mailTransport picks the transport MAIL_URL asked for. There are five, and a
