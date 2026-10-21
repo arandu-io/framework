@@ -1,6 +1,6 @@
 ---
 name: framework-module
-description: The composition contract of the Arandu framework core — foundation.Module, the eleven optional interfaces, and the boot sequence that asks for each one. Use when adding or changing a module, when a change touches New, Boot, Run, Shutdown, the middleware pipeline or the router wiring, when reading or extending bootstrap.LoadConfiguration, and when the request mentions "register a module", "boot order", "add a background loop", "add a migration", "add a scheduled task", "publish files into a project", "health check", "graceful shutdown", "middleware pipeline", "add a config setting", "read an environment variable", "where does this get wired" or "why is my method never called". Covers what the Application does in order, where each optional interface is asked, what a module must never do, and the typed configuration read once at start.
+description: The composition contract of the Arandu framework core — foundation.Module, the twelve optional interfaces, and the boot sequence that asks for each one. Use when adding or changing a module, when a change touches New, Boot, Run, Shutdown, the middleware pipeline or the router wiring, when reading or extending bootstrap.LoadConfiguration, and when the request mentions "register a module", "boot order", "add a background loop", "add a migration", "add a scheduled task", "publish files into a project", "health check", "graceful shutdown", "middleware pipeline", "add a config setting", "read an environment variable", "where does this get wired" or "why is my method never called". Covers what the Application does in order, where each optional interface is asked, what a module must never do, and the typed configuration read once at start.
 license: MIT
 ---
 
@@ -52,10 +52,11 @@ keeps `RendererProvider`, `Ready`, `Locker` and `OccurrenceClaimer` declared
 here — `hesape/foundation` has no counterpart for any of them — and everything
 else in that file is an alias.
 
-## The eleven optional interfaces, and where each is asked
+## The twelve optional interfaces, and where each is asked
 
 Every one is asked for by a type assertion, at exactly one place. Ten of them are
-in `foundation/application.go`, and `Publishable` is asked one call further in.
+in `foundation/application.go`, `Publishable` is asked one call further in, and
+`Commandable` is asked where the console kernel collects the commands.
 Get the signature wrong and the assertion simply fails: the module is registered,
 nothing complains, and the method is never called.
 
@@ -72,6 +73,7 @@ nothing complains, and the method is never called.
 | `Publishable` | `hesape/foundation/publishing.go:95` | when `Application.Publications()` hands each module over, one at a time (`:698`) |
 | `Diagnostic` | `:715` | when `Application.Diagnose()` is called, for the error page |
 | `Closable` | `:637` | in `Shutdown`, in **reverse** registration order |
+| `Commandable` | `foundation/console_builtins.go:303` | when `Create` composes the console, or the first `HandleCommand` of an Application made by `New`; a name another declarer already took refuses, naming both |
 
 Confirm the list has not moved before relying on a line number:
 
@@ -100,7 +102,7 @@ registered modules exists only inside that binary. The worked example is
 screens the project edits, landing in `cmd/native` because that is where they
 have to be. A tag says what a file is, never where it goes.
 
-Nine of the eleven are aliases to `hesape/foundation`; `RendererProvider` and
+Ten of the twelve are aliases to `hesape/foundation`; `RendererProvider` and
 `Ready` are declared here. Two tests assert the aliases at compile time, name by
 name: `TestTheVocabularyIsTheHesapeVocabulary`
 (`tests/Unit/foundation/module_test.go:20`) for the composition names, and
