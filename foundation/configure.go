@@ -204,10 +204,15 @@ func (b *ApplicationBuilder) WithVersion(version, commit string) *ApplicationBui
 // schedule. Then the console: the built-in commands, the application's and
 // every Commandable module's, each name declared once.
 //
+// What a provider declares for itself is collected rather than written in the
+// chain: the paths of every CSRFExempt provider are exempted from the CSRF
+// check beside the ones ValidateCSRFTokensExcept names.
+//
 // It boots nothing and listens on nothing; HandleCommand decides what the
 // command needs. It fails when the composition is contradictory -- a command
-// name declared twice, a single-valued With called twice -- and closes the
-// drivers then, so a refused composition leaves nothing open.
+// name declared twice, a single-valued With called twice, a CSRF exemption the
+// check refuses -- and closes the drivers then, so a refused composition
+// leaves nothing open.
 func (b *ApplicationBuilder) Create() (*Application, error) {
 	d := b.drivers
 	if d == nil {
@@ -232,7 +237,15 @@ func (b *ApplicationBuilder) Create() (*Application, error) {
 		using(exceptions)
 	}
 
-	m := &Middleware{throttle: cache.PerMinute(defaultThrottle)}
+	// The paths the providers answer without a session are exempted from the
+	// CSRF check beside the application's own, so a webhook module needs no
+	// line in WithMiddleware.
+	exempt, err := moduleCSRFExemptions(b.providers)
+	if err != nil {
+		_ = d.Close()
+		return nil, err
+	}
+	m := &Middleware{throttle: cache.PerMinute(defaultThrottle), moduleExcept: exempt}
 	for _, using := range b.middleware {
 		using(m)
 	}
@@ -362,6 +375,7 @@ type Middleware struct {
 	beforeThrottle []fhttp.Middleware
 	append         []fhttp.Middleware
 	csrfExcept     []string
+	moduleExcept   []string
 	throttle       cache.Limit
 	imageOrigins   []string
 }
@@ -423,6 +437,10 @@ func (m *Middleware) Append(mw ...fhttp.Middleware) *Middleware {
 // exempts /v1/usage, and never /v1/usage/x nor /v1/usagex. Matching is by whole
 // segments on the cleaned path. An exempt write passes this middleware
 // untouched, so the Cache-Control its handler sets is the one it answers with.
+//
+// A provider that implements CSRFExempt is not named here: Create exempts the
+// paths it declares, read the same way. What is left to name is the
+// application's own routes.
 func (m *Middleware) ValidateCSRFTokensExcept(prefixes ...string) *Middleware {
 	m.csrfExcept = append(m.csrfExcept, prefixes...)
 	return m
@@ -468,7 +486,7 @@ func (m *Middleware) pipeline(a *Application, d *Drivers, exceptions *exception.
 		// The refusal adds HX-Refresh, without which somebody over the limit
 		// presses the button and the screen does not change.
 		hmiddleware.Throttle(d.Limiter, m.throttle, middleware.KeyBySession(d.Sessions), hhttp.Refuse),
-		middleware.CSRFProtect(d.CSRF, d.Sessions.IDFromRequest, middleware.CSRFExcept(m.csrfExcept...)),
+		middleware.CSRFProtect(d.CSRF, d.Sessions.IDFromRequest, middleware.CSRFExcept(append(m.moduleExcept, m.csrfExcept...)...)),
 		httpmiddleware.OverrideMethod(),
 	)
 	return append(out, m.append...)

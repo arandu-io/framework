@@ -14,9 +14,9 @@
 //
 // The composition vocabulary is github.com/arandu-io/hesape/foundation and is
 // aliased, not restated: Bootable, Background, Closable, Diagnostic, Health,
-// Schedulable, Migratable, Commandable, Scope, Global, PerTenant, Task,
-// Migration and ReloadTagger are the hesape types under the same names. A module written
-// against either name is one type to the compiler.
+// Schedulable, Migratable, Commandable, CSRFExempt, Scope, Global, PerTenant,
+// Task, Migration and ReloadTagger are the hesape types under the same names. A
+// module written against either name is one type to the compiler.
 //
 // The publishing vocabulary arrives the same way: Publishable, Publication,
 // PublishTag and the six tag constants are aliases, and [PublishTags] and
