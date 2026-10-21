@@ -19,6 +19,177 @@ down here fails the build.
 
 ---
 
+## v0.59.0 — the console kernel, the application builder and the drivers
+
+This release requires `hesape` v0.71.0 and `hesape/filesystem/s3` v0.11.0.
+`apidiff` reports no incompatible change against v0.58.0: everything is
+added, and what an existing `bootstrap/` calls keeps compiling and behaving as
+it did. Four things are marked `Deprecated:` and stay for at least one minor:
+`scheduler.Module`, `scheduler.NewModule`, `scheduler.Options`,
+`scheduler.New` and `scheduler.Scheduler` (the kernel composes the scheduler),
+and `bootstrap.Configuration.Cache`, `.Queue` and `.Filesystem` (nothing
+builds from them; `bootstrap.Settings` is what the drivers are built from).
+
+Two behaviours change for an application that does not move, and both come
+from hesape v0.71.0 rather than from this module:
+
+- **`migrate:fresh`, `migrate:reset` and `migrate:refresh` refuse unless
+  `dbmigrations.Deps.Environment` is `config.EnvDev`, and the zero value
+  refuses too.** A `bootstrap/migrate.go` that builds `Deps` by hand adds
+  `Environment: cfg.App.Env`, or the three commands are refused in development
+  as well.
+- **The packages' tables gain a widening migration each** (hesape v0.67.0),
+  so `migrate` applies `..._widen_..._time_precision` for the outbox, the jobs,
+  the failed jobs, the batches, the notifications and the second factor once.
+  A test that pins the exact list of migrations a fresh database runs adds
+  them.
+
+### What moved into the framework
+
+| an application wrote | the framework now has |
+| --- | --- |
+| `config/{cache,database,filesystems,http,logging,mail,queue,session}.go` | `bootstrap.Settings`, read by `bootstrap.LoadSettings`: the same variables, the same refusals |
+| the factories in `bootstrap/app.go`: cache stores, RESP endpoint and TLS, shared lock, session backend, CSRF, limiter, idempotency store, queue, mail transport | `foundation.NewDrivers(settings)` |
+| the disk built by hand over S3 or R2 | `Drivers.Disks`, from `FILESYSTEM_DISK` and the four `FILESYSTEM_*` variables |
+| `bootstrap/console.go`, the `switch` and `Dispatch` | `Application.HandleCommand(ctx, args) int` |
+| `bootstrap/{migrate,queue,publish,background}.go` | the built-in commands, composed in `foundation/console_builtins.go` |
+| the pipeline written out in `Build` | `foundation.Middleware`, composed from the configuration, adjusted in `WithMiddleware` |
+| `registerHandlers` and `seedDeps` | `WithJobs` and `WithSeeders` |
+| `scheduler.NewModule(k.Tasks(), ...)` | the scheduler `Create` registers last; `WithSchedule` and `WithTenants` |
+| a module's commands appended to the dispatch by hand | `foundation.Commandable`, collected from every registered module |
+
+The built-in commands are `serve` (no arguments), `routes` (and `route:list`),
+`version`, `vendor:publish`, `migrate`, `migrate:install`, `migrate:rollback`,
+`migrate:reset`, `migrate:refresh`, `migrate:fresh`, `migrate:status`,
+`make:migration`, `db`, `db:show`, `db:table`, `db:monitor`, `db:wipe`,
+`db:seed`, `make:seeder`, `model:prune`, the fourteen `queue:*` with
+`queue:work` (and `work`, the name the CLI hands the binary) taking
+`--workers`, `schedule:list`, `schedule:run`, `cache:clear`, `cache:forget` and
+`cache:prune-stale-tags`. An application's command or a module's with one of
+these names stops `Create` naming both declarers.
+
+### The new shape, file by file
+
+`bootstrap/` holds `app.go` and nothing else. `main.go` is:
+
+```go
+func main() {
+	app, err := bootstrap.App(version, commit)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Exit(app.HandleCommand(context.Background(), os.Args[1:]))
+}
+```
+
+and `bootstrap/app.go` loads the configuration, builds the drivers, builds
+the application's providers over them, and returns one chain:
+
+```go
+return foundation.Configure(drivers).
+	WithProviders(fwview.NewModule(), fwgeo.NewModule(cfg.Geo, app.Catalog()), events.WithRelay(app.Relay), app).
+	WithRouting(func(r *http.Router) { routes.Web(r, app.Web()) }).
+	WithMiddleware(func(m *foundation.Middleware) { m.ValidateCSRFTokensExcept("/webhooks/") }).
+	WithCommands(routes.Commands(app.Console())...).
+	WithSchedule(routes.Schedule(app.Console())...).
+	WithTenants(app.Tenants).
+	WithJobs(app.RegisterJobs).
+	WithSeeders(app.Seed).
+	WithVersion(version, commit).
+	Create()
+```
+
+`config/app.go` embeds `bootstrap.Settings` and keeps only the application's
+own sections (`Auth`, `Geo`, `Services`, and whatever else is the
+application's), so `cfg.Cache.Store`, `cfg.Mail.FromAddress` and
+`cfg.App.IsDev()` still read as they did. The service wiring moves to
+`app/Providers`, each provider a `foundation.Module`; the commands to
+`app/Console/Commands`, listed in `routes/console.go` as `console.Command`
+values beside the schedule.
+
+Remove from the provider list what the framework now registers itself:
+`jobs.NewModule(queue)` (the queue module, named `queue`, would be registered
+twice), the cache health module and the scheduler.
+
+### Worked example: Peráta
+
+Peráta's `bootstrap/` had nine files, a `cmd/openapi` program and six commands
+under `app/Console`. Each goes here:
+
+1. **`bootstrap/app.go`** (1716 lines). `Build` keeps its service wiring, which
+   moves to `app/Providers` (one provider per area that grew: billing, sales,
+   usage, the platform console), each built over `*foundation.Drivers` instead
+   of `(cfg, db)`. `cacheStores`, `sessionBackend`, `cacheLocker`, `cacheTLS`
+   and `mailTransport` are deleted: `drivers.Store`, `drivers.SharedCache`,
+   `drivers.Locks`/`drivers.Locker`, `drivers.Sessions`, `drivers.CSRF`,
+   `drivers.Limiter`, `drivers.Idempotency` and `drivers.Mail` are what they
+   built. The pipeline written in `Build` becomes `WithMiddleware`. The
+   `scheduler.NewModule` line goes; its tenants answer becomes `WithTenants`.
+   What stays in `bootstrap/app.go` is the chain above with Peráta's modules in
+   `WithProviders` -- `permission.Module`, `impersonate.Module`,
+   `activitylog.Module`, `webhook.Module` -- in the order they boot.
+2. **`bootstrap/filesystems.go`**, `PrivateDisk`: deleted. `drivers.Disks.Disk("")`
+   is the disk `FILESYSTEM_DISK` names, built over the S3 protocol for `r2`
+   (bucket in the path) and `s3`; the missing-variable refusal is the
+   framework's, at `LoadSettings`. The evidence disk callback becomes
+   `func() (*filesystem.Disk, error) { return drivers.Disks.Disk("") }`.
+3. **`bootstrap/clients.go`**, the Cielo and Apple Pay client factories: into the
+   provider that builds the acquirer, or `app/Clients`, as functions of
+   `cfg.Services.Cielo`.
+4. **`bootstrap/permission_labels.go`**, the permission translator: into the
+   provider that builds `permission.Module`.
+5. **`bootstrap/catalog_upgrade.go`**, `catalog:upgrade-owner`: a command in
+   `app/Console/Commands` returning a `console.Command` over the database, its
+   flags read from `o.Flags()`, listed in `routes/console.go`. The `case` in
+   `Dispatch` goes.
+6. **`bootstrap/console.go`**: deleted. `Dispatch`, `runComponentCommand`,
+   `refuseCommand`, `unknownCommand` and the `Version`/`Commit` variables are
+   the kernel's (`HandleCommand`, the isolation refusal, the listing,
+   `WithVersion`). `PermissionModule.Commands()` is collected because the
+   module is `Commandable`; `ActivityCommands`, built by hand, go to
+   `WithCommands`.
+7. **`bootstrap/migrate.go`**, **`bootstrap/queue.go`**, **`bootstrap/publish.go`**:
+   deleted. The migration table stays `arandu_migrations`; the queue's failed
+   jobs and batches tables are migrated from the same values its commands use.
+8. **`bootstrap/background.go`**: deleted. `registerHandlers` becomes the
+   provider's `RegisterJobs(w *queue.Worker) error` handed to `WithJobs`, and
+   the error `Webhook.RegisterJobHandlers` can return now stops the boot.
+   `scheduleList`, `scheduleRun`, `WorkerOptions` and `work` are the built-in
+   `schedule:list`, `schedule:run` and `queue:work`, reading `QUEUE_WORKERS`,
+   `QUEUE_RETRY_AFTER`, `QUEUE_MAX_ATTEMPTS` and `QUEUE_DEFAULT` from
+   `Settings.Queue`.
+9. **`config/{cache,database,filesystems,http,logging,mail,queue,session}.go`**:
+   deleted; `config/app.go` embeds `bootstrap.Settings`. `config/auth.go` and
+   `config/services.go` stay.
+10. **`cmd/openapi`**: an `openapi:export` command in `app/Console/Commands`,
+    with `--usage`, `--api`, `--check` and `--output`, listed in
+    `routes/console.go`; CI runs `go run . openapi:export --check` instead of
+    `go run ./cmd/openapi --check`.
+11. **`app/Console/*.go`** (`billing:run`, `cielo:sandbox`, `fees:assign`,
+    `cielo-costs:assign`, `webhooks:import`, `plans:install`): each `UseX` and its
+    package-level `atomic.Pointer` goes. The command becomes a function taking
+    its dependencies and returning a `console.Command`, in
+    `app/Console/Commands`, listed in `routes/console.go` with what the
+    providers built:
+
+    ```go
+    func Commands(d ConsoleDeps) []console.Command {
+    	return []console.Command{
+    		commands.BillingRun(d.Billing, d.Users, d.Realm),
+    		commands.FeeAssign(d.Fees, d.Users, d.Factors, d.Access, d.Realm, d.RequireSecondFactor),
+    		// ...
+    	}
+    }
+    ```
+
+    A command that ran before `Build` wired it answered
+    `ErrBillingRunUnwired`; one built from its dependencies cannot exist
+    unwired.
+
+The CLI keeps working through the change: `aru migrate`, `aru queue:work` and
+the rest run `go run . <command>`, and the kernel answers them.
+
 ## v0.58.0 — the status of a form that worked
 
 This release requires `hesape` v0.64.1. Nothing breaks: `view.Page` gains
