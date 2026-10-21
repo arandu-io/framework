@@ -136,12 +136,14 @@ func (b *ApplicationBuilder) WithTenants(tenants func(ctx context.Context) ([]st
 
 // WithJobs registers the application's job handlers on the worker queue:work
 // starts: every kind of work the application does in the background, built
-// over the services its providers made. A worker left with no handler is
-// refused rather than started.
+// over the services its providers made. A provider that implements
+// JobHandlers registers its own beside these, and is not called here. A worker
+// left with no handler is refused rather than started.
 //
 // The registration runs once when Create runs, on a worker that is then
-// dropped, so a registration that fails -- or a name given two handlers --
-// stops every command at the boot rather than the worker alone, later.
+// dropped, so a registration that fails -- or a name given two handlers, here
+// or by a provider -- stops every command at the boot naming who registered
+// it, rather than the worker alone, later.
 func (b *ApplicationBuilder) WithJobs(register func(w *queue.Worker) error) *ApplicationBuilder {
 	if register != nil {
 		b.jobs = append(b.jobs, register)
@@ -206,13 +208,14 @@ func (b *ApplicationBuilder) WithVersion(version, commit string) *ApplicationBui
 //
 // What a provider declares for itself is collected rather than written in the
 // chain: the paths of every CSRFExempt provider are exempted from the CSRF
-// check beside the ones ValidateCSRFTokensExcept names.
+// check beside the ones ValidateCSRFTokensExcept names, and the handlers of
+// every JobHandlers provider are registered on the worker beside WithJobs'.
 //
 // It boots nothing and listens on nothing; HandleCommand decides what the
 // command needs. It fails when the composition is contradictory -- a command
 // name declared twice, a single-valued With called twice, a CSRF exemption the
-// check refuses -- and closes the drivers then, so a refused composition
-// leaves nothing open.
+// check refuses, a job name given two handlers -- and closes the drivers then,
+// so a refused composition leaves nothing open.
 func (b *ApplicationBuilder) Create() (*Application, error) {
 	d := b.drivers
 	if d == nil {
@@ -276,7 +279,7 @@ func (b *ApplicationBuilder) Create() (*Application, error) {
 			"root", s.Filesystems.Root)
 	}
 
-	jobs, err := b.registerJobs(d)
+	jobs, err := registerJobs(d, b.jobs, b.providers)
 	if err != nil {
 		_ = d.Close()
 		return nil, err
@@ -306,28 +309,6 @@ func (b *ApplicationBuilder) Create() (*Application, error) {
 	k.close = d.Close
 	a.kernel = k
 	return a, nil
-}
-
-// registerJobs proves every WithJobs registration on a worker that is dropped,
-// and answers the registration queue:work runs, or nil when there is none --
-// which is what makes queue:work refuse to start a worker with nothing to run.
-func (b *ApplicationBuilder) registerJobs(d *Drivers) (func(*queue.Worker), error) {
-	if len(b.jobs) == 0 {
-		return nil, nil
-	}
-	probe := queue.NewWorker(d.Queue, queue.WorkerOptions{})
-	for _, register := range b.jobs {
-		if err := register(probe); err != nil {
-			return nil, fmt.Errorf("arandu: registering the job handlers: %w", err)
-		}
-	}
-	// Proven above, so what the worker is handed cannot fail: the same
-	// functions over the same services.
-	return func(w *queue.Worker) {
-		for _, register := range b.jobs {
-			_ = register(w)
-		}
-	}, nil
 }
 
 // mainModule is the module path of the binary, which the error page uses to
