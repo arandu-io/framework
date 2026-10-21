@@ -53,6 +53,14 @@ func TestAliasesAreTheHesapeSymbols(t *testing.T) {
 	var _ *security.Flash = session.NewFlash(appKey, true)
 	var _ *security.Signer = encryption.NewSigner(appKey)
 
+	// The session store and its backends are hesape/http's under the old
+	// names: one type each, so a guard of either package reads the same store.
+	var _ *hhttp.SessionStore = security.NewSessionStore(appKey, time.Hour, false, nil)
+	var _ *security.SessionStore = hhttp.NewSessionStore(appKey, time.Hour, false, nil)
+	var _ hhttp.SessionBackend = security.SessionBackend(nil)
+	var _ *hhttp.MemoryBackend = security.NewMemoryBackend()
+	var _ *security.MemoryBackend = hhttp.NewMemoryBackend()
+
 	for name, pair := range map[string][2]error{
 		"ErrForbidden":             {security.ErrForbidden, auth.ErrForbidden},
 		"ErrNoSession":             {security.ErrNoSession, session.ErrNoSession},

@@ -85,6 +85,9 @@ var historicalBridgeSurface = bridgeSurface{
 		method.Scheduler.Start method.Scheduler.Stop method.Scheduler.Tick type.Module
 		type.Options type.Registered type.Schedule type.Scheduler type.Tenants
 	`),
+	// SessionStore, SessionBackend and MemoryBackend are Go aliases of
+	// hesape/http, so their methods are declared there and reached through
+	// these names.
 	"security": inventoryItems(`
 		const.FlashCookieName const.FlashLifetime const.IntendedCookieName const.IntendedLifetime
 		const.MaxFlashBytes const.MaxSignInFailures const.MaxSignInFailuresPerClient
@@ -93,13 +96,9 @@ var historicalBridgeSurface = bridgeSurface{
 		func.LocalPath func.NeedsRehash func.NewCSRF func.NewFlash func.NewMemoryBackend
 		func.NewMemoryThrottle func.NewSessionBackend func.NewSessionStore func.NewSigner
 		func.PasswordConfirmedWithin func.Remember func.SystemGrant func.Tenant func.ValidTenant
-		func.VerifyPassword method.MemoryBackend.Delete method.MemoryBackend.DeleteSubject
-		method.MemoryBackend.Get method.MemoryBackend.Put method.MemoryThrottle.Attempt
+		func.VerifyPassword method.MemoryThrottle.Attempt
 		method.MemoryThrottle.Clear method.MemoryThrottle.Len method.MemoryThrottle.Refund
-		method.SessionStore.Confirm method.SessionStore.Destroy method.SessionStore.DestroyOthers
-		method.SessionStore.IDFromRequest method.SessionStore.Load
-		method.SessionStore.RememberIntended method.SessionStore.Rotate method.SessionStore.Start
-		method.SessionStore.TakeIntended type.Action type.CSRF type.Flash type.Grant
+		type.Action type.CSRF type.Flash type.Grant
 		type.MemoryBackend type.MemoryThrottle type.Policy type.SessionBackend type.SessionOption
 		type.SessionStore type.SignInThrottle type.Signer type.Subject var.ErrCSRF
 		var.ErrConfirmationNotStored var.ErrExpired var.ErrForbidden var.ErrInvalidPassword
