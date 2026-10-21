@@ -50,7 +50,7 @@ type ApplicationBuilder struct {
 	exceptions []func(*exception.Handler)
 	commands   []console.Command
 	schedule   []Task
-	jobs       []func(*queue.Worker)
+	jobs       []func(*queue.Worker) error
 	seed       func(context.Context, []string) (string, error)
 	tenants    func(context.Context) ([]string, error)
 	prunables  map[string]func(context.Context) (int, error)
@@ -134,7 +134,11 @@ func (b *ApplicationBuilder) WithTenants(tenants func(ctx context.Context) ([]st
 // starts: every kind of work the application does in the background, built
 // over the services its providers made. A worker left with no handler is
 // refused rather than started.
-func (b *ApplicationBuilder) WithJobs(register func(w *queue.Worker)) *ApplicationBuilder {
+//
+// The registration runs once when Create runs, on a worker that is then
+// dropped, so a registration that fails -- or a name given two handlers --
+// stops every command at the boot rather than the worker alone, later.
+func (b *ApplicationBuilder) WithJobs(register func(w *queue.Worker) error) *ApplicationBuilder {
 	if register != nil {
 		b.jobs = append(b.jobs, register)
 	}
@@ -242,11 +246,17 @@ func (b *ApplicationBuilder) Create() (*Application, error) {
 			"root", s.Filesystems.Root)
 	}
 
+	jobs, err := b.registerJobs(d)
+	if err != nil {
+		_ = d.Close()
+		return nil, err
+	}
+
 	commands := builtins(a, builtinParts{
 		drivers:   d,
 		tasks:     tasks,
 		seed:      b.seed,
-		jobs:      b.registerJobs(),
+		jobs:      jobs,
 		prunables: b.prunables,
 		version:   b.version,
 		commit:    b.commit,
@@ -268,18 +278,26 @@ func (b *ApplicationBuilder) Create() (*Application, error) {
 	return a, nil
 }
 
-// registerJobs is every WithJobs registration, in order, or nil when there is
-// none -- which is what makes queue:work refuse to start a worker with nothing
-// to run.
-func (b *ApplicationBuilder) registerJobs() func(*queue.Worker) {
+// registerJobs proves every WithJobs registration on a worker that is dropped,
+// and answers the registration queue:work runs, or nil when there is none --
+// which is what makes queue:work refuse to start a worker with nothing to run.
+func (b *ApplicationBuilder) registerJobs(d *Drivers) (func(*queue.Worker), error) {
 	if len(b.jobs) == 0 {
-		return nil
+		return nil, nil
 	}
-	return func(w *queue.Worker) {
-		for _, register := range b.jobs {
-			register(w)
+	probe := queue.NewWorker(d.Queue, queue.WorkerOptions{})
+	for _, register := range b.jobs {
+		if err := register(probe); err != nil {
+			return nil, fmt.Errorf("arandu: registering the job handlers: %w", err)
 		}
 	}
+	// Proven above, so what the worker is handed cannot fail: the same
+	// functions over the same services.
+	return func(w *queue.Worker) {
+		for _, register := range b.jobs {
+			_ = register(w)
+		}
+	}, nil
 }
 
 // mainModule is the module path of the binary, which the error page uses to

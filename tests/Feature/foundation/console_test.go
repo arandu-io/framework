@@ -2,6 +2,7 @@ package feature
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -211,14 +212,28 @@ func TestTheWorkerNeedsTheApplicationsHandlers(t *testing.T) {
 
 	var registered []string
 	app := mustConfigure(t, func(b *foundation.ApplicationBuilder) {
-		b.WithJobs(func(w *queue.Worker) {
+		b.WithJobs(func(w *queue.Worker) error {
 			w.HandleFunc("invoice.send", func(context.Context, auth.Grant, *jobs.Job) error { return nil })
 			registered = append(registered, "invoice.send")
+			return nil
 		})
 	})
 	_, stderr, _ := run(t, app, "queue:work", "--once")
-	if len(registered) != 1 || strings.Contains(stderr, "no job handlers") {
+	// Once proven at Create, once on the worker queue:work started.
+	if len(registered) != 2 || strings.Contains(stderr, "no job handlers") {
 		t.Errorf("WithJobs registered %v and the worker answered %q", registered, stderr)
+	}
+}
+
+// TestAJobRegistrationThatFailsStopsTheBoot: a handler registration that
+// fails is found when the application is created, for every command, rather
+// than by the worker alone.
+func TestAJobRegistrationThatFailsStopsTheBoot(t *testing.T) {
+	_, err := configured(t, func(b *foundation.ApplicationBuilder) {
+		b.WithJobs(func(*queue.Worker) error { return errors.New("the webhook handlers need a secret") })
+	})
+	if err == nil || !strings.Contains(err.Error(), "registering the job handlers") || !strings.Contains(err.Error(), "secret") {
+		t.Errorf("a failing registration answered %v", err)
 	}
 }
 
