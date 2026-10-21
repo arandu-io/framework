@@ -15,6 +15,12 @@ import (
 // the job handlers and the receive paths are read from the native module the
 // application built; this type exists only because the kernel hands a
 // registered module a *http.Router, which the native Routes does not take.
+//
+// Deprecated: register the native module as it is, with
+// foundation.Component(native). The kernel hands it the router its Routes
+// takes, and its migrations, schedule and routes are read from it directly.
+// The native routes answer as an API -- a rejection is a 422 problem keyed by
+// field, never a flash -- which is what a management route and a callback are.
 type Module struct {
 	native *hwebhook.Module
 }
@@ -26,6 +32,8 @@ var (
 )
 
 // NewModule returns the module that registers native on the Framework router.
+//
+// Deprecated: use foundation.Component(native).
 //
 // native is the module hesape's New built, with the guard its management
 // routes sit behind already chosen. A nil native is refused with a panic,

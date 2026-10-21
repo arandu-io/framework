@@ -60,11 +60,18 @@ func MetadataFor(config Config, input MetadataInput) (Metadata, error) {
 }
 
 // Module translates the native GEO route descriptors into the Framework router.
+//
+// Deprecated: register the native module as it is, with
+// foundation.Component(hgeo.NewModule(config, catalog)): the kernel hands it the
+// router its Routes takes, so the routes, their names and Boot are the native
+// module's with no envelope between.
 type Module struct {
 	inner *hgeo.Module
 }
 
 // NewModule returns the Framework envelope over the native GEO module.
+//
+// Deprecated: use foundation.Component(hgeo.NewModule(config, catalog)).
 func NewModule(config Config, catalog Catalog) *Module {
 	return &Module{inner: hgeo.NewModule(config, catalog)}
 }
