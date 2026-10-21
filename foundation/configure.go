@@ -256,6 +256,7 @@ func (b *ApplicationBuilder) Create() (*Application, error) {
 		Recorder: a.Recorder(),
 	})
 	a.Register(taskModule{tasks})
+	a.tasks = tasks
 
 	if !s.Filesystems.IsObjectStorage() && !s.App.IsDev() {
 		a.log.Warn("files are kept on the local disk, which a second replica does not see: FILESYSTEM_DISK=local outside development",

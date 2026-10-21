@@ -26,6 +26,7 @@ import (
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/config"
+	"github.com/arandu-io/hesape/console/scheduling"
 	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/routing"
 	"github.com/arandu-io/hesape/translation"
@@ -123,6 +124,10 @@ type Application struct {
 	// translator is the application's catalogue, put on every request
 	// context beside the name; nil puts none. See WithTranslator.
 	translator *translation.Translator
+
+	// tasks is the scheduler module Configure registered, nil for an
+	// Application made by New. See Scheduler.
+	tasks *scheduling.TaskModule
 }
 
 // New assembles the Application. It opens no connection and listens on no port
@@ -611,6 +616,20 @@ func carryTranslator(t *translation.Translator) fhttp.Middleware {
 			next.ServeHTTP(w, r.WithContext(translation.WithTranslator(r.Context(), t)))
 		})
 	}
+}
+
+// Scheduler is the scheduler Configure composed over every task the modules
+// and the application declared, for a screen that lists them and runs one now:
+// List, RunNow and Schedule.
+//
+// It is nil until Boot has run, when there is no scheduled task, and for an
+// Application made by New, which composes no scheduler; a caller asks it at
+// request time, after the boot, rather than keeping it from before.
+func (a *Application) Scheduler() *scheduling.TaskScheduler {
+	if a.tasks == nil {
+		return nil
+	}
+	return a.tasks.Scheduler()
 }
 
 // WithTranslator sets the catalogue every request carries, beside the
