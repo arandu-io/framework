@@ -169,3 +169,29 @@ func TestCSRFExemptionsTakeExactPathsAndPrefixes(t *testing.T) {
 		}
 	}
 }
+
+// TestACSRFExemptionTakesAParameterSegment: a path with a {name} segment
+// exempts that route at any value of the segment, and never its siblings, a
+// shorter path or a deeper one.
+func TestACSRFExemptionTakesAParameterSegment(t *testing.T) {
+	app := bootConfigured(t, func(b *foundation.ApplicationBuilder) {
+		b.WithMiddleware(func(m *foundation.Middleware) {
+			m.ValidateCSRFTokensExcept("/checkout/{token}/sessions")
+		}).WithRouting(func(r *fhttp.Router) {
+			ok := func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }
+			r.Post("/checkout/{token}/sessions", ok)
+			r.Post("/checkout/{token}/refunds", ok)
+			r.Post("/checkout/sessions", ok)
+		})
+	})
+
+	for path, exempt := range map[string]bool{
+		"/checkout/abc/sessions": true, "/checkout/xyz/sessions": true,
+		"/checkout/abc/refunds": false, "/checkout/sessions": false, "/checkout/a/b/sessions": false,
+	} {
+		rec := serveConfigured(t, app, httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}")))
+		if got := rec.Code == http.StatusNoContent; got != exempt {
+			t.Errorf("POST %s answered %d; exempt = %v, want %v", path, rec.Code, got, exempt)
+		}
+	}
+}

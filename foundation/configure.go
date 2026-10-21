@@ -424,9 +424,13 @@ func (m *Middleware) Append(mw ...fhttp.Middleware) *Middleware {
 // Each entry is a prefix or an exact path, by its last character. One that
 // ends in '/' covers every path under it: "/webhooks/" exempts
 // /webhooks/stripe. One that does not covers exactly that path: "/v1/usage"
-// exempts /v1/usage, and never /v1/usage/x nor /v1/usagex. Matching is by whole
-// segments on the cleaned path. An exempt write passes this middleware
-// untouched, so the Cache-Control its handler sets is the one it answers with.
+// exempts /v1/usage, and never /v1/usage/x nor /v1/usagex. A segment written
+// {name} matches any one non-empty segment, as a route pattern does:
+// "/checkout/{token}/sessions" exempts /checkout/abc/sessions and never
+// /checkout/abc/refunds nor /checkout/a/b/sessions; an entry may not begin with
+// one. Matching is by whole segments on the cleaned path. An exempt write
+// passes this middleware untouched, so the Cache-Control its handler sets is
+// the one it answers with.
 //
 // A provider that implements CSRFExempt is not named here: Create exempts the
 // paths it declares, read the same way. What is left to name is the
