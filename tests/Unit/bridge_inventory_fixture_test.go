@@ -168,10 +168,29 @@ var allowedHesapeImports = bridgeSurface{
 	// http is here because the Application puts the configured name on every
 	// request context with http.WithAppName, the key view.New reads. The http
 	// bridge is frozen and does not re-export it.
+	//
+	// The rest is what the console kernel, the drivers and Configure compose:
+	// every built-in command is hesape's, built here over the drivers, and the
+	// drivers are hesape's stores, queue, session, mail and disks built from the
+	// typed settings. Composing them is this package's job; implementing any of
+	// them is not.
 	"foundation": inventoryItems(`
-		github.com/arandu-io/hesape/cache github.com/arandu-io/hesape/config
+		github.com/arandu-io/hesape/auth github.com/arandu-io/hesape/bus
+		github.com/arandu-io/hesape/cache github.com/arandu-io/hesape/cache/console
+		github.com/arandu-io/hesape/config github.com/arandu-io/hesape/console
+		github.com/arandu-io/hesape/console/scheduling
+		github.com/arandu-io/hesape/database github.com/arandu-io/hesape/database/console
+		github.com/arandu-io/hesape/database/console/migrations
+		github.com/arandu-io/hesape/database/console/seeds
+		github.com/arandu-io/hesape/database/migrations
+		github.com/arandu-io/hesape/database/schema github.com/arandu-io/hesape/exception
+		github.com/arandu-io/hesape/filesystem github.com/arandu-io/hesape/filesystem/s3
 		github.com/arandu-io/hesape/foundation github.com/arandu-io/hesape/http
-		github.com/arandu-io/hesape/routing
+		github.com/arandu-io/hesape/http/middleware github.com/arandu-io/hesape/log
+		github.com/arandu-io/hesape/publish/console github.com/arandu-io/hesape/queue
+		github.com/arandu-io/hesape/queue/console github.com/arandu-io/hesape/queue/failed
+		github.com/arandu-io/hesape/routing github.com/arandu-io/hesape/routing/middleware
+		github.com/arandu-io/hesape/session github.com/arandu-io/hesape/view
 	`),
 	"foundation/bootstrap": inventoryItems(`
 		github.com/arandu-io/hesape/cache github.com/arandu-io/hesape/config
