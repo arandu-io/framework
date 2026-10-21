@@ -19,6 +19,57 @@ down here fails the build.
 
 ---
 
+## v0.60.0 — the HTTP envelope becomes hesape's, and the pipeline gets its missing places
+
+This release requires `hesape` v0.73.0. No line of an application changes:
+every exported name and signature is where it was. What `apidiff` reports as
+incompatible is one kind of change, repeated: a type that was declared here is
+now an **alias of the hesape type** that replaced it, so the old name and the
+new one are one type. A program that uses the framework name compiles as it
+did; one that named both types in one type switch, or printed a type with
+`%T`, sees one type with hesape's name.
+
+| framework name | is now an alias of |
+| --- | --- |
+| `http.Router`, `http.Routes` (and so `http.NewRouter`, `foundation.Module.Routes`, `foundation.(*ApplicationBuilder).WithRouting` and the `Routes` of `events.(*Module)`, `foundation.(*CacheModule)`, `geo.(*Module)`, `jobs.(*Module)`, `modules/auth.(*Module)`, `scheduler.(*Module)`, `view.(*Module)`, `webhook.(*Module)`) | `routing/controllers.Router`, `controllers.Routes` |
+| `security.SessionStore`, `security.SessionBackend`, `security.MemoryBackend` (and so `security.NewSessionStore`, `security.NewSessionBackend`, `security.NewMemoryBackend`, `foundation.Drivers.Sessions`, `modules/auth.NewService`) | `http.SessionStore`, `http.SessionBackend`, `http.MemoryBackend` |
+| `http/middleware.CSRFOption`, `http/middleware.TokenDigest`, `http/middleware.TokenResolver`, `http/middleware.IdempotencyStore`, `http/middleware.Sessions` (and so `http/middleware.CSRFExcept`, `CSRFProtect`, `DigestToken`, `Idempotent`, `KeyBySession`, `LoadSubject`, `RedirectIfAuthenticated`, `RequireAuth`, `RequireConfirmedPassword`, `RequireRole`, `RequireToken`, `foundation.Drivers.Idempotency`) | the same names in `hesape/http/middleware` |
+
+The copies these replaced -- the adapter that answered an action's error, the
+session record translation, the CSRF check, the guards, the idempotency store
+-- are deleted here and run from hesape, with hesape's tests. `events.NewOutbox`
+hands the `*data.DB` to hesape as it is.
+
+**One behaviour changes: `MAIL_URL=smtps://` speaks implicit TLS.** The
+transport ignored the `tls` the setting carried and greeted port 465 in the
+clear, which no server answers. `mail.SMTP` gains `Encryption` and `TLSConfig`;
+`tls` completes the handshake against the system roots before the greeting.
+`smtp://` (`starttls`) is unchanged: it upgrades when the server offers it.
+
+**Deprecated**, with the replacement named on each: `geo.Module` and
+`geo.NewModule`, `webhook.Module` and `webhook.NewModule`. Register the native
+module with `foundation.Component(...)`.
+
+**Corrected:** item 10 of the Peráta example under v0.59.0 told the
+application to declare its own `openapi:export`. That name is the swagger
+module's, and `Create` refuses the second declarer; the item now says how the
+three contracts come from the swagger module.
+
+### Where the hand-written code goes
+
+| an application wrote | is now |
+| --- | --- |
+| a page's own `Translator()` and `Locale()`, and the translator put on the request by hand | `view.Page` answers both; `WithTranslator(t)` on the builder (or the `Application`) puts the catalogue on every request beside the name |
+| an envelope per hesape module whose `Routes` takes `*routing.Router` (`geo`, `webhook`) | `foundation.Component(module)`; a module implementing `hesape/foundation.Routable` goes to `Register` as it stands |
+| `exception.LocalizeSentences` with nowhere outside `Recover` to mount it | `Middleware.Sentences(s)` |
+| an observer of its own (Peráta's `ObserveRedacted`) that could not replace `Observe` | `Middleware.Observer(fn)`, with `Observe`'s signature, in `Observe`'s place |
+| a middleware that has to read the visitor's address and hold on a 429 (Peráta's `CheckoutPrivacy`) | `Middleware.BeforeThrottle(mw...)`, after `SecurityHeaders` and before `Throttle` |
+| a wrapper around the CSRF middleware for exact paths | `ValidateCSRFTokensExcept("/v1/usage")`: an entry without a trailing `/` is exactly that path, one with it is a prefix |
+| a mail transport rebuilt to put an activity log in front of it | `drivers.WrapMail(func(next mail.Transport) (mail.Transport, error) { ... })`, before `drivers.Mail` is handed out |
+| the scheduler kept aside to list tasks and run one from an admin screen | `app.Scheduler()`, after the boot |
+
+---
+
 ## v0.59.0 — the console kernel, the application builder and the drivers
 
 This release requires `hesape` v0.71.0 and `hesape/filesystem/s3` v0.11.0.
