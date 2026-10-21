@@ -12,7 +12,6 @@ package mail
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"time"
 
 	"github.com/arandu-io/hesape/mail/transport"
@@ -23,8 +22,8 @@ import (
 //
 // # Why this one is declared and not aliased
 //
-// The four fields below are already the same four as transport.SMTP, in the
-// same order and the same types. What keeps this a separate type is the one
+// The fields below are the fields of transport.SMTP, in the same order and the
+// same types, and Send hands them over as they are. What keeps this a separate type is the one
 // method: Send answers an error here and (mail.SentMessage, error) there, and
 // it takes this package's Message rather than that one's. Aliasing the name
 // would swap a Transport for something the Transport interface does not
@@ -54,36 +53,30 @@ type SMTP struct {
 	// upgraded, except to a relay on this machine.
 	Encryption string
 
-	// TLSConfig verifies the server over implicit TLS. Nil checks the
-	// certificate against the system roots for Host; a test, or a relay with a
-	// private authority, passes its own.
+	// TLSConfig verifies the server, over implicit TLS and over STARTTLS
+	// alike. Nil checks the certificate against the system roots for Host; a
+	// test, or a relay with a private authority, passes its own.
 	TLSConfig *tls.Config
 }
 
 func (t SMTP) hesape() transport.SMTP {
 	return transport.SMTP{
-		Host:     t.Host,
-		Port:     t.Port,
-		Username: t.Username,
-		Password: t.Password,
-		Timeout:  t.Timeout,
+		Host:       t.Host,
+		Port:       t.Port,
+		Username:   t.Username,
+		Password:   t.Password,
+		Timeout:    t.Timeout,
+		Encryption: t.Encryption,
+		TLSConfig:  t.TLSConfig,
 	}
 }
 
 // Name identifies the transport in a log line.
 func (t SMTP) Name() string { return t.hesape().Name() }
 
-// Send delivers the message.
+// Send delivers the message. An Encryption other than "tls", "starttls" or
+// empty is refused before anything is dialled.
 func (t SMTP) Send(ctx context.Context, m Message) error {
-	switch t.Encryption {
-	case "", encryptionStartTLS:
-	case encryptionTLS:
-		return t.sendImplicitTLS(ctx, m.hesape())
-	default:
-		// A misspelt "tsl" read as anything would be the failure the field
-		// exists to rule out.
-		return fmt.Errorf("mail: SMTP Encryption is %q; expected %q or %q", t.Encryption, encryptionTLS, encryptionStartTLS)
-	}
 	_, err := t.hesape().Send(ctx, m.hesape())
 	return err
 }
