@@ -14,7 +14,8 @@ type Mailer string
 const (
 	// MailerLog writes the message to the log instead of sending it. The
 	// default: an application that sends real mail from a laptop is one that
-	// mails a customer during a test.
+	// mails a customer during a test. Production refuses it, because the log
+	// then holds every message body, password-reset codes included.
 	MailerLog Mailer = "log"
 	// MailerSMTP is any SMTP server.
 	MailerSMTP Mailer = "smtp"
@@ -80,6 +81,11 @@ func loadMailSettings(base Configuration) (Mail, error) {
 	cfg, err := parseMailURL(env("MAIL_URL", "log://"))
 	if err != nil {
 		return Mail{}, err
+	}
+	if cfg.Mailer == MailerLog && base.App.Env.IsProduction() {
+		return Mail{}, fmt.Errorf("MAIL_URL=log:// is forbidden in production, and it is the value when MAIL_URL is unset: " +
+			"the log transport writes every message, password-reset codes included, into the log; " +
+			"set MAIL_URL to smtp://, smtps://, resend:// or sendgrid://")
 	}
 	cfg.FromAddress = env("MAIL_FROM_ADDRESS", "no-reply@localhost")
 	cfg.FromName = env("MAIL_FROM_NAME", base.App.Name)

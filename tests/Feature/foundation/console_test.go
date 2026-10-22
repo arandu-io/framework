@@ -165,7 +165,7 @@ func TestTheApplicationsAndTheModulesCommandsRunBooted(t *testing.T) {
 // migrate is refused in production without a shared store -- and runs in dev,
 // where one process is the whole deployment.
 func TestAnIsolatedCommandWithNothingSharedIsRefusedOutsideDevelopment(t *testing.T) {
-	app := mustConfigure(t, nil, "APP_ENV", "prod")
+	app := mustConfigure(t, nil, "APP_ENV", "prod", "MAIL_URL", "array://")
 	_, stderr, status := run(t, app, "migrate")
 	if status != 1 || !strings.Contains(stderr, "migrate takes a lock every replica can see") || !strings.Contains(stderr, "CACHE_STORE=redis") {
 		t.Errorf("migrate in prod with nothing shared exited %d with %q", status, stderr)
@@ -173,7 +173,7 @@ func TestAnIsolatedCommandWithNothingSharedIsRefusedOutsideDevelopment(t *testin
 
 	// migrate:status reads and takes no lock, so it is not refused for the
 	// want of one; on the ping-only database it fails on the query instead.
-	_, stderr, _ = run(t, mustConfigure(t, nil, "APP_ENV", "prod"), "migrate:status")
+	_, stderr, _ = run(t, mustConfigure(t, nil, "APP_ENV", "prod", "MAIL_URL", "array://"), "migrate:status")
 	if strings.Contains(stderr, "takes a lock") {
 		t.Errorf("migrate:status was refused for a lock it does not take: %q", stderr)
 	}

@@ -156,6 +156,8 @@ func TestASectionThatCannotBeUsedStopsTheBootNamingItself(t *testing.T) {
 		{"unknown log format", map[string]string{"LOG_FORMAT": "yaml"}, []string{"LOG_FORMAT", "json", "text"}},
 		{"retired mail variable", map[string]string{"MAIL_HOST": "smtp.example.test"}, []string{"MAIL_HOST", "MAIL_URL"}},
 		{"unknown mail scheme", map[string]string{"MAIL_URL": "pigeon://coop"}, []string{"MAIL_URL", `"pigeon"`}},
+		{"the log mailer in production", map[string]string{"APP_ENV": "prod", "APP_URL": "https://x.example", "HTTP_ADDR": ":8080", "MAIL_URL": "log://"}, []string{"MAIL_URL", "log", "production"}},
+		{"no mailer in production", map[string]string{"APP_ENV": "prod", "APP_URL": "https://x.example", "HTTP_ADDR": ":8080"}, []string{"MAIL_URL", "log", "production"}},
 		{"retired session variable", map[string]string{"SESSION_SECURE": "false"}, []string{"SESSION_SECURE", "SESSION_SECURE_COOKIE"}},
 		{"a count of none", map[string]string{"QUEUE_WORKERS": "0"}, []string{"QUEUE_WORKERS", "positive"}},
 		{"a body limit of none", map[string]string{"HTTP_MAX_BODY_BYTES": "0"}, []string{"HTTP_MAX_BODY_BYTES", "positive"}},

@@ -46,7 +46,7 @@ func TestSentencesReachTheRefusalRecoverWrites(t *testing.T) {
 		}).WithRouting(func(r *fhttp.Router) {
 			r.Get("/explode", func(http.ResponseWriter, *http.Request) { panic("boom") })
 		})
-	}, "APP_ENV", "prod")
+	}, "APP_ENV", "prod", "MAIL_URL", "array://")
 
 	req := httptest.NewRequest(http.MethodGet, "/explode", nil)
 	req.Header.Set("Accept", "application/json")
