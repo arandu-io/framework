@@ -130,6 +130,69 @@ func TestACommandNameIsAnsweredByOneDeclarer(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `"work"`) {
 		t.Errorf("an application command named work answered %v, want it refused as the queue worker's other name", err)
 	}
+
+	_, err = configured(t, func(b *foundation.ApplicationBuilder) {
+		b.WithCommands(console.Command{Signature: "migrate {--seed}", Run: func(context.Context, *console.IO) error { return nil }})
+	})
+	if err == nil || !strings.Contains(err.Error(), `"migrate"`) || !strings.Contains(err.Error(), "the framework") ||
+		!strings.Contains(err.Error(), "the application") {
+		t.Errorf("an application command whose signature names migrate answered %v, want the refusal naming both declarers", err)
+	}
+
+	_, err = configured(t, func(b *foundation.ApplicationBuilder) {
+		b.WithCommands(console.Command{Signature: "work", Run: func(context.Context, *console.IO) error { return nil }})
+	})
+	if err == nil || !strings.Contains(err.Error(), `"work"`) {
+		t.Errorf("an application command whose signature names work answered %v, want it refused", err)
+	}
+}
+
+// TestACommandNeedsANameOrASignatureThatParses: a command with neither, or
+// with a signature that names nothing, is refused at creation naming who
+// declared it.
+func TestACommandNeedsANameOrASignatureThatParses(t *testing.T) {
+	_, err := configured(t, func(b *foundation.ApplicationBuilder) {
+		b.WithCommands(console.Command{Description: "nameless", Run: func(context.Context, *console.IO) error { return nil }})
+	})
+	if err == nil || !strings.Contains(err.Error(), "the application declared a console command with no name") {
+		t.Errorf("a command with neither Name nor Signature answered %v, want it refused", err)
+	}
+
+	_, err = configured(t, func(b *foundation.ApplicationBuilder) {
+		b.WithCommands(console.Command{Signature: "{user}", Run: func(context.Context, *console.IO) error { return nil }})
+	})
+	if err == nil || !strings.Contains(err.Error(), "the application") || !strings.Contains(err.Error(), `"{user}"`) {
+		t.Errorf("a command whose signature names nothing answered %v, want it refused", err)
+	}
+}
+
+// TestAnApplicationCommandDeclaredBySignatureAloneIsNamedByIt: WithCommands
+// takes a command with an empty Name and a Signature, lists it under the first
+// word of the signature, and runs it by that name with its options parsed.
+func TestAnApplicationCommandDeclaredBySignatureAloneIsNamedByIt(t *testing.T) {
+	var days string
+	var sawDays bool
+	adjust := func(b *foundation.ApplicationBuilder) {
+		b.WithCommands(console.Command{
+			Signature:   "notes:prune {--days=90 : Keep this many days}",
+			Description: "prune the notes",
+			Run: func(_ context.Context, o *console.IO) error {
+				days, sawDays = o.Option("days").String(), o.HasOption("days")
+				o.Line("pruned")
+				return nil
+			},
+		})
+	}
+
+	stdout, stderr, status := run(t, mustConfigure(t, adjust), "help")
+	if status != 0 || !strings.Contains(stdout, "  notes:prune ") || !strings.Contains(stdout, "prune the notes") {
+		t.Errorf("help exited %d with %q (%q), want notes:prune listed", status, stdout, stderr)
+	}
+
+	stdout, stderr, status = run(t, mustConfigure(t, adjust), "notes:prune", "--days=30")
+	if status != 0 || !strings.Contains(stdout, "pruned") || !sawDays || days != "30" {
+		t.Errorf("notes:prune --days=30: status %d, days %q (declared %v), out %q, err %q", status, days, sawDays, stdout, stderr)
+	}
 }
 
 // TestTheApplicationsAndTheModulesCommandsRunBooted: what routes/console.go and

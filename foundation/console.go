@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -72,8 +73,26 @@ func (k *consoleKernel) lookup(name string) (declared, bool) {
 	return declared{}, false
 }
 
+// named answers the command with its Name filled in the way the console
+// registry fills it: a command that declares a Signature and leaves Name empty
+// is named by the first word of the signature, and a Name that is set wins. A
+// signature that does not parse is the error.
+func named(c console.Command) (console.Command, error) {
+	name, _, _, err := c.Definition()
+	if err != nil {
+		return c, err
+	}
+	if strings.TrimSpace(c.Name) == "" {
+		c.Name = name
+	}
+	return c, nil
+}
+
 // compose checks that every name is declared once, and answers the kernel or
 // the refusal naming both declarers of the first repeated name.
+//
+// Every command is named first, so a command declared by its Signature alone
+// is listed, looked up, refused and run under the name its signature gives.
 //
 // A repeated name is refused rather than resolved by order, because a module
 // or an application that could shadow `migrate` could change what a deploy
@@ -83,10 +102,18 @@ func compose(commands []declared, aliases map[string]string) (*consoleKernel, er
 	for alias, target := range aliases {
 		seen[alias] = "the framework (as another name for " + target + ")"
 	}
-	for _, d := range commands {
-		name := d.command.Name
+	commands = slices.Clone(commands)
+	for i := range commands {
+		d := &commands[i]
+		command, err := named(d.command)
+		if err != nil {
+			return nil, fmt.Errorf("arandu: %s declared a console command whose signature %q does not parse: %w",
+				d.by, d.command.Signature, err)
+		}
+		d.command = command
+		name := command.Name
 		if strings.TrimSpace(name) == "" {
-			return nil, fmt.Errorf("arandu: %s declared a console command with no name", d.by)
+			return nil, fmt.Errorf("arandu: %s declared a console command with no name and no signature", d.by)
 		}
 		if d.command.Run == nil {
 			return nil, fmt.Errorf("arandu: %s declared the console command %q with no Run", d.by, name)

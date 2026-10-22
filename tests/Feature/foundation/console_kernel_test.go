@@ -25,8 +25,10 @@ func run(t *testing.T, app *foundation.Application, args ...string) (stdout, std
 type commander struct {
 	name    string
 	command string
-	booted  bool
-	ranBoot bool
+	// signature, when set, declares the command by its signature as well.
+	signature string
+	booted    bool
+	ranBoot   bool
 }
 
 func (m *commander) Name() string               { return m.name }
@@ -35,6 +37,7 @@ func (m *commander) Boot(context.Context) error { m.booted = true; return nil }
 func (m *commander) Commands() []console.Command {
 	return []console.Command{{
 		Name:        m.command,
+		Signature:   m.signature,
 		Description: "a module's own command",
 		Run: func(_ context.Context, o *console.IO) error {
 			m.ranBoot = m.booted
@@ -97,5 +100,27 @@ func TestAModuleCannotShadowABuiltIn(t *testing.T) {
 	if status != 1 || !strings.Contains(stderr, `"routes"`) || !strings.Contains(stderr, "the framework") ||
 		!strings.Contains(stderr, `the module "billing"`) {
 		t.Errorf("a module shadowing routes exited %d with %q", status, stderr)
+	}
+
+	_, stderr, status = run(t, handComposed(t, &commander{name: "billing", signature: "routes {--json}"}), "version")
+	if status != 1 || !strings.Contains(stderr, `"routes"`) || !strings.Contains(stderr, "the framework") ||
+		!strings.Contains(stderr, `the module "billing"`) {
+		t.Errorf("a module shadowing routes by its signature exited %d with %q", status, stderr)
+	}
+}
+
+// TestAModuleCommandDeclaredBySignatureAloneIsNamedByIt: a module's command
+// with an empty Name and a Signature is listed and run under the first word of
+// the signature, the way the console registry names it.
+func TestAModuleCommandDeclaredBySignatureAloneIsNamedByIt(t *testing.T) {
+	module := &commander{name: "activitylog", signature: "activitylog:clean {--days= : Keep this many days}"}
+	stdout, stderr, status := run(t, handComposed(t, module), "help")
+	if status != 0 || !strings.Contains(stdout, "  activitylog:clean  a module's own command") {
+		t.Errorf("help exited %d with %q (%q), want the command listed by its signature's name", status, stdout, stderr)
+	}
+
+	stdout, stderr, status = run(t, handComposed(t, module), "activitylog:clean", "--days=30")
+	if status != 0 || !module.ranBoot || !strings.Contains(stdout, "module command ran") {
+		t.Errorf("activitylog:clean: status %d, booted %v, out %q, err %q", status, module.ranBoot, stdout, stderr)
 	}
 }

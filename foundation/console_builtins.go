@@ -150,7 +150,10 @@ func builtins(a *Application, p builtinParts) []declared {
 		// The worker reaches the services a request does, and they are wired at
 		// boot; a worker that skipped it would be a second, subtly different
 		// application.
-		out = append(out, declared{by: framework, boots: c.Name == "queue:work", command: c})
+		// A signature that does not parse is refused by compose; here it is
+		// only not the worker.
+		n, _ := named(c)
+		out = append(out, declared{by: framework, boots: n.Name == "queue:work", command: c})
 	}
 
 	if p.tasks != nil {
