@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,5 +78,47 @@ func TestReadinessAnswersBeforeTheServerCutsItOff(t *testing.T) {
 	if readinessTimeout >= writeTimeout {
 		t.Fatalf("readinessTimeout = %s, writeTimeout = %s: the server ends the response before the check gives up",
 			readinessTimeout, writeTimeout)
+	}
+}
+
+// countingProbe counts how often its readiness check runs.
+type countingProbe struct{ calls atomic.Int64 }
+
+func (*countingProbe) Name() string { return "counting" }
+
+func (*countingProbe) Routes(*fhttp.Router) {}
+
+func (p *countingProbe) Health(context.Context) error {
+	p.calls.Add(1)
+	return nil
+}
+
+// TestReadinessIsThrottled: the probe is reachable with no credential, and
+// every pass pings the dependencies, so a burst of requests -- concurrent or
+// not -- runs one pass per readinessInterval and answers the rest from it.
+func TestReadinessIsThrottled(t *testing.T) {
+	probe := &countingProbe{}
+	a := New(internalCfg(config.EnvProd, "")).Register(probe)
+	if err := a.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	handler := a.Handler()
+
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, internalPrefix+"health", nil))
+			if rec.Code != http.StatusOK {
+				t.Errorf("readiness answered %d, want 200", rec.Code)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := probe.calls.Load(); got != 1 {
+		t.Fatalf("50 probes inside one interval ran the checks %d times, want 1", got)
 	}
 }
