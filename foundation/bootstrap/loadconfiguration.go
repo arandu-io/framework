@@ -174,8 +174,9 @@ type Session struct {
 	// APP_URL nobody wrote is http://localhost:8080. Guessing from either puts
 	// the session id on the network in the clear on every request, and a
 	// cookie that travels in the clear because nobody set a variable is the
-	// failure that looks like nothing at all. A deployment that really is
-	// served over http outside dev says so with SESSION_SECURE_COOKIE=false.
+	// failure that looks like nothing at all. A staging deployment that really
+	// is served over http says so with SESSION_SECURE_COOKIE=false; production
+	// refuses the value at load.
 	//
 	// APP_URL takes no part. In dev the cookie is not Secure even when APP_URL
 	// is https, unless SESSION_SECURE_COOKIE=true says it is; dev is where
@@ -383,6 +384,10 @@ func loadSession(app config.App) (Session, error) {
 	secure, err := config.StrictBool("SESSION_SECURE_COOKIE", !app.Env.Is(config.EnvDev))
 	if err != nil {
 		return Session{}, err
+	}
+	if !secure && app.Env.IsProduction() {
+		return Session{}, fmt.Errorf("SESSION_SECURE_COOKIE=false is forbidden in production: the session cookie would travel in the clear; " +
+			"serve production over https and remove the variable, or use APP_ENV=staging for a deployment served over http")
 	}
 	lifetime, err := sessionLifetime()
 	if err != nil {

@@ -78,7 +78,7 @@ func TestTheFlashCookieTakesSecureFromTheSessionConfiguration(t *testing.T) {
 	}{
 		{"prod over https", []string{"APP_ENV", "prod", "APP_URL", "https://loja.example"}, true},
 		{"staging over http without the variable", []string{"APP_ENV", "staging", "APP_URL", "http://loja.internal"}, true},
-		{"prod with SESSION_SECURE_COOKIE=false", []string{"APP_ENV", "prod", "APP_URL", "https://loja.example", "SESSION_SECURE_COOKIE", "false"}, false},
+		{"staging with SESSION_SECURE_COOKIE=false", []string{"APP_ENV", "staging", "APP_URL", "http://loja.internal", "SESSION_SECURE_COOKIE", "false"}, false},
 		{"dev over http", []string{"APP_ENV", "dev", "APP_URL", "http://localhost:8080"}, false},
 		{"dev with an https URL", []string{"APP_ENV", "dev", "APP_URL", "https://loja.test"}, false},
 		{"dev with SESSION_SECURE_COOKIE=true", []string{"APP_ENV", "dev", "APP_URL", "http://localhost:8080", "SESSION_SECURE_COOKIE", "true"}, true},

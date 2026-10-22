@@ -266,7 +266,7 @@ func TestASessionSettingFromTheDotenvFileIsRefusedAsWell(t *testing.T) {
 // failure that looks like nothing at all, so the default closes: Secure in
 // every environment but dev, whatever APP_URL says, because behind a proxy that
 // ends TLS neither the URL nor the scheme this process sees is the browser's.
-// SESSION_SECURE_COOKIE, when it is set, decides in every environment.
+// SESSION_SECURE_COOKIE, when it is set, decides in dev and staging.
 func TestTheSessionCookieIsSecureUnlessTheEnvironmentIsDev(t *testing.T) {
 	for _, tc := range []struct {
 		env, url, variable string
@@ -277,7 +277,6 @@ func TestTheSessionCookieIsSecureUnlessTheEnvironmentIsDev(t *testing.T) {
 		{"staging", "http://loja.internal", "", true},
 		{"dev", "http://localhost:8080", "", false},
 		{"dev", "https://loja.test", "", false},
-		{"prod", "https://loja.example", "false", false},
 		{"staging", "http://loja.internal", "false", false},
 		{"dev", "http://localhost:8080", "true", true},
 		// An APP_ENV nobody wrote is parsed as dev, so it answers as dev does.
@@ -293,6 +292,20 @@ func TestTheSessionCookieIsSecureUnlessTheEnvironmentIsDev(t *testing.T) {
 			t.Errorf("APP_ENV=%s APP_URL=%s SESSION_SECURE_COOKIE=%q: Secure = %v, want %v",
 				tc.env, tc.url, tc.variable, cfg.Session.Secure, tc.want)
 		}
+	}
+}
+
+// Production refuses SESSION_SECURE_COOKIE=false rather than writing the
+// session id in the clear: a deployment served over http is a staging one.
+func TestProductionRefusesAnInsecureSessionCookie(t *testing.T) {
+	env(t, "APP_KEY", testKey, "APP_ENV", "prod", "APP_URL", "https://loja.example", "SESSION_SECURE_COOKIE", "false")
+
+	_, err := bootstrap.LoadConfiguration()
+	if err == nil {
+		t.Fatal("SESSION_SECURE_COOKIE=false was accepted in production")
+	}
+	if !strings.Contains(err.Error(), "SESSION_SECURE_COOKIE=false") || !strings.Contains(err.Error(), "production") {
+		t.Errorf("the refusal does not name the variable and the environment:\n%v", err)
 	}
 }
 

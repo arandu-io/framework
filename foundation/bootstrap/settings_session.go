@@ -62,7 +62,7 @@ func loadSessionSettings(cache Cache) (SessionSettings, error) {
 	// disappearing between two requests.
 	if env("SESSION_SECURE", "") != "" {
 		return SessionSettings{}, fmt.Errorf("SESSION_SECURE is retired; remove it. " +
-			"SESSION_SECURE_COOKIE decides the Secure attribute: set it to false only to serve over http outside APP_ENV=dev")
+			"SESSION_SECURE_COOKIE decides the Secure attribute: set it to false only for a staging deployment served over http")
 	}
 	csrfTTL, err := envSeconds("CSRF_TTL", 2*time.Hour)
 	if err != nil {
