@@ -257,7 +257,8 @@ func (b *ApplicationBuilder) Create() (*Application, error) {
 		_ = d.Close()
 		return nil, err
 	}
-	m := &Middleware{throttle: cache.PerMinute(defaultThrottle), moduleExcept: exempt}
+	a.csrfExempt = exempt
+	m := &Middleware{throttle: cache.PerMinute(defaultThrottle), moduleExcept: exemptionPaths(exempt)}
 	for _, using := range b.middleware {
 		using(m)
 	}

@@ -106,6 +106,12 @@ type Application struct {
 	internal       *http.ServeMux
 	internalRoutes []*fhttp.Route
 
+	// csrfExempt is what the CSRFExempt modules Create collected declared,
+	// each path with its module; Boot logs them and refuses one that covers
+	// a route its module did not register. Empty for an Application made by
+	// New.
+	csrfExempt []csrfExemption
+
 	booted bool
 	// reloadTag comes from this application's view module. Keeping it on the
 	// application prevents another application in the same process from changing
@@ -292,6 +298,9 @@ func (a *Application) Boot(ctx context.Context) error {
 	a.mountInternalRoutes()
 	a.claimInternal(a.router.Routes()[before:])
 	if err := a.validateInternalPaths(); err != nil {
+		return err
+	}
+	if err := a.validateCSRFExemptions(); err != nil {
 		return err
 	}
 	a.booted = true
