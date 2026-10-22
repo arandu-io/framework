@@ -249,6 +249,7 @@ func (a *Application) Boot(ctx context.Context) error {
 	if a.booted {
 		return errors.New("arandu: application already booted")
 	}
+	a.reportEnvironment()
 
 	// The renderer is found before any route is registered, because a route is
 	// wired with the renderer its handlers will use. See RendererProvider.
@@ -295,6 +296,15 @@ func (a *Application) Boot(ctx context.Context) error {
 	}
 	a.booted = true
 	return nil
+}
+
+// reportEnvironment writes the environment the process came up in, the debug
+// flag and the listening address, so the log of a deployment says which of
+// them it runs with rather than leaving it to be inferred from a stack page
+// served to a visitor.
+func (a *Application) reportEnvironment() {
+	app := a.cfg.App
+	a.log.Info("application environment", "env", string(app.Env), "debug", app.Debug, "http_addr", app.HTTPAddr)
 }
 
 // validateReservedRoutes keeps application and third-party modules out of the
