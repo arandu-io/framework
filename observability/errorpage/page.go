@@ -22,12 +22,16 @@ import (
 // Options carries what the page needs from the application configuration.
 //
 // It stays declared here rather than aliasing hesape/exception.Config, which
-// carries five fields more: Dev, Views, DontReport, RenderJSONWhen and Console.
-// Aliasing would put all five on a struct the skeletons construct as a literal
-// and would move the meaning of Dev into a package whose absolute rule is that
-// it is unreachable outside development. The translation is below, and it is
-// three fields wide.
+// carries four fields more: Views, DontReport, RenderJSONWhen and Console.
+// Aliasing would put all four on a struct the skeletons construct as a literal.
+// The translation is below, and it is four fields wide.
 type Options struct {
+	// Dev draws the development page: the panic's text, the stack, the source
+	// and what the Collector recorded. Set it from the environment, true only
+	// in development. Left false, the page is the plain status page, which
+	// carries none of them. Render and RenderDump read it; middleware.Recover
+	// takes the flag as its own argument and does not.
+	Dev bool
 	// Editor is the target of the "open in IDE" links, spelled the way the link
 	// table names it -- vscode, goland, phpstorm, emacs and the rest of it.
 	//
@@ -49,14 +53,9 @@ type Options struct {
 }
 
 // handler builds the hesape handler the two entry points draw through.
-//
-// Dev is true and not a parameter, because this package has one rule and it is
-// that nothing in it is reachable when Env is not dev. Both functions below
-// drew the debug page unconditionally before the move, and the caller that
-// decides is middleware.Recover.
 func (o Options) handler() *exception.Handler {
 	return exception.NewHandler(exception.Config{
-		Dev:       true,
+		Dev:       o.Dev,
 		Editor:    o.Editor,
 		AppModule: o.AppModule,
 		Diagnose:  o.Diagnose,
@@ -77,7 +76,8 @@ func collected(r *http.Request, col *observability.Collector) *http.Request {
 	return r.WithContext(observability.WithCollector(r.Context(), col))
 }
 
-// Render draws the full error page.
+// Render draws the error page: the development one when opts.Dev is set, and
+// the plain status page otherwise.
 //
 // It is hesape/exception's debug displayer, which is the exported door to the
 // page. Three things about that are worth knowing before reading a page drawn
@@ -114,7 +114,7 @@ type panicked struct{ value any }
 
 func (p panicked) Error() string { return fmt.Sprint(p.value) }
 
-// RenderDump draws the dump page, for the DumpDie flow.
+// RenderDump draws the dump page, for the DumpDie flow, when opts.Dev is set.
 //
 // The dump page is drawn by an unexported method whose one caller is Recover,
 // on the branch that recognises the dump-and-die sentinel. So this is Recover,

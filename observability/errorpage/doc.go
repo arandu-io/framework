@@ -4,13 +4,9 @@
 // knows the queries, the dumps, the events and the routes without any extra
 // package installed.
 //
-// Absolute rule: nothing in this package may be reachable when Env is not dev.
-// It is enforced here rather than trusted to a caller: both entry points build
-// their Handler with Dev set, so a page drawn through this package is a
-// development page whoever called it. The Recover middleware used to be the one
-// caller and used to be where the flag was checked; it now installs
-// hesape/exception.Recover directly, which decides between the debug page and
-// the status page from the flag it was built with.
+// The development page is drawn only when Options.Dev says so. Its zero value
+// is the plain status page, so a caller that never asked the environment
+// serves no stack, no source and nothing the Collector recorded.
 //
 // This package is a bridge. It is removed in v1.0.0; import github.com/arandu-io/hesape/exception directly.
 //
@@ -23,10 +19,10 @@
 //   - Render and RenderDump are no longer exported. They are methods on the
 //     Handler, and the Handler is reached through Recover, the Displayer or
 //     Render(err). Both functions below therefore build a Handler and drive it.
-//   - Options is not Config. The hesape struct carries five more fields -- Dev,
+//   - Options is not Config. The hesape struct carries four more fields --
 //     Views, DontReport, RenderJSONWhen, Console -- and this one may not grow
-//     them without changing what the thirteen repositories construct, so
-//     Options stays declared here and is translated.
+//     them without changing what the repositories construct, so Options stays
+//     declared here and is translated.
 //
 // StackFrame and Capture came across whole. Capture decides "framework or
 // application" by asking about hesape's own import path and about the standard

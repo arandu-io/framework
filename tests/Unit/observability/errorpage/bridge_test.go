@@ -126,6 +126,7 @@ func TestRenderDrawsTheDebugPage(t *testing.T) {
 		"boom",
 		col,
 		errorpage.Options{
+			Dev:       true,
 			Editor:    "zed",
 			AppModule: appModule,
 			Diagnose:  func(context.Context) []string { return []string{"the outbox is stuck"} },
@@ -153,7 +154,7 @@ func TestRenderCarriesAPanickedError(t *testing.T) {
 		httptest.NewRequest(http.MethodGet, "/", nil),
 		struct{ Reason string }{Reason: "no rows"},
 		nil,
-		errorpage.Options{AppModule: appModule},
+		errorpage.Options{Dev: true, AppModule: appModule},
 	)
 
 	if !strings.Contains(w.Body.String(), "no rows") {
@@ -177,7 +178,7 @@ func TestRenderDumpDrawsTheDumpPage(t *testing.T) {
 		w,
 		httptest.NewRequest(http.MethodGet, "/orders/9", nil),
 		col,
-		errorpage.Options{Editor: "zed", AppModule: appModule},
+		errorpage.Options{Dev: true, Editor: "zed", AppModule: appModule},
 	)
 
 	if w.Code != http.StatusOK {
@@ -200,5 +201,33 @@ func TestEditorLinkForwards(t *testing.T) {
 	want := observability.EditorLink("goland", "/src/app/main.go", 12)
 	if got := errorpage.EditorLink("goland", "/src/app/main.go", 12); got != want {
 		t.Errorf("EditorLink = %q, observability answers %q", got, want)
+	}
+}
+
+// TestThePageIsNotTheDebugPageUnlessDevSaysSo: Options without Dev draws the
+// plain status page, with neither the panic's text nor what the Collector
+// recorded, so a caller that forgot to ask the environment serves no stack.
+func TestThePageIsNotTheDebugPageUnlessDevSaysSo(t *testing.T) {
+	col := observability.NewCollector("req-3")
+	observability.Dump(observability.WithCollector(context.Background(), col), "widget", "42")
+
+	w := httptest.NewRecorder()
+	errorpage.Render(w, httptest.NewRequest(http.MethodGet, "/orders/9", nil), "db password=hunter2", col,
+		errorpage.Options{AppModule: appModule})
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status is %d, want 500", w.Code)
+	}
+	for _, leak := range []string{"hunter2", "widget", "Stack"} {
+		if strings.Contains(w.Body.String(), leak) {
+			t.Errorf("the page drawn without Dev carries %q", leak)
+		}
+	}
+
+	w = httptest.NewRecorder()
+	errorpage.RenderDump(w, httptest.NewRequest(http.MethodGet, "/orders/9", nil), col, errorpage.Options{AppModule: appModule})
+	for _, leak := range []string{"widget"} {
+		if strings.Contains(w.Body.String(), leak) {
+			t.Errorf("the dump drawn without Dev carries %q", leak)
+		}
 	}
 }
