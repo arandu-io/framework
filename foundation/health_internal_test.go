@@ -95,7 +95,8 @@ func (p *countingProbe) Health(context.Context) error {
 
 // TestReadinessIsThrottled: the probe is reachable with no credential, and
 // every pass pings the dependencies, so a burst of requests -- concurrent or
-// not -- runs one pass per readinessInterval and answers the rest from it.
+// not -- runs at most readinessPasses passes in a second and answers the rest
+// from the last one. Probes at a load balancer's pace each run a pass.
 func TestReadinessIsThrottled(t *testing.T) {
 	probe := &countingProbe{}
 	a := New(internalCfg(config.EnvProd, "")).Register(probe)
@@ -103,22 +104,31 @@ func TestReadinessIsThrottled(t *testing.T) {
 		t.Fatalf("Boot: %v", err)
 	}
 	handler := a.Handler()
+	serve := func() {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, internalPrefix+"health", nil))
+		if rec.Code != http.StatusOK {
+			t.Errorf("readiness answered %d, want 200", rec.Code)
+		}
+	}
+
+	serve()
+	serve()
+	if got := probe.calls.Load(); got != 2 {
+		t.Fatalf("two probes ran the checks %d times, want 2: a probe under the bound saw a stale answer", got)
+	}
 
 	var wg sync.WaitGroup
 	for range 50 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, internalPrefix+"health", nil))
-			if rec.Code != http.StatusOK {
-				t.Errorf("readiness answered %d, want 200", rec.Code)
-			}
+			serve()
 		}()
 	}
 	wg.Wait()
 
-	if got := probe.calls.Load(); got != 1 {
-		t.Fatalf("50 probes inside one interval ran the checks %d times, want 1", got)
+	if got := probe.calls.Load(); got != readinessPasses {
+		t.Fatalf("52 probes inside one second ran the checks %d times, want %d", got, readinessPasses)
 	}
 }

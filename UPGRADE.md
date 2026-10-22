@@ -64,10 +64,10 @@ something an application that does not move can notice.
   sets `MAIL_URL=array://`.
 - **`Boot` writes the environment first.** One info line,
   `msg="application environment"`, with `env`, `debug` and `http_addr`.
-- **`/_arandu/health` runs its checks at most once a second.** One pass over
-  the modules answers every probe for a second, and a probe that arrives
-  during a pass waits for it. A check that flips state is seen up to a second
-  later. Nothing is refused with 429.
+- **`/_arandu/health` runs at most ten passes over its checks a second.** One
+  pass runs at a time; a probe past the tenth in a second is answered with
+  what the last pass found. A load balancer's probes stay far under the bound
+  and each still runs a pass. Nothing is refused with 429.
 - **`errorpage.Render` and `errorpage.RenderDump` draw the debug page only
   with `Options.Dev`.** They used to draw it whatever the caller passed.
   Without `Dev: true` they draw the plain status page, with no stack and

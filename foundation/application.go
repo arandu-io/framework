@@ -112,10 +112,12 @@ type Application struct {
 	// New.
 	csrfExempt []csrfExemption
 
-	// readinessMu guards the last pass over the module checks: when it ran
-	// and the module it found not ready, "" for none. See readiness.
+	// readinessMu guards the passes over the module checks: when the current
+	// second of them began, how many ran in it, and the module the last one
+	// found not ready, "" for none. See readiness.
 	readinessMu     sync.Mutex
-	readinessAt     time.Time
+	readinessWindow time.Time
+	readinessRuns   int
 	readinessFailed string
 
 	booted bool
@@ -639,8 +641,8 @@ const readinessTimeout = 2 * time.Second
 //
 // The checks run under readinessTimeout, so a dependency that stops answering
 // turns into a 503 naming the module rather than into a request that never
-// finishes. One pass answers every probe for readinessInterval, so the endpoint
-// is not a query an anonymous caller can repeat at will.
+// finishes. At most readinessPasses passes run in a second, so the endpoint is
+// not a query an anonymous caller can repeat at will.
 //
 // The body carries the module name and nothing else. This endpoint is reachable
 // without a session, a header or a credential -- a load balancer has none of
@@ -671,30 +673,35 @@ func (a *Application) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("ok"))
 }
 
-// readinessInterval is how long one pass over the module checks answers the
-// probes that follow it.
+// readinessPasses is how many passes over the module checks one second may
+// run; a probe past it is answered from the last pass.
 //
 // The endpoint takes no credential, and a pass pings every dependency -- the
-// database first -- so without it every anonymous request is a query, and a
-// flood of them is a flood of queries. A load balancer probes every few
-// seconds, so a second never hides a change from it for longer than its own
-// interval does.
-const readinessInterval = time.Second
+// database first -- so without a bound every anonymous request is a query, and
+// a flood of them is a flood of queries. A load balancer probes every few
+// seconds, far under the bound, so each of its probes still runs a pass of its
+// own and sees a change at once.
+const readinessPasses = 10
 
-// readiness runs the module checks at most once per readinessInterval and
-// answers the name of the first module that is not ready, or "" when every
-// one is. A probe that arrives while a pass is running waits for that pass
-// rather than starting another.
+// readiness runs the module checks and answers the name of the first module
+// that is not ready, or "" when every one is. One pass runs at a time, and at
+// most readinessPasses in a second, counted from the first pass of that
+// second; a probe beyond them is answered with what the last pass found.
 //
 // The pass runs on a context detached from the request that started it,
 // under readinessTimeout, because its answer is shared: a caller that went
-// away must not turn the probes waiting behind it into failures.
+// away must not turn the probes answered from it into failures.
 func (a *Application) readiness(ctx context.Context) string {
 	a.readinessMu.Lock()
 	defer a.readinessMu.Unlock()
-	if !a.readinessAt.IsZero() && time.Since(a.readinessAt) < readinessInterval {
+	now := time.Now()
+	if now.Sub(a.readinessWindow) >= time.Second {
+		a.readinessWindow, a.readinessRuns = now, 0
+	}
+	if a.readinessRuns >= readinessPasses {
 		return a.readinessFailed
 	}
+	a.readinessRuns++
 
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), readinessTimeout)
 	defer cancel()
@@ -716,7 +723,7 @@ func (a *Application) readiness(ctx context.Context) string {
 			break
 		}
 	}
-	a.readinessFailed, a.readinessAt = failed, time.Now()
+	a.readinessFailed = failed
 	return failed
 }
 
