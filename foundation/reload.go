@@ -26,8 +26,7 @@ import (
 // package aliases it. Everything the reload actually needs -- devReload,
 // liveReload, htmlRecorder and its methods, newBootID -- is unexported, and
 // so is the whole of hesape/foundation/internal.go, which is where
-// internalPrefix, exceptInternal and requireTracingSecret restated below come
-// from. Go has no way to reach any of them from another module.
+// internalPrefix and requireTracingSecret restated below come from. Go has no way to reach any of them from another module.
 //
 // The signature difference between []fhttp.Middleware and
 // []pipeline.Middleware[http.Handler] is not the obstacle: those two are the

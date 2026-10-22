@@ -27,7 +27,8 @@ func defaultSecurityHeaders(dev bool) http.Header {
 // application's pipeline, and with it the security headers an application
 // mounts there. They are answered with the default headers all the same -- the
 // default policy, not one an application widened -- and the application's own
-// routes are left to the application.
+// routes are left to the application, as is a path under the prefix that no
+// framework route answers.
 func TestInternalRoutesCarryTheSecurityHeaders(t *testing.T) {
 	for _, env := range []config.Env{config.EnvDev, config.EnvProd} {
 		t.Run(string(env), func(t *testing.T) {
@@ -41,7 +42,7 @@ func TestInternalRoutesCarryTheSecurityHeaders(t *testing.T) {
 			handler := k.Handler()
 			want := defaultSecurityHeaders(dev)
 
-			for _, path := range []string{"/_arandu/health", "/_arandu/live", "/_arandu/nothing-here"} {
+			for _, path := range []string{"/_arandu/health", "/_arandu/live"} {
 				rec := httptest.NewRecorder()
 				handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 				for name := range want {
@@ -54,10 +55,12 @@ func TestInternalRoutesCarryTheSecurityHeaders(t *testing.T) {
 				}
 			}
 
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/billing", nil))
-			if got := rec.Header().Get("Content-Security-Policy"); !strings.Contains(got, "https://cdn.example.com") {
-				t.Errorf("the application route's policy = %q, want the application's own", got)
+			for _, path := range []string{"/billing", "/_arandu/nothing-here"} {
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+				if got := rec.Header().Get("Content-Security-Policy"); !strings.Contains(got, "https://cdn.example.com") {
+					t.Errorf("%s policy = %q, want the application's own", path, got)
+				}
 			}
 		})
 	}

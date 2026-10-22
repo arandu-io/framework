@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -95,6 +96,16 @@ type Application struct {
 	// that comes back blank as the only symptom.
 	flash *security.Flash
 
+	// internal holds the routes the framework owns under internalPrefix, and
+	// nothing else. A request it matches is one the router would hand to one
+	// of them, because no other route can be more specific than a pattern
+	// whose first segment is the reserved literal; Handler serves that request
+	// from here, outside the application's pipeline, and every other request
+	// through the pipeline and the router. internalRoutes is the same set, in
+	// registration order.
+	internal       *http.ServeMux
+	internalRoutes []*fhttp.Route
+
 	booted bool
 	// reloadTag comes from this application's view module. Keeping it on the
 	// application prevents another application in the same process from changing
@@ -136,8 +147,9 @@ func New(cfg bootstrap.Configuration) *Application {
 	log := observability.NewLogger(string(cfg.App.Env), cfg.Observability.LogLevel)
 
 	a := &Application{
-		cfg: cfg,
-		log: log,
+		cfg:      cfg,
+		log:      log,
+		internal: http.NewServeMux(),
 	}
 
 	// The flash is built here, before any route exists, because the router is
@@ -265,13 +277,22 @@ func (a *Application) Boot(ctx context.Context) error {
 
 		before := len(a.router.Routes())
 		m.Routes(a.router.ForModule(name))
-		if err := validateReservedRoutes(m, a.router.Routes()[before:]); err != nil {
+		registered := a.router.Routes()[before:]
+		if err := validateReservedRoutes(m, registered); err != nil {
 			return err
+		}
+		if internalroutes.OwnsReservedNamespace(m) {
+			a.claimInternal(registered)
 		}
 		a.log.Debug("routes registered", "module", name)
 	}
 
+	before := len(a.router.Routes())
 	a.mountInternalRoutes()
+	a.claimInternal(a.router.Routes()[before:])
+	if err := a.validateInternalPaths(); err != nil {
+		return err
+	}
 	a.booted = true
 	return nil
 }
@@ -280,17 +301,163 @@ func (a *Application) Boot(ctx context.Context) error {
 // HTTP namespace whose requests bypass the application's middleware. First-party
 // owners carry a marker from an internal package that external modules cannot
 // import.
+//
+// The pattern is compared escaped and unescaped, because the router unescapes
+// a literal segment before it matches: "/%5Farandu/x" answers /_arandu/x.
 func validateReservedRoutes(module Module, registered []*fhttp.Route) error {
 	if internalroutes.OwnsReservedNamespace(module) {
 		return nil
 	}
 	for _, route := range registered {
-		if strings.HasPrefix(route.Pattern, internalPrefix) {
+		pattern := route.Pattern
+		if unescaped, err := url.PathUnescape(pattern); err == nil {
+			pattern = unescaped
+		}
+		if strings.HasPrefix(route.Pattern, internalPrefix) || strings.HasPrefix(pattern, internalPrefix) {
 			return fmt.Errorf("arandu: module %q registered route %q under the reserved %s namespace",
 				module.Name(), route.Pattern, internalPrefix)
 		}
 	}
 	return nil
+}
+
+// claimInternal adds the routes under internalPrefix, of a module allowed to
+// register them, to the set Handler serves outside the application's pipeline.
+func (a *Application) claimInternal(registered []*fhttp.Route) {
+	for _, route := range registered {
+		if !strings.HasPrefix(route.Pattern, internalPrefix) {
+			continue
+		}
+		a.internal.Handle(muxKey(route.Method, route.Pattern), route)
+		a.internalRoutes = append(a.internalRoutes, route)
+	}
+}
+
+// probeMethods are the methods every path the framework mounts is tried with
+// by validateInternalPaths.
+var probeMethods = []string{
+	http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
+	http.MethodPatch, http.MethodDelete, http.MethodOptions,
+}
+
+// validateInternalPaths refuses an application route that answers a request
+// for a path the framework mounts, under any method the framework's route does
+// not take itself -- POST "/" and "/{path...}" answer every POST, and
+// "/{tenant}/live" answers DELETE /_arandu/live.
+//
+// Such a request already goes through the application's pipeline, because
+// Handler decides by the route that answers it. The refusal is so the reserved
+// namespace holds no application code on any method. A fallback is left
+// alone: answering whatever nothing else matched is what it is registered for.
+func (a *Application) validateInternalPaths() error {
+	owned := make(map[*fhttp.Route]bool, len(a.internalRoutes))
+	for _, route := range a.internalRoutes {
+		owned[route] = true
+	}
+
+	app := http.NewServeMux()
+	byKey := map[string]*fhttp.Route{}
+	for _, route := range a.router.Routes() {
+		if owned[route] || route.IsFallback() {
+			continue
+		}
+		for _, pattern := range muxPatterns(route.Pattern) {
+			key := muxKey(route.Method, pattern)
+			if _, taken := byKey[key]; taken {
+				continue
+			}
+			if err := handleProbe(app, key); err != nil {
+				return fmt.Errorf("arandu: module %q registered route %q, which cannot be checked against the reserved %s namespace: %w",
+					route.Module, route.Pattern, internalPrefix, err)
+			}
+			byKey[key] = route
+		}
+	}
+
+	for _, internal := range a.internalRoutes {
+		path := probePath(internal.Pattern)
+		for _, method := range probeMethods {
+			req := &http.Request{Method: method, Host: "localhost", URL: &url.URL{Path: path}}
+			if _, pattern := a.internal.Handler(req); pattern != "" {
+				continue
+			}
+			if _, pattern := app.Handler(req); pattern != "" {
+				route := byKey[pattern]
+				return fmt.Errorf("arandu: module %q registered route %q, which answers %s %s under the reserved %s namespace",
+					route.Module, route.Pattern, method, path, internalPrefix)
+			}
+		}
+	}
+	return nil
+}
+
+// handleProbe registers key on mux, turning the panic of a pattern the mux
+// refuses into an error.
+func handleProbe(mux *http.ServeMux, key string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	mux.Handle(key, http.NotFoundHandler())
+	return nil
+}
+
+// muxKey is the pattern a route is registered under on an http.ServeMux: the
+// method, then the path. A route that answers every method names none.
+func muxKey(method, pattern string) string {
+	if method == "" || method == "ANY" {
+		return pattern
+	}
+	return method + " " + pattern
+}
+
+// muxPatterns turns a route pattern with optional parameters into the
+// patterns an http.ServeMux takes, one per number of optional segments
+// present; a pattern without one is answered as it is.
+func muxPatterns(pattern string) []string {
+	segments := strings.Split(pattern, "/")
+	for len(segments) > 1 && segments[len(segments)-1] == "" {
+		segments = segments[:len(segments)-1]
+	}
+	first := -1
+	for i, segment := range segments {
+		if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "?}") {
+			if first < 0 {
+				first = i
+			}
+			segments[i] = strings.TrimSuffix(segment, "?}") + "}"
+		}
+	}
+	if first < 0 {
+		return []string{pattern}
+	}
+	out := make([]string, 0, len(segments)-first+1)
+	for end := len(segments); end >= first; end-- {
+		concrete := strings.TrimSuffix(strings.Join(segments[:end], "/"), "/")
+		if concrete == "" {
+			concrete = "/"
+		}
+		out = append(out, concrete)
+	}
+	return out
+}
+
+// probePath is a path the pattern answers: each parameter is one segment,
+// and the end anchor leaves the trailing slash it anchors.
+func probePath(pattern string) string {
+	segments := strings.Split(pattern, "/")
+	out := segments[:0]
+	for _, segment := range segments {
+		switch {
+		case segment == "{$}":
+			segment = ""
+		case strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}"):
+			segment = "probe"
+		}
+		out = append(out, segment)
+	}
+	return strings.Join(out, "/")
 }
 
 // findRenderer asks the modules which one brings the view layer.
@@ -537,20 +704,19 @@ func (a *Application) Handler() http.Handler {
 
 	// The framework's own routes skip the application's pipeline, the security
 	// headers an application mounts there included, so they get theirs here.
-	outer = append(outer, internalSecurityHeaders(a.isDev()))
+	internal := fhttp.Chain(a.internal, internalSecurityHeaders(a.isDev()))
 
 	// The flash is consumed above the application's own pipeline and below the
 	// logger, and the Application installs it rather than bootstrap/app.go for
 	// the reason the field on the Application says: there is nothing to decide.
 	//
-	// exceptInternal for the same reason everything else is: the debug console
-	// is a page a browser asks for with text/html, so without this it would
-	// spend the one-shot flash on a request that draws none of it, and the form
-	// the person was sent back to would come back blank -- a bug reachable only
-	// with the console open, which is exactly when somebody is debugging
-	// something else.
-	outer = append(outer, exceptInternal(middleware.Flash(a.flash)))
-
+	// It is on the application's side for the reason everything else is: the
+	// debug console is a page a browser asks for with text/html, so it would
+	// otherwise spend the one-shot flash on a request that draws none of it,
+	// and the form the person was sent back to would come back blank -- a bug
+	// reachable only with the console open, which is exactly when somebody is
+	// debugging something else.
+	//
 	// The application's middleware runs on the application's routes. What this
 	// framework mounts under internalPrefix is not the application's traffic and
 	// must not be measured as if it were.
@@ -561,12 +727,22 @@ func (a *Application) Handler() http.Handler {
 	// because the key falls back to the address for a request with no session.
 	// Ordinary browsing with two tabs open answered "too many requests: wait 32
 	// seconds", on a page nobody had hammered.
-	app := make([]fhttp.Middleware, 0, len(a.pipeline))
-	for _, mw := range a.pipeline {
-		app = append(app, exceptInternal(mw))
-	}
+	app := fhttp.Chain(a.router, append([]fhttp.Middleware{middleware.Flash(a.flash)}, a.pipeline...)...)
 
-	return fhttp.Chain(a.router, append(outer, app...)...)
+	// Which side a request goes to is decided by the route that answers it,
+	// never by how its path begins. An application route reachable under the
+	// prefix -- "/{workspace}/projects" for /_arandu/projects, "/{slug}" for
+	// /_arandu%2Fx, a catch-all -- is the application's traffic and runs the
+	// whole pipeline; a request no framework route answers is too, its 404
+	// included.
+	split := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, pattern := a.internal.Handler(r); pattern != "" {
+			internal.ServeHTTP(w, r)
+			return
+		}
+		app.ServeHTTP(w, r)
+	})
+	return fhttp.Chain(split, outer...)
 }
 
 // carryAppName puts the application's configured name on every request
@@ -649,11 +825,14 @@ func (a *Application) WithTranslator(t *translation.Translator) *Application {
 // It is declared surface rather than a hole in the inventory: every route under
 // it is registered on the router like any other, so `aru routes` prints it and
 // the error page names it. What it does not answer to is the application's
-// policy. exceptInternal takes every application middleware off it, and the
-// framework gates each endpoint itself -- the two probes by nothing, because
-// they read no data and hold no session; the console by its own secret, in
-// constant time; the reload by the environment; the assets by the hash in the
-// path. The security headers are the one thing every route under it gets
+// policy. Handler serves a request one of its routes answers outside the
+// application's pipeline -- neither probe must be rate limited by the
+// application it reports on, because a throttled liveness probe is a restart
+// loop caused by traffic -- and every other request through that pipeline,
+// whatever its path begins with. The framework gates each endpoint itself -- the two probes by nothing,
+// because they read no data and hold no session; the console by its own
+// secret, in constant time; the reload by the environment; the assets by the
+// hash in the path. The security headers are the one thing every route under it gets
 // regardless: internalSecurityHeaders writes the defaults on all of them.
 //
 // The namespace has more than one first-party owner. The Application mounts the
@@ -663,37 +842,11 @@ func (a *Application) WithTranslator(t *translation.Translator) *Application {
 // can be served.
 const internalPrefix = "/_arandu/"
 
-// exceptInternal runs an application's middleware everywhere except on the
-// framework's own routes.
+// internalSecurityHeaders answers the framework's own routes with the default
+// security headers, the ones middleware.SecurityHeaders writes.
 //
-// The framework's endpoints answer to the framework: neither probe must be rate
-// limited by the application it reports on -- a throttled liveness probe is a
-// restart loop caused by traffic -- the debug console is gated
-// by its own secret, and the reload is a question the page asks about the
-// process rather than a request the visitor made. None of them touch the
-// database, hold a session, or write anything.
-//
-// The prefix is the boundary because it already is one everywhere else -- one
-// name for what belongs to the framework, checked in one place.
-func exceptInternal(mw fhttp.Middleware) fhttp.Middleware {
-	return func(next http.Handler) http.Handler {
-		wrapped := mw(next)
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, internalPrefix) {
-				next.ServeHTTP(w, r)
-				return
-			}
-			wrapped.ServeHTTP(w, r)
-		})
-	}
-}
-
-// internalSecurityHeaders answers every route under internalPrefix with the
-// default security headers, the ones middleware.SecurityHeaders writes, and
-// leaves every other route to the application's pipeline.
-//
-// exceptInternal takes the application's middleware off the framework's routes,
-// and SecurityHeaders is application middleware like any other, so without this
+// The application's middleware does not run on those routes, and
+// SecurityHeaders is application middleware like any other, so without this
 // the probes, the console, the development reload and the asset route went out
 // with no Content-Security-Policy, no nosniff and no frame refusal. The headers
 // are not a decision about an application: no image origin reaches them,
@@ -704,19 +857,12 @@ func exceptInternal(mw fhttp.Middleware) fhttp.Middleware {
 func internalSecurityHeaders(dev bool) fhttp.Middleware {
 	headers := middleware.SecurityHeaders(dev)
 	return func(next http.Handler) http.Handler {
-		secured := headers(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		return headers(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == observability.ConsolePath || strings.HasPrefix(r.URL.Path, observability.ConsolePath+"/") {
 				w.Header().Set("Content-Security-Policy", consoleContentSecurityPolicy)
 			}
 			next.ServeHTTP(w, r)
 		}))
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !strings.HasPrefix(r.URL.Path, internalPrefix) {
-				next.ServeHTTP(w, r)
-				return
-			}
-			secured.ServeHTTP(w, r)
-		})
 	}
 }
 
