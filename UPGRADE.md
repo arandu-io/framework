@@ -19,6 +19,62 @@ down here fails the build.
 
 ---
 
+## v0.62.0 — the reserved namespace is decided by the route, and production refuses an insecure cookie and the log mailer
+
+This release still requires `hesape` v0.75.0. `apidiff` reports no
+incompatible change against v0.61.0: one field is added,
+`errorpage.Options.Dev`. What changes is behaviour, and every item below is
+something an application that does not move can notice.
+
+- **A request under `/_arandu/` runs the application's pipeline unless a
+  framework route answers it.** The pipeline used to be skipped for every
+  path beginning with `/_arandu/`, so an application route reachable there
+  -- `"/{workspace}/projects"` for `/_arandu/projects`, `"/{slug}"` for
+  `/_arandu%2Fprojects`, a catch-all -- ran with no origin check, CSRF,
+  throttle, body limit, `Recover` or `Observe`. The framework's own routes
+  (the probes, the console, the reload, the asset route) still skip it. A
+  path under the prefix that no framework route answers is now the
+  application's traffic: its 404 carries the application's middleware and
+  its security headers, not the framework's defaults.
+- **`Boot` refuses an application route that answers a framework path.** A
+  route that takes a request for `/_arandu/health`, `/_arandu/live` or another
+  path the framework mounts, under a method the framework's route does not
+  take, stops the boot: `arandu: module "web" registered route "/", which
+  answers POST /_arandu/health under the reserved /_arandu/ namespace`. The
+  usual causes are `r.Post("/", ...)` -- a pattern ending in `/` matches every
+  path below it; write `"/{$}"` -- and a remainder at the root such as
+  `"/{path...}"` on a method other than GET. A `Fallback` is left alone. A
+  pattern spelled with an escape, `"/%5Farandu/..."`, is now refused like the
+  literal prefix.
+- **A module's CSRF exemption covers only that module's routes.** `Boot`
+  refuses an exemption from a `CSRFExempt` module that also covers a write
+  route of the application or of another module, naming both: `arandu: the
+  module "webhook" declares the CSRF exemption "/webhooks/", which covers the
+  route POST "/webhooks/manage/..." of the module "web"`. Move the other route
+  out from under the prefix, or narrow the module's exemption. Every collected
+  exemption is written to the log at boot (`msg="csrf exemption"`).
+- **`SESSION_SECURE_COOKIE=false` is refused in production.** `APP_ENV=prod`
+  with the variable false stops `LoadConfiguration`. A deployment served over
+  http is a staging one, where the value is still taken. Remove the variable,
+  or serve production over https.
+- **`MAIL_URL=log://` is refused in production, and so is an unset
+  `MAIL_URL`.** The log transport writes the whole message, password-reset
+  codes included, so `APP_ENV=prod` now needs `MAIL_URL` set to `smtp://`,
+  `smtps://`, `resend://` or `sendgrid://`. A test that boots in production
+  sets `MAIL_URL=array://`.
+- **`Boot` writes the environment first.** One info line,
+  `msg="application environment"`, with `env`, `debug` and `http_addr`.
+- **`/_arandu/health` runs its checks at most once a second.** One pass over
+  the modules answers every probe for a second, and a probe that arrives
+  during a pass waits for it. A check that flips state is seen up to a second
+  later. Nothing is refused with 429.
+- **`errorpage.Render` and `errorpage.RenderDump` draw the debug page only
+  with `Options.Dev`.** They used to draw it whatever the caller passed.
+  Without `Dev: true` they draw the plain status page, with no stack and
+  nothing the Collector recorded. Set `Dev` from the environment.
+
+---
+
 ## v0.61.0 — the kernel collects what a module declares, and the logger comes from the configuration
 
 This release requires `hesape` v0.75.0. `apidiff` reports no incompatible
