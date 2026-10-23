@@ -1,0 +1,52 @@
+name: browser
+
+# The native test kit's browser layer (framework/test/browser, the cdp driver
+# and the driver conformance suite) and the framework's own journeys live under
+# the e2e build tag, which `go test ./...` in ci.yml never compiles. CI is set,
+# so a missing Chrome fails the job instead of skipping it.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+          check-latest: true
+
+      - name: Chrome
+        run: |
+          set -euo pipefail
+          chrome="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          test -n "$chrome" || { echo "no Chrome on the runner"; exit 1; }
+          "$chrome" --version
+          echo "CHROME_PATH=$chrome" >> "$GITHUB_ENV"
+
+      - name: vet with the e2e tag
+        run: go vet -tags e2e ./test/... ./tests/E2E/...
+
+      - name: native driver, its conformance suite and the journeys
+        env:
+          ARANDU_E2E_TRACE_DIR: ${{ runner.temp }}/framework-test-traces
+        run: go test -race -count=1 -tags e2e ./test/... ./tests/E2E/...
+
+      - name: traces of a failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: framework-test-traces
+          path: ${{ runner.temp }}/framework-test-traces
+          if-no-files-found: ignore
