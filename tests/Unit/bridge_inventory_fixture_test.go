@@ -138,8 +138,10 @@ var historicalBridgeSurface = bridgeSurface{
 // framework-to-Hesape boundary. Internal standard-library imports are not part
 // of this compatibility inventory.
 var allowedHesapeImports = bridgeSurface{
+	// The helpers forward to framework/test, which is this module; hesape/auth
+	// is what ActingAs and Subject write and read.
 	"arandutest": inventoryItems(`
-		github.com/arandu-io/hesape/arandutest github.com/arandu-io/hesape/auth
+		github.com/arandu-io/hesape/auth
 	`),
 	"config": inventoryItems(`
 		github.com/arandu-io/hesape/config

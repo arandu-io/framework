@@ -1,5 +1,5 @@
 // The two outbox helpers, answered by
-// github.com/arandu-io/hesape/arandutest.
+// github.com/arandu-io/framework/test.
 //
 // They used to hold an implementation here, and the reason was a type: the
 // hesape outbox is built over a DB interface that reports its own transaction,
@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/arandu-io/framework/events"
-	"github.com/arandu-io/hesape/arandutest"
+	"github.com/arandu-io/framework/test"
 )
 
 // DrainOutbox publishes everything the outbox is holding, once.
@@ -31,18 +31,18 @@ import (
 // The parameters keep the names this module spells them with, so the call sites
 // are untouched.
 //
-// Deprecated: use DrainOutbox from github.com/arandu-io/hesape/test.
+// Deprecated: use DrainOutbox from github.com/arandu-io/framework/test.
 func DrainOutbox(t *testing.T, ctx context.Context, outbox *events.Outbox, publisher events.Publisher) {
 	t.Helper()
-	arandutest.DrainOutbox(t, ctx, outbox, publisher)
+	test.DrainOutbox(t, ctx, outbox, publisher)
 }
 
 // Collected is a Publisher that keeps what it received, for a test to assert on.
 //
-// Its Events field, its Publish and its Names are hesape's, reached through this
+// Its Events field, its Publish and its Names are the kit's, reached through this
 // name. Declaring the struct again here would compile and pass every assertion
 // written against it, and it would be a second recorder to keep in step with the
 // first.
 //
-// Deprecated: use Collected from github.com/arandu-io/hesape/test.
-type Collected = arandutest.Collected
+// Deprecated: use Collected from github.com/arandu-io/framework/test.
+type Collected = test.Collected

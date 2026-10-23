@@ -15,10 +15,10 @@ import (
 
 // replacement is what every deprecation notice in the package names, so the
 // editor that strikes a call through also says where it went.
-const replacement = "github.com/arandu-io/hesape/test"
+const replacement = "github.com/arandu-io/framework/test"
 
 // namesReplacement matches the replacement as a whole import path, so a notice
-// naming hesape/testing or the old hesape/arandutest does not pass for it.
+// naming another path that begins with it does not pass for it.
 var namesReplacement = regexp.MustCompile(regexp.QuoteMeta(replacement) + `($|[^\w/])`)
 
 // deprecation is the paragraph of a doc comment that starts with
@@ -36,7 +36,7 @@ func deprecation(comment string) string {
 // The package is removed in v1.0.0. Saying so in prose reaches whoever reads
 // the package documentation; a Deprecated paragraph on every exported name is
 // what reaches the caller, at the call, in the editor and in the linter.
-func TestEveryExportOfTheBridgeIsDeprecatedTowardHesape(t *testing.T) {
+func TestEveryExportOfTheBridgeIsDeprecatedTowardTheKit(t *testing.T) {
 	dir := filepath.Join(testbase.ModuleRoot(t), "arandutest")
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)

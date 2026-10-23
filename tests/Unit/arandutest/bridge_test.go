@@ -4,7 +4,7 @@ package unit
 //
 // It proves that the old name reaches the new behaviour, and nothing else. The
 // cookie jar, the CSRF token read off the last page and the comparison each
-// assertion makes are tested in github.com/arandu-io/hesape/arandutest, against
+// assertion makes are tested in github.com/arandu-io/framework/test, against
 // the code that now runs; repeating them here would be a second test of one
 // implementation, which is the same mistake as a second implementation.
 //
@@ -18,7 +18,7 @@ import (
 	"github.com/arandu-io/framework/arandutest"
 	"github.com/arandu-io/framework/events"
 	"github.com/arandu-io/framework/security"
-	hesapetest "github.com/arandu-io/hesape/arandutest"
+	kit "github.com/arandu-io/framework/test"
 	"github.com/arandu-io/hesape/auth"
 )
 
@@ -36,7 +36,7 @@ func page(t *testing.T) http.Handler {
 	})
 }
 
-// Each old assertion has to land on exactly one hesape method. A forward wired
+// Each old assertion has to land on exactly one kit method. A forward wired
 // to the wrong one passes every green test and fails to fail, which is the only
 // way an assertion helper can be broken without anybody noticing.
 func TestTheOldAssertionNamesReachTheRenamedOnes(t *testing.T) {
@@ -55,7 +55,7 @@ func TestTheOldAssertionNamesReachTheRenamedOnes(t *testing.T) {
 	client.Get("/leave").Status(http.StatusSeeOther).RedirectsTo("/arrived")
 }
 
-// The envelope must hold one hesape client for the life of the test, not build
+// The envelope must hold one kit client for the life of the test, not build
 // a fresh one per request. A client rebuilt per call has an empty jar, so a
 // session never survives a redirect and every feature test after a sign-in is
 // silently anonymous -- the failure the jar exists to prevent.
@@ -119,22 +119,22 @@ var _ = auth.Subject(security.Subject{})
 // this package would otherwise check it.
 var _ events.Publisher = (*arandutest.Collected)(nil)
 
-// And it has to BE the hesape recorder, not a second one shaped like it.
+// And it has to BE the kit's recorder, not a second one shaped like it.
 //
 // Two identical structs in two packages satisfy every assertion above and are
 // still two things to keep in step. A pointer only assigns across an alias, so
 // re-declaring the struct here stops the build instead of passing quietly.
-var _ *hesapetest.Collected = (*arandutest.Collected)(nil)
+var _ *kit.Collected = (*arandutest.Collected)(nil)
 
 // DrainOutbox forwards, and this is the condition that lets it.
 //
 // It held an implementation for as long as the outbox and the publisher were
-// types of this module's own. Written as the signature hesape declares, this
+// types of this module's own. Written as the signature the kit declares, this
 // line stops compiling the day either alias is undone -- which is the day the
 // forward would silently be passing something else.
-var _ func(*testing.T, context.Context, *events.Outbox, events.Publisher) = hesapetest.DrainOutbox
+var _ func(*testing.T, context.Context, *events.Outbox, events.Publisher) = kit.DrainOutbox
 
-// The hesape client answers the assertions this envelope forwards to. If any of
+// The kit's client answers the assertions this envelope forwards to. If any of
 // them is renamed again, this fails at compile time in the package that has to
 // change, rather than at the call sites that must not.
 //
@@ -146,13 +146,13 @@ var _ func(*testing.T, context.Context, *events.Outbox, events.Publisher) = hesa
 // times. So the import rewrite is mechanical everywhere except examples, and
 // that is where the renames are.
 var (
-	_ func(int) *hesapetest.Response    = (*hesapetest.Response)(nil).AssertStatus
-	_ func() *hesapetest.Response       = (*hesapetest.Response)(nil).AssertOk
-	_ func(string) *hesapetest.Response = (*hesapetest.Response)(nil).AssertSee
-	_ func(string) *hesapetest.Response = (*hesapetest.Response)(nil).AssertDontSee
-	_ func(string) *hesapetest.Response = (*hesapetest.Response)(nil).AssertRedirect
-	_ func() string                     = (*hesapetest.Response)(nil).GetContent
-	_ func(string) string               = (*hesapetest.Response)(nil).Header
+	_ func(int) *kit.Response    = (*kit.Response)(nil).AssertStatus
+	_ func() *kit.Response       = (*kit.Response)(nil).AssertOk
+	_ func(string) *kit.Response = (*kit.Response)(nil).AssertSee
+	_ func(string) *kit.Response = (*kit.Response)(nil).AssertDontSee
+	_ func(string) *kit.Response = (*kit.Response)(nil).AssertRedirect
+	_ func() string              = (*kit.Response)(nil).GetContent
+	_ func(string) string        = (*kit.Response)(nil).Header
 )
 
 // Collected keeps the arrival order, which is the assertion the relay tests in
