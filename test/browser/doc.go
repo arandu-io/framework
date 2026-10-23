@@ -5,7 +5,8 @@
 // A test opens a Page and talks to it in the user's words:
 //
 //	func TestInvoiceIsPaid(t *testing.T) {
-//		page := browser.Open(t, tests.Drivers, browser.BaseURL(server.URL), browser.Routes(server.Route))
+//		server := test.Serve(t, app.Boot)
+//		page := browser.Open(t, tests.Drivers, browser.BaseURL(server.URL), browser.Routes(server.Resolve))
 //		page.Visit("invoices.show", invoice.ID)
 //		page.ClickRole("button", "Pay")
 //		page.ExpectModal("Pay invoice").ClickRole("button", "Confirm")

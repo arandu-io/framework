@@ -357,6 +357,18 @@ func (s *Server) Route(name string, params ...string) string {
 	return path
 }
 
+// Resolve builds the path of the application's route called name like Route,
+// taking the parameters as any value and printing each with fmt, and returns
+// the error instead of failing the test. It is the browser.Resolver a page
+// visits route names with: browser.Routes(server.Resolve).
+func (s *Server) Resolve(name string, params ...any) (string, error) {
+	values := make([]string, len(params))
+	for i, p := range params {
+		values[i] = fmt.Sprint(p)
+	}
+	return s.routes.Route(name, values...)
+}
+
 // DB is the test's database, for arranging what a request will find and for
 // the database assertions.
 func (s *Server) DB() *database.DB { return s.env.DB }
