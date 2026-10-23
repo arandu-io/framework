@@ -357,6 +357,10 @@ func (s *Server) Route(name string, params ...string) string {
 	return path
 }
 
+// Handler is the application's handler, the one the server listens with, for
+// a test that drives a request in process with the cookies As handed back.
+func (s *Server) Handler() http.Handler { return s.handler }
+
 // Resolve builds the path of the application's route called name like Route,
 // taking the parameters as any value and printing each with fmt, and returns
 // the error instead of failing the test. It is the browser.Resolver a page

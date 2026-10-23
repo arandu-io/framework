@@ -404,6 +404,11 @@ func (r *Response) GetContent() string { return r.rec.Body.String() }
 // Header reads one response header.
 func (r *Response) Header(name string) string { return r.rec.Header().Get(name) }
 
+// Status returns the response's status code, for a check that accepts more
+// than one answer or says its own sentence when it fails -- a conformance kit
+// that takes 403 or 404 as a refusal, for one.
+func (r *Response) Status() int { return r.rec.Code }
+
 func (r *Response) body() string {
 	body := r.rec.Body.String()
 	if len(body) > 2000 {
