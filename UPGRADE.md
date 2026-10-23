@@ -19,9 +19,9 @@ down here fails the build.
 
 ---
 
-## v0.63.0 — the test kit is framework/test, view.Layout is hesape's, and hesape v0.82.0
+## v0.63.0 — the test kit is framework/test, view.Layout is hesape's, and hesape v0.83.0
 
-This release requires `hesape` v0.82.0. `apidiff` against v0.62.1 reports
+This release requires `hesape` v0.83.0. `apidiff` against v0.62.1 reports
 two incompatible changes, `view.Layout` and `arandutest.Collected`, both
 below.
 
@@ -38,7 +38,7 @@ below.
   `All()`; a type of your own that implements `view.Layout` adds `Any`,
   `All`, `Flashed`, `FieldError` and `OldOr`.
 - **The native test kit is `github.com/arandu-io/framework/test`.** It is
-  what `hesape/arandutest` was at v0.82.0 -- `Serve`, `As`, `Client`,
+  what `hesape/arandutest` was at v0.83.0 -- `Serve`, `As`, `Client`,
   `Response` and its assertions, the database, outbox and query helpers --
   with its packages under the same names: `test/browser`,
   `test/browser/cdp`, `test/browser/conformance`, `test/trace`,
@@ -63,7 +63,7 @@ below.
   refused navigation goes to a closed port taken from the system instead of
   `127.0.0.1:1`, which the fetch standard blocks, and asks only for a failure
   with a reason, not for Chromium's `ERR_` prefix.
-- **hesape v0.82.0 changes behaviour an application can notice.** A
+- **hesape v0.83.0 changes behaviour an application can notice.** A
   `SessionStore` refuses a subject that carries roles or actions unless a
   resolver is installed with `Sessions.ResolveSubjects`; the skeleton
   installs one. A missing `APP_ENV` reads as production, so the session
@@ -72,6 +72,11 @@ below.
   migration (`2026_10_22_000004_add_outbox_impersonator`); run
   `aru migrate`. The webhook module exempts each mount from CSRF at its own
   pattern (`/integrations/lpr/{org}`) rather than at the prefix under it.
+  `auth.Authorize` records every decision in the request Collector, so the
+  debug console and a test trace show the policy that answered without a line
+  in the handler; and the cache and session expiry read `support.Now`, so a
+  test that moves the clock with `support.SetTestNow` or `Travel` expires
+  them.
 
 ---
 

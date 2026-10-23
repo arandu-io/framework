@@ -60,18 +60,6 @@ func (ownerPolicy) Can(_ context.Context, s auth.Subject, _ auth.Action, owner s
 	return nil
 }
 
-// authorize runs the policy and records the decision the way the code that
-// runs a policy records it, with the answer it got.
-func authorize(ctx context.Context, s auth.Subject, owner string) (auth.Grant, error) {
-	g, err := auth.Authorize[string](ctx, ownerPolicy{}, s, "invoice.view", owner)
-	reason := ""
-	if err != nil {
-		reason = err.Error()
-	}
-	log.FromContext(ctx).RecordDecision(s.ID, s.Tenant, "invoice.view", err == nil, reason)
-	return g, err
-}
-
 // application is what an application's kernel builds: its logger at the top,
 // Observe under it, and a handler that logs, writes a row and asks a policy.
 func application(t *testing.T, dev bool, out io.Writer) http.Handler {
@@ -87,7 +75,9 @@ func application(t *testing.T, dev bool, out io.Writer) http.Handler {
 		ctx := r.Context()
 		subject := auth.Subject{ID: r.URL.Query().Get("as"), Tenant: "tenant-a"}
 		log.For(ctx).Info("viewing the invoice", "invoice", "inv-1")
-		if _, err := authorize(ctx, subject, "owner-1"); err != nil {
+		// auth.Authorize records the decision in the request's collector itself:
+		// the handler does nothing for the trace to hold it.
+		if _, err := auth.Authorize[string](ctx, ownerPolicy{}, subject, "invoice.view", "owner-1"); err != nil {
 			log.For(ctx).Warn("refused", "error", err)
 			w.WriteHeader(http.StatusForbidden)
 			return
