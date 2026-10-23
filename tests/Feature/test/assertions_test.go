@@ -77,6 +77,7 @@ var failing = map[string]struct {
 	run  func(c *test.Client)
 	want string
 }{
+	"see":            {func(c *test.Client) { c.Get("/page").AssertSee("refunded") }, `does not show "refunded"`},
 	"dont see text":  {func(c *test.Client) { c.Get("/page").AssertDontSeeText("Ana & Bia") }, `reads "Ana & Bia"`},
 	"see in order":   {func(c *test.Client) { c.Get("/page").AssertSeeInOrder("Caio", "Ana") }, `does not show "Ana"`},
 	"json missing":   {func(c *test.Client) { c.Get("/api").AssertJSONMissing(map[string]any{"name": "Ana"}) }, ""},
