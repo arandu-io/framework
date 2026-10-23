@@ -18,6 +18,7 @@ import (
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
+	testbase "github.com/arandu-io/framework/tests"
 	fwebhook "github.com/arandu-io/framework/webhook"
 	hwebhook "github.com/arandu-io/hesape/webhook"
 )
@@ -43,9 +44,10 @@ const reservedPrefix = "/_arandu"
 // panics.
 func noDatabase() *data.DB { return data.Wrap(nil, data.DialectSQLite) }
 
-// newSessions is a session store over memory.
+// newSessions is a session store over memory, resolving the subjects signIn
+// enrolls.
 func newSessions() *security.SessionStore {
-	return security.NewSessionStore([]byte(appKey), time.Hour, false, security.NewMemoryBackend())
+	return testbase.NewSessions([]byte(appKey), time.Hour)
 }
 
 // mounted is the module registered on a Framework router the way the kernel
@@ -91,6 +93,7 @@ func administrator() security.Subject {
 func (m mounted) signIn(t *testing.T, subject security.Subject) []*http.Cookie {
 	t.Helper()
 
+	testbase.Enroll(m.sessions, subject)
 	rec := httptest.NewRecorder()
 	if _, err := m.sessions.Start(context.Background(), rec, subject); err != nil {
 		t.Fatalf("starting a session: %v", err)

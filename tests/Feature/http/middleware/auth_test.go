@@ -11,6 +11,7 @@ import (
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/http/middleware"
 	"github.com/arandu-io/framework/security"
+	testbase "github.com/arandu-io/framework/tests"
 )
 
 // guarded returns a store, and a handler behind the guard that writes "reached"
@@ -23,7 +24,7 @@ func guarded(guard func(http.Handler) http.Handler) http.Handler {
 }
 
 func newSessions() *security.SessionStore {
-	return security.NewSessionStore(appKey, time.Hour, false, security.NewMemoryBackend())
+	return testbase.NewSessions(appKey, time.Hour)
 }
 
 // signedIn returns a request carrying a real session cookie for the subject,
@@ -32,6 +33,7 @@ func newSessions() *security.SessionStore {
 func signedIn(t *testing.T, s *security.SessionStore, sub security.Subject, method, path string) *http.Request {
 	t.Helper()
 
+	testbase.Enroll(s, sub)
 	rec := httptest.NewRecorder()
 	if _, err := s.Start(context.Background(), rec, sub); err != nil {
 		t.Fatalf("opening a session for the test: %v", err)

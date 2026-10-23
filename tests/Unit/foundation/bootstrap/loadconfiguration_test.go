@@ -279,8 +279,10 @@ func TestTheSessionCookieIsSecureUnlessTheEnvironmentIsDev(t *testing.T) {
 		{"dev", "https://loja.test", "", false},
 		{"staging", "http://loja.internal", "false", false},
 		{"dev", "http://localhost:8080", "true", true},
-		// An APP_ENV nobody wrote is parsed as dev, so it answers as dev does.
-		{"", "http://localhost:8080", "", false},
+		// An APP_ENV nobody wrote is read as production, so it answers as prod
+		// does: a server that forgot the variable does not send the session id
+		// in the clear.
+		{"", "http://localhost:8080", "", true},
 	} {
 		env(t, "APP_KEY", testKey, "APP_ENV", tc.env, "APP_URL", tc.url, "SESSION_SECURE_COOKIE", tc.variable)
 

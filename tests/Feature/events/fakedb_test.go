@@ -243,7 +243,7 @@ type outboxRows struct {
 
 func (*outboxRows) Columns() []string {
 	return []string{"id", "tenant_id", "event", "aggregate", "aggregate_id", "payload",
-		"authorized_by", "action", "occurred_at", "attempts", "last_error"}
+		"authorized_by", "action", "occurred_at", "attempts", "last_error", "impersonator"}
 }
 
 func (*outboxRows) Close() error { return nil }
@@ -268,6 +268,11 @@ func (r *outboxRows) Next(dest []driver.Value) error {
 		dest[10] = nil
 	} else {
 		dest[10] = e.LastError
+	}
+	if e.Impersonator == "" {
+		dest[11] = nil
+	} else {
+		dest[11] = e.Impersonator
 	}
 	return nil
 }

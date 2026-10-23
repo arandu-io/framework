@@ -294,7 +294,7 @@ func TestTheReceivePathsExemptTheReceiversFromCSRF(t *testing.T) {
 	}
 
 	protected, native := application(t, true)
-	if !slices.Equal(native.ReceivePaths(), []string{"/webhooks/", "/integrations/lpr/"}) {
+	if !slices.Equal(native.ReceivePaths(), []string{"/webhooks/", "/integrations/lpr/{org}"}) {
 		t.Fatalf("ReceivePaths() = %v", native.ReceivePaths())
 	}
 	for _, target := range receivers {

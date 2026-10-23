@@ -323,6 +323,9 @@ func storedFrom(args []driver.NamedValue) events.Stored {
 	if len(args) > 8 {
 		e.OccurredAt, _ = args[8].Value.(time.Time)
 	}
+	if len(args) > 9 {
+		e.Impersonator, _ = args[9].Value.(string)
+	}
 	return e
 }
 
@@ -492,7 +495,7 @@ type outboxRows struct {
 
 func (*outboxRows) Columns() []string {
 	return []string{"id", "tenant_id", "event", "aggregate", "aggregate_id", "payload",
-		"authorized_by", "action", "occurred_at", "attempts", "last_error"}
+		"authorized_by", "action", "occurred_at", "attempts", "last_error", "impersonator"}
 }
 
 func (*outboxRows) Close() error { return nil }
@@ -514,5 +517,10 @@ func (r *outboxRows) Next(dest []driver.Value) error {
 	dest[8] = e.OccurredAt
 	dest[9] = int64(e.Attempts)
 	dest[10] = nil
+	if e.Impersonator == "" {
+		dest[11] = nil
+	} else {
+		dest[11] = e.Impersonator
+	}
 	return nil
 }

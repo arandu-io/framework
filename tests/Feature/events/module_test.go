@@ -97,7 +97,7 @@ func TestBothEventsModulesDeclareTheOutboxOnce(t *testing.T) {
 		names = append(names, m.GetName())
 	}
 	want := []string{"2026_07_31_000001_create_outbox_table", "2026_07_31_000002_add_outbox_dead_letter",
-		"2026_10_19_000003_widen_outbox_time_precision"}
+		"2026_10_19_000003_widen_outbox_time_precision", "2026_10_22_000004_add_outbox_impersonator"}
 	if !slices.Equal(names, want) {
 		t.Errorf("registered %q, want each of %q once", names, want)
 	}
