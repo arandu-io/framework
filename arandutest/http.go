@@ -34,17 +34,23 @@ import (
 // It is declared here for one reason: Get and Post answer this package's
 // Response, which keeps the assertion names hesape renamed. It becomes an
 // alias the day Response does, and not before.
+//
+// Deprecated: use Client from github.com/arandu-io/hesape/test.
 type Client struct {
 	inner *arandutest.Client
 }
 
 // NewClient returns a client over a handler.
+//
+// Deprecated: use NewClient from github.com/arandu-io/hesape/test.
 func NewClient(t *testing.T, h http.Handler) *Client {
 	t.Helper()
 	return &Client{inner: arandutest.NewClient(t, h)}
 }
 
 // Get sends a GET.
+//
+// Deprecated: use Client.Get from github.com/arandu-io/hesape/test.
 func (c *Client) Get(path string) *Response { return &Response{inner: c.inner.Get(path)} }
 
 // Post sends a form.
@@ -52,6 +58,8 @@ func (c *Client) Get(path string) *Response { return &Response{inner: c.inner.Ge
 // The CSRF token is read off the last page this client loaded and sent with the
 // body, because that is what a browser does -- and a test that skips it is a
 // test that proves the form works with protection disabled.
+//
+// Deprecated: use Client.Post from github.com/arandu-io/hesape/test.
 func (c *Client) Post(path string, form map[string]string) *Response {
 	return &Response{inner: c.inner.Post(path, form)}
 }
@@ -69,6 +77,9 @@ func (c *Client) Post(path string, form map[string]string) *Response {
 // changed shape, which is the one thing a bridge exists to prevent. That is the
 // condition, not a count of callers -- one call left anywhere is enough for it
 // to hold, and it stops holding only when there are none.
+//
+// Deprecated: use Response from github.com/arandu-io/hesape/test,
+// whose assertions are spelled Assert*.
 type Response struct {
 	inner *arandutest.Response
 }
@@ -79,6 +90,8 @@ type Response struct {
 // in it and finding out otherwise means running the test again with a print.
 //
 // Renamed on the way to hesape: it is Response.AssertStatus there.
+//
+// Deprecated: use Response.AssertStatus from github.com/arandu-io/hesape/test.
 func (r *Response) Status(want int) *Response {
 	r.inner.AssertStatus(want)
 	return r
@@ -87,6 +100,8 @@ func (r *Response) Status(want int) *Response {
 // OK is Status(200).
 //
 // Renamed on the way to hesape: it is Response.AssertOk there.
+//
+// Deprecated: use Response.AssertOk from github.com/arandu-io/hesape/test.
 func (r *Response) OK() *Response {
 	r.inner.AssertOk()
 	return r
@@ -95,6 +110,8 @@ func (r *Response) OK() *Response {
 // See fails unless the text is in the body.
 //
 // Renamed on the way to hesape: it is Response.AssertSee there.
+//
+// Deprecated: use Response.AssertSee from github.com/arandu-io/hesape/test.
 func (r *Response) See(text string) *Response {
 	r.inner.AssertSee(text)
 	return r
@@ -107,6 +124,8 @@ func (r *Response) See(text string) *Response {
 // somebody without the permission can see.
 //
 // Renamed on the way to hesape: it is Response.AssertDontSee there.
+//
+// Deprecated: use Response.AssertDontSee from github.com/arandu-io/hesape/test.
 func (r *Response) DontSee(text string) *Response {
 	r.inner.AssertDontSee(text)
 	return r
@@ -119,6 +138,8 @@ func (r *Response) DontSee(text string) *Response {
 // Location says "redirected to \"\"" for a response that is correct.
 //
 // Renamed on the way to hesape: it is Response.AssertRedirect there.
+//
+// Deprecated: use Response.AssertRedirect from github.com/arandu-io/hesape/test.
 func (r *Response) RedirectsTo(want string) *Response {
 	r.inner.AssertRedirect(want)
 	return r
@@ -127,9 +148,13 @@ func (r *Response) RedirectsTo(want string) *Response {
 // Body is what came back, for an assertion this package does not have.
 //
 // Renamed on the way to hesape: it is Response.GetContent there.
+//
+// Deprecated: use Response.GetContent from github.com/arandu-io/hesape/test.
 func (r *Response) Body() string { return r.inner.GetContent() }
 
 // Header reads one response header.
+//
+// Deprecated: use Response.Header from github.com/arandu-io/hesape/test.
 func (r *Response) Header(name string) string { return r.inner.Header(name) }
 
 // ActingAs is a context carrying a subject, for the code paths that take one
@@ -156,6 +181,10 @@ func (r *Response) Header(name string) string { return r.inner.Header(name) }
 // passed while proving the opposite of what it said. Naming that is worth a line
 // because it is the reason to reach for auth.WithSubject and not for a key that
 // looks equivalent.
+//
+// Deprecated: sign a test in with As from github.com/arandu-io/hesape/test,
+// which goes through the session; a call that takes a context directly is
+// handed the subject with auth.WithSubject from github.com/arandu-io/hesape/auth.
 func ActingAs(ctx context.Context, s security.Subject) context.Context {
 	return auth.WithSubject(ctx, s)
 }
@@ -169,4 +198,7 @@ func ActingAs(ctx context.Context, s security.Subject) context.Context {
 // Renamed on the way to hesape: it is auth.SubjectFrom there, and it is not in
 // hesape/arandutest at all, because reading the subject out of a context is not
 // a test-only question.
+//
+// Deprecated: use auth.SubjectFrom from github.com/arandu-io/hesape/auth; the test
+// helpers are in github.com/arandu-io/hesape/test.
 func Subject(ctx context.Context) (security.Subject, bool) { return auth.SubjectFrom(ctx) }

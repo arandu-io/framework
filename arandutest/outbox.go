@@ -30,6 +30,8 @@ import (
 //
 // The parameters keep the names this module spells them with, so the call sites
 // are untouched.
+//
+// Deprecated: use DrainOutbox from github.com/arandu-io/hesape/test.
 func DrainOutbox(t *testing.T, ctx context.Context, outbox *events.Outbox, publisher events.Publisher) {
 	t.Helper()
 	arandutest.DrainOutbox(t, ctx, outbox, publisher)
@@ -41,4 +43,6 @@ func DrainOutbox(t *testing.T, ctx context.Context, outbox *events.Outbox, publi
 // name. Declaring the struct again here would compile and pass every assertion
 // written against it, and it would be a second recorder to keep in step with the
 // first.
+//
+// Deprecated: use Collected from github.com/arandu-io/hesape/test.
 type Collected = arandutest.Collected

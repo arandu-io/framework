@@ -7,6 +7,11 @@
 //
 // This package is a bridge. It is removed in v1.0.0; import github.com/arandu-io/hesape/arandutest directly.
 //
+// Deprecated: import github.com/arandu-io/hesape/test, which holds these
+// helpers under their new names beside what this package never had: Serve,
+// which starts the application on a free port, As, which signs a client in
+// through the real session, and the database assertions.
+//
 // The helpers moved to github.com/arandu-io/hesape/arandutest -- the spelling is
 // arandutest there too, because an import segment called "testing" shadows the
 // standard library package every _test.go imports, and the precedent is
