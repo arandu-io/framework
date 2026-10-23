@@ -252,6 +252,48 @@ var allowedHesapeImports = bridgeSurface{
 	"storage": inventoryItems(`
 		github.com/arandu-io/hesape/filesystem
 	`),
+	// The native test kit drives the application through the components it is
+	// built from, and implements none of them: the session store and the
+	// guards it signs in through (http, session, auth), the database it clones
+	// and asserts about (database, database/events), the outbox it drains
+	// (events), the routes Serve reads (routing), and the JSON assertions
+	// Response hands over (testing). It is not a bridge and re-exports nothing.
+	"test": inventoryItems(`
+		github.com/arandu-io/hesape/auth github.com/arandu-io/hesape/database
+		github.com/arandu-io/hesape/database/events github.com/arandu-io/hesape/events
+		github.com/arandu-io/hesape/http github.com/arandu-io/hesape/routing
+		github.com/arandu-io/hesape/session github.com/arandu-io/hesape/testing
+	`),
+	// The sample site every driver is proven against renders through the view
+	// runtime the applications render through.
+	"test/browser/conformance": inventoryItems(`
+		github.com/arandu-io/hesape/view
+	`),
+	// The conformance kits prove the components an application wires for
+	// accounts, sessions, two-factor and its schema, so they name exactly
+	// those components.
+	"test/conformance": inventoryItems(`
+		github.com/arandu-io/hesape/2fa github.com/arandu-io/hesape/auth
+		github.com/arandu-io/hesape/auth/account
+		github.com/arandu-io/hesape/auth/account/accounttest
+		github.com/arandu-io/hesape/database github.com/arandu-io/hesape/database/migrations
+		github.com/arandu-io/hesape/database/schema github.com/arandu-io/hesape/encryption
+		github.com/arandu-io/hesape/http github.com/arandu-io/hesape/session
+	`),
+	// A database per test is cloned through the database component's
+	// connection, the one the application opens.
+	"test/internal/dbclone": inventoryItems(`
+		github.com/arandu-io/hesape/database
+	`),
+	// The Contract layer validates answers with the JSON Schema validator the
+	// API documentation is written for.
+	"test/openapi": inventoryItems(`
+		github.com/arandu-io/hesape/jsonschema
+	`),
+	// The server side of a trace is what the request Collector recorded.
+	"test/servertrace": inventoryItems(`
+		github.com/arandu-io/hesape/log
+	`),
 	"validation": inventoryItems(`
 		github.com/arandu-io/hesape/str github.com/arandu-io/hesape/validation
 	`),
