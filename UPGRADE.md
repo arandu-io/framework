@@ -19,6 +19,62 @@ down here fails the build.
 
 ---
 
+## v0.63.0 — the test kit is framework/test, view.Layout is hesape's, and hesape v0.82.0
+
+This release requires `hesape` v0.82.0. `apidiff` against v0.62.1 reports
+two incompatible changes, `view.Layout` and `arandutest.Collected`, both
+below.
+
+- **`view.Layout` is an alias of `hesape/view.Layout`.** A layout that
+  declares no interface is compiled against that type, and the delivered
+  layout hands itself to `components.Toast{Page: .}`, which asks a page for
+  `Flashed`, `FieldError` and `OldOr`; the old interface had none of the
+  three, so a layout written against it could not draw the toast tray, and a
+  `view.Page` failed the compiled layout's assertion at run time. The
+  interface asks `Any` and `All` where it asked `HasErrors` and
+  `ErrorSummary`. A page that embeds `view.Page` changes nothing: `Page` now
+  answers `Any`, `All` and `Flashed` beside the old names. Code that calls
+  `HasErrors()` or `ErrorSummary()` on a `view.Layout` value calls `Any()` and
+  `All()`; a type of your own that implements `view.Layout` adds `Any`,
+  `All`, `Flashed`, `FieldError` and `OldOr`.
+- **The native test kit is `github.com/arandu-io/framework/test`.** It is
+  what `hesape/arandutest` was at v0.82.0 -- `Serve`, `As`, `Client`,
+  `Response` and its assertions, the database, outbox and query helpers --
+  with its packages under the same names: `test/browser`,
+  `test/browser/cdp`, `test/browser/conformance`, `test/trace`,
+  `test/servertrace`, `test/openapi` and `test/conformance`. The package
+  clause is `test`, so no import needs a name. Replace
+  `github.com/arandu-io/hesape/arandutest` with
+  `github.com/arandu-io/framework/test` in every import and
+  `arandutest.` with `test.` at every call; nothing else changes. The
+  databases it creates for a test are still named `arandutest_...`.
+- **`arandutest` forwards to `framework/test` and every export is
+  deprecated.** The editor and `staticcheck` now strike through each call;
+  the replacement each notice names is in `framework/test`, or
+  `auth.WithSubject` / `auth.SubjectFrom` for `ActingAs` and `Subject`. The
+  package is removed in v1.0.0. `arandutest.Collected` is an alias of
+  `test.Collected` instead of `hesape/arandutest.Collected`: a value declared
+  as the hesape type and assigned to this name stops compiling; declare it as
+  `test.Collected`.
+- **Driver conformance accepts a real keyboard and a browser that blocks
+  port 1.** The keys page of `test/browser/conformance` ignores a keydown for
+  `Shift`, `Control`, `Alt` or `Meta` on its own, so a driver that sends one
+  before `Shift+Tab`, as a keyboard does, reads `Tab Shift+Tab a Escape`. The
+  refused navigation goes to a closed port taken from the system instead of
+  `127.0.0.1:1`, which the fetch standard blocks, and asks only for a failure
+  with a reason, not for Chromium's `ERR_` prefix.
+- **hesape v0.82.0 changes behaviour an application can notice.** A
+  `SessionStore` refuses a subject that carries roles or actions unless a
+  resolver is installed with `Sessions.ResolveSubjects`; the skeleton
+  installs one. A missing `APP_ENV` reads as production, so the session
+  cookie is `Secure` and the debug page is off until `APP_ENV=dev` is
+  written. The outbox gains an `impersonator` column through a fourth
+  migration (`2026_10_22_000004_add_outbox_impersonator`); run
+  `aru migrate`. The webhook module exempts each mount from CSRF at its own
+  pattern (`/integrations/lpr/{org}`) rather than at the prefix under it.
+
+---
+
 ## v0.62.0 — the reserved namespace is decided by the route, and production refuses an insecure cookie and the log mailer
 
 This release still requires `hesape` v0.75.0. `apidiff` reports no
