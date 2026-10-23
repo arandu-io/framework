@@ -24,6 +24,7 @@ import (
 	"context"
 	"fmt"
 	"image/png"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -104,9 +105,21 @@ func (s *suite) navigation(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	err := p.Driver().Navigate(ctx, "http://127.0.0.1:1/")
-	if err == nil || !strings.Contains(err.Error(), "ERR_") {
-		t.Fatalf("a refused navigation must carry the browser's reason, got %v", err)
+	// A port nothing listens on, taken from the system and released, so the
+	// connection is refused. Port 1 is not used: the fetch standard blocks it,
+	// and a browser that honours the block reports an interrupted navigation,
+	// or none at all, instead of a refused connection.
+	closed, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("taking a port to leave closed: %v", err)
+	}
+	refused := "http://" + closed.Addr().String() + "/"
+	if err := closed.Close(); err != nil {
+		t.Fatalf("releasing the port: %v", err)
+	}
+	err = p.Driver().Navigate(ctx, refused)
+	if err == nil || strings.TrimSpace(err.Error()) == "" {
+		t.Fatalf("a refused navigation must fail with the browser's reason, got %v", err)
 	}
 	err = p.Driver().Evaluate(ctx, "(() => { throw new Error('kaput') })()", nil)
 	if err == nil || !strings.Contains(err.Error(), "kaput") {

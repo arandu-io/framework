@@ -95,7 +95,7 @@ func site() http.Handler {
 
 	// keyboard: every key the page sees, in order.
 	page("/keys", `<label for="a">First</label><input id="a"><label for="b">Second</label><input id="b"><p id="log"></p><script src="/keys.js"></script>`)
-	script("/keys.js", `document.addEventListener('keydown', e => { document.getElementById('log').textContent += (e.shiftKey ? 'Shift+' : '') + e.key + ' '; });`)
+	script("/keys.js", `document.addEventListener('keydown', e => { if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return; document.getElementById('log').textContent += (e.shiftKey ? 'Shift+' : '') + e.key + ' '; });`)
 
 	// a control under an overlay.
 	page("/covered", `<button>Hidden behind</button><div id="overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.4)"></div>`)
