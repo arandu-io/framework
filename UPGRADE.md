@@ -19,6 +19,16 @@ down here fails the build.
 
 ---
 
+## v0.65.0 — the test kit hands back a status and a handler, and hesape v0.84.2
+
+This release requires `hesape` v0.84.2, whose models stamp `created_at` and
+`updated_at` from the framework clock: a test that freezes or travels in time
+now moves them too. `apidiff` reports no incompatible change.
+
+- **`test.Response.Status()`** and **`test.Server.Handler()`** are new, for a
+  conformance kit that accepts more than one answer or writes its own
+  sentence, and drives requests in process with the cookies `As` handed back.
+
 ## v0.64.0 — an unset APP_ENV is production, and hesape v0.84.1
 
 This release requires `hesape` v0.84.1. `apidiff` reports no incompatible
