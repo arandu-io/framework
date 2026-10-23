@@ -305,8 +305,10 @@ func TestLoadAppliesDefaults(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if cfg.Env != config.EnvDev {
-		t.Errorf("default Env = %q, want dev", cfg.Env)
+	// An unset APP_ENV is production, the way hesape/config reads it: the
+	// debug page must never be what a server nobody configured serves.
+	if cfg.Env != config.EnvProd {
+		t.Errorf("default Env = %q, want prod", cfg.Env)
 	}
 	if cfg.HTTPAddr != ":8080" {
 		t.Errorf("default HTTPAddr = %q, want :8080", cfg.HTTPAddr)

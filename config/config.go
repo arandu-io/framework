@@ -85,6 +85,10 @@ type Config struct {
 // rather than by the application, because a step the application has to
 // remember is a step that gets forgotten: this one was, and `aru migrate`
 // failed on every new project for it.
+//
+// An APP_ENV that is unset or empty is production, as hesape/config reads it:
+// a server nobody configured serves the production error page, and a
+// developer who forgot the variable is the one who notices and sets it.
 func Load() (Config, error) {
 	if err := loadEnvFile(); err != nil {
 		return Config{}, err
@@ -104,7 +108,7 @@ func Load() (Config, error) {
 	}
 	cfg := Config{
 		AppName:       env("APP_NAME", "arandu-app"),
-		Env:           Env(env("APP_ENV", string(EnvDev))),
+		Env:           Env(env("APP_ENV", string(EnvProd))),
 		HTTPAddr:      env("HTTP_ADDR", ":8080"),
 		AppKey:        key,
 		Database:      database,

@@ -24,7 +24,7 @@ go 1.26.0
 // S3 protocol with a signature written in it, so it brings no SDK and nothing
 // third-party.
 require (
-	github.com/arandu-io/hesape v0.83.0
+	github.com/arandu-io/hesape v0.84.1
 	github.com/arandu-io/hesape/filesystem/s3 v0.11.0
 )
 

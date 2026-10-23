@@ -19,6 +19,22 @@ down here fails the build.
 
 ---
 
+## v0.64.0 — an unset APP_ENV is production, and hesape v0.84.1
+
+This release requires `hesape` v0.84.1. `apidiff` reports no incompatible
+change; one default changes behaviour.
+
+- **`config.Load` reads an unset or empty `APP_ENV` as `prod`.** It read
+  `dev`, while `hesape/config` already read `prod`, so a server deployed
+  without the variable served the debug error page, kept the session cookie
+  off `Secure` and allowed the log mailer. Declare `APP_ENV=dev` in the
+  development `.env` (the skeleton's `.env.example` already does); a
+  deployment that relied on the old default now boots as production and
+  refuses what production refuses, which is the point.
+- **`test.Server.Resolve`** is new: a `browser.Resolver` over the
+  application's routes, so a page visits route names with
+  `browser.Routes(server.Resolve)` and no adapter.
+
 ## v0.63.0 — the test kit is framework/test, view.Layout is hesape's, and hesape v0.83.0
 
 This release requires `hesape` v0.83.0. `apidiff` against v0.62.1 reports
