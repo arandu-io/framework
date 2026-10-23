@@ -13,80 +13,20 @@ import (
 	hview "github.com/arandu-io/hesape/view"
 )
 
-// Layout is what a layout asks of the data every screen hands it.
+// Layout is what a layout asks of the data every screen hands it: the title,
+// the brand, the token, the navigation, whether the attempt that landed here
+// was rejected (Any, All), the sentence a form that worked left behind
+// (Flashed), and the message and typed value of one input (FieldError, OldOr).
 //
-// It lives here rather than in the application because every Arandu application
-// declared the same ninety lines of it, and ninety lines nobody wrote are ninety
-// lines nobody reads. A project that needs different chrome declares its own
-// interface in the layout's @go block; this is the one the delivered layout uses.
-//
-// It is an interface rather than a struct so that pages with unrelated data
-// share one frame: the layout asks for behaviour, and Page below is the
-// implementation a page embeds to get it.
-//
-// # Why this one is declared and not aliased
-//
-// hesape/view.Layout asks for Any and All where this one asks for HasErrors
-// and ErrorSummary. They are the same two questions under different names, and
-// a layout is written against one spelling or the other -- so aliasing this
-// name would ask every delivered layout to be rewritten, which is the opposite
-// of what carrying the old name is for.
-type Layout interface {
-	// PageTitle is the document title, and what HTMX swaps on navigation.
-	PageTitle() string
-	// PageDescription is the meta description. Empty writes no tag, because a
-	// missing description outranks an empty one.
-	PageDescription() string
-	// CanonicalURL is the absolute address of this page, or empty for none.
-	CanonicalURL() string
-	// IsCurrent says whether a navigation target is this page, so the header
-	// can stop linking to where you already are.
-	IsCurrent(href string) bool
-
-	// BrandName is the application name in the navigation bar.
-	BrandName() string
-	// CSRFToken is what @csrf reads, and what <body> carries into every HTMX
-	// request.
-	CSRFToken() string
-
-	// SignedIn decides which half of the navigation is drawn, and SignedInName
-	// is who it greets.
-	SignedIn() bool
-	SignedInName() string
-
-	// The navigation targets. An empty one draws no link, which is how a route
-	// the application never registered stays out of the markup instead of
-	// becoming a 404 the layout put there.
-	HomeLink() string
-	LoginLink() string
-	LogoutLink() string
-	RegisterLink() string
-
-	// PanelLink is the signed-in person's own area, and AdminLink is the one
-	// only some of them may open. Both follow the same rule as the four above:
-	// empty draws nothing.
-	//
-	// AdminLink is empty for anybody who would be refused, which is what keeps
-	// the header from ever offering an address that answers 403. The decision is
-	// the controller's -- it holds the subject and the policy -- and the markup
-	// only ever sees a string. A layout that asked about roles would be a second
-	// place where authorization is decided, and the second place is the one that
-	// gets it wrong.
-	PanelLink() string
-	AdminLink() string
-
-	// HasErrors says whether the attempt that landed here was rejected, and
-	// ErrorSummary is one line per failed field for the banner that says so.
-	//
-	// The banner is the layout's, which is why these two are here and the
-	// per-field message is not: a page body draws "must be at least 12
-	// characters" under the box it belongs to, and the layout draws the summary
-	// once, above everything. FieldError and OldValue are promoted methods on
-	// Page for the body to call, deliberately outside this interface -- Layout
-	// is what the LAYOUT asks for.
-	HasErrors() bool
-	ErrorSummary() []string
-}
+// It is hesape's view.Layout. A layout that declares no interface of its own
+// is compiled against that type, and it hands itself to components that ask a
+// page for Flashed, FieldError and OldOr -- the toast in the layout's tray is
+// one. A second interface under this name with another method set made a
+// layout written against it a different layout: one that could not draw the
+// tray, and one the compiled layout's assertion refused at run time. Page
+// below satisfies it, and keeps HasErrors and ErrorSummary beside Any and All
+// for the screens that call them by the old names.
+type Layout = hview.Layout
 
 // Page is the chrome every screen hands the layout, embedded rather than
 // repeated:
@@ -110,12 +50,13 @@ type Layout interface {
 // and of the same types -- Errors included, because Context and State are
 // aliases here, so New fills this one from exactly what fills that one, copied
 // field by field so that a field hesape adds later never stops a build. What
-// is not the same is the method set. The four error accessors were renamed on
-// the way over -- FieldError to First, FieldErrors to Get, HasErrors to Any,
-// ErrorSummary to All -- and the component library calls FieldError from a
-// module this one does not compile, so an alias would build here and leave
-// every field component with no method to call. It would also drop LogValue
-// and MarshalJSON, which are declared here and have no counterpart there.
+// is not the same is the method set. Three error accessors were renamed on the
+// way over -- FieldErrors to Get, HasErrors to Any, ErrorSummary to All -- so
+// an alias would leave every screen that calls the old names with no method to
+// call. It would also drop LogValue and MarshalJSON, which are declared here
+// and have no counterpart there, and with them the redaction of the token.
+// This Page answers both spellings of the layout's questions, and satisfies
+// Layout, which is the native type.
 type Page struct {
 	// Title is the document title.
 	Title string
@@ -201,7 +142,7 @@ type Page struct {
 	// Messages is what the request that redirected here said about what it
 	// did, by key: the sentence a form that worked left under "status" with
 	// Context.With. Filled by New from the flash, like Errors; a view reads
-	// .Messages["status"], or hesape's view.Page.Flashed.
+	// it through Flashed.
 	Messages map[string]string
 
 	// translator and locale are what Translator and Locale answer: the
@@ -528,6 +469,19 @@ func (p Page) FieldErrors(name string) []string { return p.Errors[name] }
 // people stop reading, which is how a real message goes unseen.
 func (p Page) HasErrors() bool { return len(p.Errors) > 0 }
 
+// Any is HasErrors under the name Layout asks for it by.
+func (p Page) Any() bool { return p.HasErrors() }
+
+// Flashed is the sentence the request that redirected here left under key, or
+// empty.
+//
+//	@if .Flashed("status") != ""
+//
+// It is the page half of Context.With: the action that wrote says what it did,
+// redirects, and the page it lands on draws it once. Empty on every other page
+// view, so a layout asks unconditionally.
+func (p Page) Flashed(key string) string { return p.Messages[key] }
+
 // OldValue is what was typed in a field on the attempt that was rejected.
 //
 //	Value: .OldValue("email")
@@ -589,3 +543,7 @@ func (p Page) ErrorSummary() []string {
 	}
 	return out
 }
+
+// All is ErrorSummary under the name Layout asks for it by, so the banner a
+// layout draws and the summary a screen asks for are the same lines.
+func (p Page) All() []string { return p.ErrorSummary() }

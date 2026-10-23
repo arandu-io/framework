@@ -137,15 +137,15 @@ func TestErrorSummaryNamesTheFieldAndTheBareMessageDoesNot(t *testing.T) {
 
 func TestPageStillSatisfiesLayout(t *testing.T) {
 	// The compile-time assertion in page.go is the real check; this names it so
-	// that a build failure there points at a test with a reason in it. Adding
-	// HasErrors and ErrorSummary to Layout is what makes the banner the layout's
-	// -- and every screen in every project gets them by embedding Page, which is
-	// what keeps that addition from being a change each of them has to make.
+	// that a build failure there points at a test with a reason in it. Any and
+	// All on Layout are what make the banner the layout's -- and every screen in
+	// every project gets them by embedding Page, which is what keeps that
+	// addition from being a change each of them has to make.
 	var _ view.Layout = view.Page{}
 
 	page := view.Page{Errors: validation.Errors{"email": {"is required"}}}
 	var layout view.Layout = page
-	if !layout.HasErrors() || len(layout.ErrorSummary()) != 1 {
+	if !layout.Any() || len(layout.All()) != 1 {
 		t.Error("a layout cannot see that this page was rejected")
 	}
 }

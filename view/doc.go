@@ -43,21 +43,20 @@
 // Two files here still hold an implementation, because the hesape design
 // diverged in a way no envelope can absorb without breaking a caller:
 //
-//	Page, Layout, New  the divergence is the method set alone: the two Page
+//	Page, New          the divergence is the method set alone: the two Page
 //	                   structs are the same type field for field, Errors
 //	                   included, because Context and State are aliases here and
 //	                   New is handed the same State the hesape one is. What
-//	                   differs is the four error accessors, which hesape/view
-//	                   renamed -- FieldError became First, FieldErrors became
-//	                   Get, HasErrors became Any and ErrorSummary became All --
-//	                   and the Layout interface followed them. The component
-//	                   library calls Page.FieldError from a separate module, so
-//	                   an alias compiles here and breaks it in silence, and it
-//	                   would drop LogValue and MarshalJSON as well, which this
-//	                   Page has and that one does not. An envelope cannot stand
-//	                   in either: Page is written as a composite literal across
-//	                   the skeleton and the published screens, and promoted
-//	                   fields are not addressable in one.
+//	                   differs is three error accessors, which hesape/view
+//	                   renamed -- FieldErrors became Get, HasErrors became Any
+//	                   and ErrorSummary became All. This Page answers both
+//	                   spellings and satisfies Layout, which is an alias of
+//	                   hesape's; an alias of Page would drop the old names
+//	                   every screen calls, and LogValue and MarshalJSON as
+//	                   well, which this Page has and that one does not. An
+//	                   envelope cannot stand in either: Page is written as a
+//	                   composite literal across the skeleton and the published
+//	                   screens, and promoted fields are not addressable in one.
 //	Module             hesape/view.Module takes a *hesape/routing.Router and
 //	                   answers a hesape/http.Renderer, and it deliberately
 //	                   drops the compile-time assertion against the module

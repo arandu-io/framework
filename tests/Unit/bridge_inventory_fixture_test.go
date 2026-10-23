@@ -112,13 +112,17 @@ var historicalBridgeSurface = bridgeSurface{
 		func.WithMessages type.CompileError type.CompileErrors type.Errors type.Input
 		type.Messages type.Option type.Rules type.Set type.Validatable var.Compile var.MustCompile
 	`),
+	// Any, All and Flashed are the names hesape's view.Layout asks by. Layout is
+	// that type here, so the Page every screen embeds answers them beside the
+	// old HasErrors and ErrorSummary, and adds nothing hesape does not declare.
 	"view": inventoryItems(`
 		const.AssetPath const.Stylesheet func.AssetHash func.Assets func.CSRF func.Handler
 		func.Include func.New func.NewModule func.NewRenderer func.Register func.RegisterAsset
 		func.RegisterLayout func.RegisterStylesheet func.Registered func.ReloadTag func.RenderInto
 		func.Text func.TextAttr func.TextCSS func.TextJS func.TextURL func.URL func.UnsafeText
 		func.Version func.WrongData func.Yield method.Module.Name method.Module.ReloadTag
-		method.Module.Renderer method.Module.Routes method.Page.AdminLink method.Page.BrandName
+		method.Module.Renderer method.Module.Routes method.Page.AdminLink method.Page.All
+		method.Page.Any method.Page.BrandName method.Page.Flashed
 		method.Page.CSRFToken method.Page.CanonicalURL method.Page.ErrorSummary
 		method.Page.FieldError method.Page.FieldErrors method.Page.HasErrors method.Page.HomeLink
 		method.Page.Locale method.Page.Translator method.Page.WithTranslator
