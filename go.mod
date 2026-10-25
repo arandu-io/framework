@@ -1,6 +1,6 @@
 module github.com/arandu-io/framework
 
-go 1.26.0
+go 1.26.10
 
 // The components live in a module of their own because Go publishes a submodule
 // without a subtree splitter: a directory with its own go.mod is already a
@@ -24,7 +24,7 @@ go 1.26.0
 // S3 protocol with a signature written in it, so it brings no SDK and nothing
 // third-party.
 require (
-	github.com/arandu-io/hesape v0.84.2
+	github.com/arandu-io/hesape v0.85.0
 	github.com/arandu-io/hesape/filesystem/s3 v0.11.0
 )
 

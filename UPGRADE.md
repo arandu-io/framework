@@ -19,6 +19,16 @@ down here fails the build.
 
 ---
 
+## v0.66.0 — Go 1.26.10 is the floor, and hesape v0.85.0
+
+This release requires `hesape` v0.85.0 and declares `go 1.26.10`, the Go
+release that fixes the standard library vulnerabilities an application built
+on this framework reaches (CVE-2026-111943 in crypto/x509, the HTTP/2 and
+HTTP/1 fixes of net/http, and the html/template, net/textproto and crypto/tls
+fixes of 1.26.9). A build with the default `GOTOOLCHAIN=auto` downloads it when
+the local Go is older; a Docker build pins `golang:1.26.10` or newer. No API
+changes.
+
 ## v0.65.0 — the test kit hands back a status and a handler, and hesape v0.84.2
 
 This release requires `hesape` v0.84.2, whose models stamp `created_at` and
