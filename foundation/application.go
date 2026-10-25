@@ -31,6 +31,7 @@ import (
 	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/routing"
 	"github.com/arandu-io/hesape/translation"
+	"github.com/arandu-io/hesape/validation"
 )
 
 // Limits of the HTTP server. They are set rather than left at the zero value
@@ -150,6 +151,17 @@ type Application struct {
 	// context beside the name; nil puts none. See WithTranslator.
 	translator *translation.Translator
 
+	// validator is the one Factory every request is validated through, built
+	// from the translator and the providers when it is first needed. See
+	// validationFactory.
+	validator *validation.Factory
+	// validationProviders are the modules' rules, installed on the Factory in
+	// the order they were given. See WithValidation.
+	validationProviders []validation.Provider
+	// validationRequests are the request types Boot checks every named rule of.
+	// See WithValidationRequests.
+	validationRequests []validation.RequestRules
+
 	// tasks is the scheduler module Configure registered, nil for an
 	// Application made by New. See Scheduler.
 	tasks *scheduling.TaskModule
@@ -268,6 +280,13 @@ func (a *Application) Boot(ctx context.Context) error {
 	// The renderer is found before any route is registered, because a route is
 	// wired with the renderer its handlers will use. See RendererProvider.
 	if err := a.findRenderer(); err != nil {
+		return err
+	}
+
+	// Every rule a request names is checked before anything listens: a typo, or
+	// a module whose provider was never installed, stops the boot with the rule
+	// and the request type named, not the first user who sends the form.
+	if err := a.checkValidation(); err != nil {
 		return err
 	}
 
@@ -767,7 +786,7 @@ func (a *Application) Handler() http.Handler {
 	// -- the application's own controllers, a generated one, a module's screen,
 	// a route no CSRF protection covers -- finds the same brand. See
 	// carryAppName.
-	outer := append([]fhttp.Middleware{observability.RootLogger(a.log), carryAppName(a.cfg.App.Name), carryTranslator(a.translator)}, devReload(a.isDev(), a.reloadTag)...)
+	outer := append([]fhttp.Middleware{observability.RootLogger(a.log), carryAppName(a.cfg.App.Name), carryTranslator(a.translator), a.carryValidation()}, devReload(a.isDev(), a.reloadTag)...)
 
 	// The framework's own routes skip the application's pipeline, the security
 	// headers an application mounts there included, so they get theirs here.
@@ -883,7 +902,78 @@ func (a *Application) Scheduler() *scheduling.TaskScheduler {
 // component draws its English.
 func (a *Application) WithTranslator(t *translation.Translator) *Application {
 	a.translator = t
+	a.validator = nil
 	return a
+}
+
+// WithValidation installs the rules of the modules the application uses on the
+// Factory every request is validated through, so a Form Request names them in
+// its Rules and Bind runs them in the language of the request:
+//
+//	app.WithValidation(br.Rules())
+//
+// Each provider declares its rules, the sentence they say in each locale and
+// how they fill its placeholders. It is the one place a module's rules enter
+// validation, and it is called where the application is wired -- there is no
+// registry an import fills. Call it before Boot.
+func (a *Application) WithValidation(providers ...validation.Provider) *Application {
+	a.validationProviders = append(a.validationProviders, providers...)
+	a.validator = nil
+	return a
+}
+
+// WithValidationRequests names the request types whose Rules Boot checks, so a
+// rule that is written in one and that nothing declares -- no built-in, no
+// installed provider -- fails the boot naming the rule and the type:
+//
+//	app.WithValidationRequests(StorePerson{}, UpdatePerson{})
+//
+// A request that is not listed is still validated, and a rule it names that
+// nothing declares fails the first time it is bound.
+func (a *Application) WithValidationRequests(requests ...validation.RequestRules) *Application {
+	a.validationRequests = append(a.validationRequests, requests...)
+	return a
+}
+
+// validationFactory is the Factory the application validates through: over its
+// translator, so the sentences come out in the locale of the request, and
+// carrying the providers installed with WithValidation. It is built once. With
+// no translator it still works, with the short sentences of the compiled rules.
+func (a *Application) validationFactory() *validation.Factory {
+	if a.validator != nil {
+		return a.validator
+	}
+	var tr validation.Translator
+	if a.translator != nil {
+		tr = validation.FromTranslation(a.translator)
+	}
+	a.validator = validation.NewFactory(tr).Use(a.validationProviders...)
+	return a.validator
+}
+
+// checkValidation fails with every rule a listed request names that nothing
+// declares.
+func (a *Application) checkValidation() error {
+	if len(a.validationRequests) == 0 {
+		return nil
+	}
+	if err := a.validationFactory().CheckRequests(a.validationRequests...); err != nil {
+		return fmt.Errorf("arandu: validation: %w", err)
+	}
+	return nil
+}
+
+// carryValidation puts the application's Factory on every request context,
+// where Bind and Request.Validate read it: the translator, the modules' rules
+// and the settings are the ones the application wired once, and the locale is
+// the request's.
+func (a *Application) carryValidation() fhttp.Middleware {
+	factory := a.validationFactory()
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(hhttp.WithValidation(r.Context(), factory)))
+		})
+	}
 }
 
 // internalPrefix is what this framework mounts for itself: the readiness probe,

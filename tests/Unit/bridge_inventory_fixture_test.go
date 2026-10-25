@@ -170,6 +170,11 @@ var allowedHesapeImports = bridgeSurface{
 	// catalogue on every request with translation.WithTranslator, beside the
 	// name, where view.New reads it.
 	//
+	// validation is here because the Application builds the one Factory every
+	// request is validated through, installs the modules' providers on it and
+	// checks the request types at boot: the types are hesape's, and the
+	// bridge is not extended to carry them.
+	//
 	// queue/middleware is here because the worker queue:work starts runs
 	// ReportToBatch, so a batch finishes without its handlers reporting.
 	"foundation": inventoryItems(`
@@ -190,7 +195,7 @@ var allowedHesapeImports = bridgeSurface{
 		github.com/arandu-io/hesape/queue/middleware
 		github.com/arandu-io/hesape/routing github.com/arandu-io/hesape/routing/middleware
 		github.com/arandu-io/hesape/session github.com/arandu-io/hesape/translation
-		github.com/arandu-io/hesape/view
+		github.com/arandu-io/hesape/validation github.com/arandu-io/hesape/view
 	`),
 	"foundation/bootstrap": inventoryItems(`
 		github.com/arandu-io/hesape/cache github.com/arandu-io/hesape/config

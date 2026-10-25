@@ -20,6 +20,7 @@ import (
 	"github.com/arandu-io/hesape/queue"
 	hmiddleware "github.com/arandu-io/hesape/routing/middleware"
 	"github.com/arandu-io/hesape/translation"
+	"github.com/arandu-io/hesape/validation"
 )
 
 // ApplicationBuilder configures an Application: its providers, its routes,
@@ -58,6 +59,9 @@ type ApplicationBuilder struct {
 	tenants    func(context.Context) ([]string, error)
 	prunables  map[string]func(context.Context) (int, error)
 	translator *translation.Translator
+
+	validation         []validation.Provider
+	validationRequests []validation.RequestRules
 
 	version, commit string
 
@@ -189,6 +193,26 @@ func (b *ApplicationBuilder) WithTranslator(t *translation.Translator) *Applicat
 	return b
 }
 
+// WithValidation installs the rules of the modules on the Factory every request
+// is validated through, so a Form Request names them in its Rules. A module's
+// provider is listed here, in bootstrap/app.go, and nowhere else:
+//
+//	WithValidation(br.Rules())
+//
+// A second call adds its providers after the first. See Application.WithValidation.
+func (b *ApplicationBuilder) WithValidation(providers ...validation.Provider) *ApplicationBuilder {
+	b.validation = append(b.validation, providers...)
+	return b
+}
+
+// WithValidationRequests names the request types whose Rules the boot checks:
+// a rule that none of the installed providers declares fails the boot, naming
+// the rule and the type. See Application.WithValidationRequests.
+func (b *ApplicationBuilder) WithValidationRequests(requests ...validation.RequestRules) *ApplicationBuilder {
+	b.validationRequests = append(b.validationRequests, requests...)
+	return b
+}
+
 // WithVersion is what the version command prints: the version and the commit
 // the build stamped.
 func (b *ApplicationBuilder) WithVersion(version, commit string) *ApplicationBuilder {
@@ -239,6 +263,7 @@ func (b *ApplicationBuilder) Create() (*Application, error) {
 	}
 	a.log = logger
 	a.WithTranslator(b.translator)
+	a.WithValidation(b.validation...).WithValidationRequests(b.validationRequests...)
 	a.Register(driversModule{drivers: d})
 
 	// The one handler that answers a failed request: whether the debug page may

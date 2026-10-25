@@ -19,6 +19,45 @@ down here fails the build.
 
 ---
 
+## v0.67.0 — validation speaks the language of the request out of the box, and a module installs its rules at boot
+
+This release requires `hesape` v0.88.0. `apidiff` reports no incompatible change in this module, and two things still
+stop compiling or change what they answer, because `framework/validation` is a bridge: its `Rules`, `Errors` and the rest
+are aliases of hesape's types, and hesape v0.88.0 changed them. Read the hesape v0.88.0 entry for the whole list.
+
+**What stops compiling**
+
+| Before | After |
+|---|---|
+| `validation.Rules` (from `framework/validation`) is `map[string]string` | It is `map[string]any`: a value is a pipe string, a `[]string`, or a `[]any` list that can hold a rule object. Copy a `map[string]string` entry by entry, and read a value with a type switch |
+| `validation.When(cond, "required", "nullable")` and `validation.ForEach(...)` through the bridge take and return strings | The rules are `any`; a `ForEach` callback returns `any` and a `Rules` it returns is keyed relative to the member (`Rules{"price": "required"}`) |
+
+**What changes what it answers**
+
+| Before | After |
+|---|---|
+| A message from `Bind` or `Request.Validate` in an application with a translator comes out in English fragments, or in the short form (`is required`) | The Application builds one `validation.Factory` over its translator and puts it on every request, so the sentence comes out in the locale of the request: `O campo CPF é obrigatório.` An application with no translator keeps the short sentences |
+| `ctx.Bind(&req)` converts only | A `req` with a `Rules() validation.Rules` method has the rules run first, over the raw input, and a failure is the 422 problem document or the redirect back with the messages and the old input. `ctx.Validated()` returns only what the rules let through. `Validate()` stays, for the rules between fields or against the data |
+
+**What is new, and how a module is wired**
+
+`WithValidation(providers ...validation.Provider)` installs the rules of the modules on that Factory, and
+`WithValidationRequests(requests ...validation.RequestRules)` names the request types the boot checks: a rule that a
+`Rules()` names and nothing declares fails `Boot` with the rule and the request type. Both exist on `ApplicationBuilder`
+and on `Application`, and nothing is registered in an `init`.
+
+```go
+foundation.Configure(drivers).
+	WithTranslator(tr).
+	WithValidation(br.Rules()).
+	WithValidationRequests(requests.StorePerson{}, requests.UpdatePerson{}).
+	WithProviders(app...)
+```
+
+A module that registered its rules in `init` with `validation.Extend` keeps working. Move it to a `Provider`, and pass
+the translator with `WithTranslator` so the locale of the request reaches the sentences. A language is negotiated by
+`translation.Middleware` (or fixed by `translation.InLocale`) in the pipeline, as it was for views.
+
 ## v0.66.0 — Go 1.26.10 is the floor, and hesape v0.85.0
 
 This release requires `hesape` v0.85.0 and declares `go 1.26.10`, the Go
