@@ -506,7 +506,7 @@ func (m *Middleware) pipeline(a *Application, d *Drivers, exceptions *exception.
 		// The refusal adds HX-Refresh, without which somebody over the limit
 		// presses the button and the screen does not change.
 		hmiddleware.Throttle(d.Limiter, m.throttle, middleware.KeyBySession(d.Sessions), hhttp.Refuse),
-		middleware.CSRFProtect(d.CSRF, d.Sessions.IDFromRequest, middleware.CSRFExcept(append(m.moduleExcept, m.csrfExcept...)...)),
+		middleware.CSRFProtect(d.CSRF, d.Sessions.IDFromRequest, middleware.CSRFExcept(append(m.moduleExcept, m.csrfExcept...)...), httpmiddleware.CSRFRefreshUnder(s.Framework.Brand)),
 		httpmiddleware.OverrideMethod(),
 	)
 	return append(out, m.append...)

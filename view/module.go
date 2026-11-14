@@ -4,6 +4,7 @@ import (
 	"github.com/arandu-io/framework/http"
 	internalroutes "github.com/arandu-io/framework/internal/routes"
 	"github.com/arandu-io/framework/kernel"
+	hview "github.com/arandu-io/hesape/view"
 )
 
 type reservedNamespace = internalroutes.ReservedNamespace
@@ -42,8 +43,15 @@ func (*Module) Name() string { return "view" }
 // One route, one handler. The hash in the path is what makes the response
 // cacheable forever, and what makes a deploy invalidate it without anybody
 // clearing anything.
+//
+// When the application is named, the route is registered under its own prefix as
+// well, "/_perata/assets/", and the old one stays: a page cached before the
+// change and an e-mail already sent point at it.
 func (*Module) Routes(r *http.Router) {
 	r.Get(AssetPath+"{hash}/{name}", Handler).Name("view.asset")
+	if prefix := hview.AssetPrefix(); prefix != AssetPath {
+		r.Get(prefix+"{hash}/{name}", Handler).Name("view.asset.brand")
+	}
 }
 
 // ReloadTag supplies the development live-reload tag to the kernel.

@@ -30,8 +30,11 @@ import (
 	"github.com/arandu-io/hesape/console/scheduling"
 	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/routing"
+	"github.com/arandu-io/hesape/session"
+	"github.com/arandu-io/hesape/support"
 	"github.com/arandu-io/hesape/translation"
 	"github.com/arandu-io/hesape/validation"
+	"github.com/arandu-io/hesape/view"
 )
 
 // Limits of the HTTP server. They are set rather than left at the zero value
@@ -162,6 +165,10 @@ type Application struct {
 	// See WithValidationRequests.
 	validationRequests []validation.RequestRules
 
+	// internalPrefixes are the namespaces the framework reserves: internalPrefix,
+	// and the brand's own when the application is named. See internalPrefixesOf.
+	internalPrefixes []string
+
 	// tasks is the scheduler module Configure registered, nil for an
 	// Application made by New. See Scheduler.
 	tasks *scheduling.TaskModule
@@ -190,7 +197,14 @@ func New(cfg bootstrap.Configuration) *Application {
 	// flash that is not puts the typed input on the network in the clear.
 	// Development over http://localhost keeps working because that decision
 	// defaults to false in dev and to true everywhere else.
-	a.flash = security.NewFlash(cfg.App.Key, cfg.Session.Secure)
+	a.flash = security.NewFlash(cfg.App.Key, cfg.Session.Secure, session.WithCookieNames(session.CookieNamesFor(cfg.Brand)))
+
+	// The assets are addressed by view.Asset, which a compiled view calls with no
+	// handle on the Application, so the prefix they are served under is set here,
+	// once, from the same Brand as the cookies, before any module registers the
+	// route that serves them.
+	view.UseBrand(cfg.Brand)
+	a.internalPrefixes = internalPrefixesOf(cfg.Brand)
 	a.router = fhttp.NewRouter().WithFlash(a.flash)
 
 	// The Application owns the recorder because it mounts the console route.
@@ -312,7 +326,7 @@ func (a *Application) Boot(ctx context.Context) error {
 		before := len(a.router.Routes())
 		m.Routes(a.router.ForModule(name))
 		registered := a.router.Routes()[before:]
-		if err := validateReservedRoutes(m, registered); err != nil {
+		if err := validateReservedRoutes(m, registered, a.internalPrefixes); err != nil {
 			return err
 		}
 		if internalroutes.OwnsReservedNamespace(m) {
@@ -350,7 +364,7 @@ func (a *Application) reportEnvironment() {
 //
 // The pattern is compared escaped and unescaped, because the router unescapes
 // a literal segment before it matches: "/%5Farandu/x" answers /_arandu/x.
-func validateReservedRoutes(module Module, registered []*fhttp.Route) error {
+func validateReservedRoutes(module Module, registered []*fhttp.Route, prefixes []string) error {
 	if internalroutes.OwnsReservedNamespace(module) {
 		return nil
 	}
@@ -359,19 +373,49 @@ func validateReservedRoutes(module Module, registered []*fhttp.Route) error {
 		if unescaped, err := url.PathUnescape(pattern); err == nil {
 			pattern = unescaped
 		}
-		if strings.HasPrefix(route.Pattern, internalPrefix) || strings.HasPrefix(pattern, internalPrefix) {
-			return fmt.Errorf("arandu: module %q registered route %q under the reserved %s namespace",
-				module.Name(), route.Pattern, internalPrefix)
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(route.Pattern, prefix) || strings.HasPrefix(pattern, prefix) {
+				return fmt.Errorf("arandu: module %q registered route %q under the reserved %s namespace",
+					module.Name(), route.Pattern, prefix)
+			}
 		}
 	}
 	return nil
+}
+
+// internalPrefixesOf lists the namespaces the framework reserves for an
+// application of this brand.
+//
+// internalPrefix is always there: the probes, the console and the reload are
+// mounted under it, and so are the assets of an application that never named
+// itself. A named application also has the brand's, "/_perata/", where its
+// assets are served -- the address a page carries -- and it is reserved with
+// the same rules, so a route of the application's cannot answer under it and
+// the framework's route is not run through the application's pipeline.
+func internalPrefixesOf(brand support.Brand) []string {
+	prefixes := []string{internalPrefix}
+	if !brand.IsDefault() {
+		prefixes = append(prefixes, brand.Path(""))
+	}
+	return prefixes
+}
+
+// underInternalPrefix reports whether pattern is in a namespace the framework
+// reserves.
+func (a *Application) underInternalPrefix(pattern string) bool {
+	for _, prefix := range a.internalPrefixes {
+		if strings.HasPrefix(pattern, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // claimInternal adds the routes under internalPrefix, of a module allowed to
 // register them, to the set Handler serves outside the application's pipeline.
 func (a *Application) claimInternal(registered []*fhttp.Route) {
 	for _, route := range registered {
-		if !strings.HasPrefix(route.Pattern, internalPrefix) {
+		if !a.underInternalPrefix(route.Pattern) {
 			continue
 		}
 		a.internal.Handle(muxKey(route.Method, route.Pattern), route)

@@ -15,12 +15,13 @@ import (
 	"github.com/arandu-io/hesape/session"
 )
 
-// SessionCookieName is the cookie the framework reads and writes. It is fixed
-// on purpose: a configurable cookie name buys nothing and breaks the CSRF
-// binding when two parts of a project disagree about it.
+// SessionCookieName is the session cookie of a store that was not given another
+// name: the one the framework has always written. An application names its
+// cookies after itself with Configuration.Brand, which reaches every store the
+// Application builds.
 //
 // It is session.CookieName under a name that repeats the package: one constant
-// with two spellings, so a cookie written through either is read by the other.
+// with two spellings.
 const SessionCookieName = session.CookieName
 
 // Errors returned by SessionStore.
@@ -104,6 +105,9 @@ type SessionStore = hhttp.SessionStore
 // NewSessionStore returns a store. Pass secure=false only in development:
 // without the Secure attribute the cookie travels over plain HTTP. A nil
 // backend keeps the sessions in memory.
-func NewSessionStore(appKey []byte, ttl time.Duration, secure bool, b SessionBackend) *SessionStore {
-	return hhttp.NewSessionStore(appKey, ttl, secure, b)
+//
+// opts names the cookies, with session.WithCookieNames; the same option goes to
+// NewCSRF and NewFlash.
+func NewSessionStore(appKey []byte, ttl time.Duration, secure bool, b SessionBackend, opts ...session.CookieOption) *SessionStore {
+	return hhttp.NewSessionStore(appKey, ttl, secure, b, opts...)
 }

@@ -10,7 +10,8 @@ import (
 )
 
 // FlashCookieName carries the messages and the typed input of a rejected
-// request across the one redirect that follows it.
+// request across the one redirect that follows it, for a Flash that was not given
+// another name.
 const FlashCookieName = session.FlashCookieName
 
 // FlashLifetime is how long the messages are worth keeping.
@@ -24,7 +25,11 @@ const MaxFlashBytes = session.MaxFlashBytes
 type Flash = session.Flash
 
 // NewFlash returns a Flash over the application key.
-func NewFlash(appKey []byte, secure bool) *Flash { return session.NewFlash(appKey, secure) }
+//
+// opts names the cookie, with session.WithCookieNames.
+func NewFlash(appKey []byte, secure bool, opts ...session.CookieOption) *Flash {
+	return session.NewFlash(appKey, secure, opts...)
+}
 
 // LocalPath reports whether an address stays inside this application, and
 // returns it when it does.

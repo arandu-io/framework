@@ -22,4 +22,8 @@ type CSRF = session.CSRF
 // NewCSRF returns a token issuer keyed by the application key. Chain
 // Secure(false) onto it in development over plain HTTP, or the browser never
 // sends the guest cookie a visitor without a session is bound to.
-func NewCSRF(appKey []byte, ttl time.Duration) *CSRF { return session.NewCSRF(appKey, ttl) }
+//
+// opts names the guest cookie, with session.WithCookieNames.
+func NewCSRF(appKey []byte, ttl time.Duration, opts ...session.CookieOption) *CSRF {
+	return session.NewCSRF(appKey, ttl, opts...)
+}

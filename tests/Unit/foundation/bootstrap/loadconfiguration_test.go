@@ -971,3 +971,32 @@ func TestABooleanFromTheDotenvFileIsRefusedAsWell(t *testing.T) {
 		t.Errorf("the error does not name the variable and the value:\n%v", err)
 	}
 }
+
+// The cookies, the storage keys and the asset path are named after the
+// application: APP_NAME in slug, with the accent folded.
+func TestTheBrandIsTheSlugOfAppName(t *testing.T) {
+	env(t, "APP_KEY", testKey, "APP_NAME", "Peráta")
+
+	cfg, err := bootstrap.LoadConfiguration()
+	if err != nil {
+		t.Fatalf("LoadConfiguration: %v", err)
+	}
+	if got := cfg.Brand.Slug(); got != "perata" {
+		t.Fatalf("Brand = %q, want perata", got)
+	}
+}
+
+// An application that never wrote APP_NAME keeps the names the framework has
+// always used, so an upgrade does not sign it out. The placeholder the name
+// falls back to is no application's name and is not slugged.
+func TestAnUnwrittenAppNameKeepsTheDefaultBrand(t *testing.T) {
+	env(t, "APP_KEY", testKey, "APP_NAME", "")
+
+	cfg, err := bootstrap.LoadConfiguration()
+	if err != nil {
+		t.Fatalf("LoadConfiguration: %v", err)
+	}
+	if !cfg.Brand.IsDefault() || cfg.Brand.Cookie("session") != "arandu_session" {
+		t.Fatalf("Brand = %q, want the default one", cfg.Brand.Slug())
+	}
+}

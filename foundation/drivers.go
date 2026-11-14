@@ -208,8 +208,12 @@ func newDrivers(s bootstrap.Settings, db *database.DB) (*Drivers, error) {
 		d.Locks = cache.NewLocks(d.SharedCache)
 		d.Locker = NewLocker(d.Locks)
 	}
-	d.Sessions = security.NewSessionStore(fw.App.Key, fw.Session.Lifetime, fw.Session.Secure, backend)
-	d.CSRF = security.NewCSRF(fw.App.Key, s.Session.CSRFTTL).Secure(fw.Session.Secure)
+	// One value names every cookie the browser is given, so the store that writes
+	// the session and the issuer that writes the guest cookie cannot disagree
+	// about what they are called. The Application's flash takes the same one.
+	cookies := session.WithCookieNames(session.CookieNamesFor(fw.Brand))
+	d.Sessions = security.NewSessionStore(fw.App.Key, fw.Session.Lifetime, fw.Session.Secure, backend, cookies)
+	d.CSRF = security.NewCSRF(fw.App.Key, s.Session.CSRFTTL, cookies).Secure(fw.Session.Secure)
 
 	d.Limiter = cache.NewRateLimiter(d.Store.GetStore())
 	idempotency, ok := d.Store.GetStore().(middleware.IdempotencyStore)

@@ -19,6 +19,34 @@ down here fails the build.
 
 ---
 
+## v0.68.0 — the cookies, the storage keys and the asset path carry the application's name
+
+This release requires `hesape` v0.106.0. `bootstrap.Configuration` has a new field, `Brand`, read from `APP_NAME`, and
+everything a visitor's browser is given is named after it: the cookies `perata_session`, `perata_csrf_guest`,
+`perata_flash` and `perata_intended` for an application called Peráta, the `localStorage` keys `perata.theme` and
+`perata.sidebar.<id>`, and the assets under `/_perata/assets/`.
+
+**What changes without a compiler error**
+
+- An application that writes `APP_NAME` is signed out once: the cookies it set before carry the old names, which nothing
+  reads now. The theme and sidebar a visitor saved are forgotten once, because the keys changed. An application that does
+  not write `APP_NAME` keeps `arandu_session` and the rest, and is not changed.
+- To keep the old names with an `APP_NAME` written, assign `cfg.Brand = support.NewBrand("arandu")` before building the
+  drivers. To choose a name other than the one `APP_NAME` spells, assign it the same way.
+- The old asset prefix, `/_arandu/assets/`, keeps answering, uncached, so a page or an e-mail written before the change
+  still gets its file. A stylesheet that names an asset by its absolute path keeps the path it was written with.
+- `/_arandu/health`, `/_arandu/live`, the console and the development reload stay under `/_arandu/`.
+- The CSRF token, and the guest cookie it is bound to, are issued when a view asks for it, so an API response carries no
+  cookie, and a page that carries a token leaves with `Cache-Control: no-store, private` unless its handler chose a
+  policy first (hesape v0.106.0).
+
+**What stops compiling**
+
+`security.NewSessionStore`, `security.NewCSRF` and `security.NewFlash` take a trailing `...session.CookieOption`. A call
+that passes none is unchanged; a function value assigned from one of them has a new type.
+
+---
+
 ## v0.67.0 — validation speaks the language of the request out of the box, and a module installs its rules at boot
 
 This release requires `hesape` v0.88.0. `apidiff` reports no incompatible change in this module, and two things still

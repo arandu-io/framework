@@ -43,6 +43,7 @@ import (
 	"github.com/arandu-io/hesape/filesystem"
 	"github.com/arandu-io/hesape/log"
 	"github.com/arandu-io/hesape/queue"
+	"github.com/arandu-io/hesape/support"
 	"github.com/arandu-io/hesape/view"
 )
 
@@ -70,6 +71,22 @@ type Configuration struct {
 	// It is the only one with a loader of its own, because hesape/config.Load
 	// already validates the key and refuses debug in production.
 	App config.App
+
+	// Brand is the application's name as a visitor's browser is given it: the
+	// prefix of its cookies (perata_session, perata_csrf_guest, perata_flash,
+	// perata_intended), of the keys its scripts keep in localStorage
+	// (perata.theme) and of the address its static files are served under
+	// (/_perata/assets/).
+	//
+	// It is APP_NAME in slug, when APP_NAME is written. An application that does
+	// not write it keeps the names the framework has always used, arandu, so a
+	// deployment that never named itself is not signed out by an upgrade; one that
+	// did is signed out once, because every cookie it set before carries the old
+	// name. An application that wants a name other than its APP_NAME's assigns the
+	// field, with support.NewBrand, before it builds the drivers. It is one value
+	// and not a setting per cookie, so the part that writes a cookie and the part
+	// that reads it cannot disagree.
+	Brand support.Brand
 
 	// HTTP is the transport boundary owned by the application listener.
 	//
@@ -346,6 +363,7 @@ func LoadConfiguration() (Configuration, error) {
 
 	cfg := Configuration{
 		App:           app,
+		Brand:         loadBrand(),
 		HTTP:          httpServer,
 		Session:       sessions,
 		Cache:         loadCache(),
@@ -359,6 +377,18 @@ func LoadConfiguration() (Configuration, error) {
 	cfg.Repository = config.NewRepository(cfg.asMap())
 
 	return cfg, nil
+}
+
+// loadBrand reads the brand from APP_NAME when it is written. An unwritten name
+// is the default brand and not the slug of the placeholder the application name
+// falls back to: "arandu-app" is no application's name, and naming every cookie
+// after it would sign out every deployment that never chose one.
+func loadBrand() support.Brand {
+	name, ok := setting("APP_NAME")
+	if !ok {
+		return support.Brand{}
+	}
+	return support.NewBrand(name)
 }
 
 // defaultSessionMinutes is SESSION_LIFETIME when it is not written: two hours.

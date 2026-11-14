@@ -177,6 +177,10 @@ var allowedHesapeImports = bridgeSurface{
 	//
 	// queue/middleware is here because the worker queue:work starts runs
 	// ReportToBatch, so a batch finishes without its handlers reporting.
+	//
+	// support is here for support.Brand: the Application names the cookies, the
+	// storage keys and the asset path from the one value Configuration carries,
+	// and reserves the brand's own namespace beside the framework's.
 	"foundation": inventoryItems(`
 		github.com/arandu-io/hesape/auth github.com/arandu-io/hesape/bus
 		github.com/arandu-io/hesape/cache github.com/arandu-io/hesape/cache/console
@@ -194,14 +198,15 @@ var allowedHesapeImports = bridgeSurface{
 		github.com/arandu-io/hesape/queue/console github.com/arandu-io/hesape/queue/failed
 		github.com/arandu-io/hesape/queue/middleware
 		github.com/arandu-io/hesape/routing github.com/arandu-io/hesape/routing/middleware
-		github.com/arandu-io/hesape/session github.com/arandu-io/hesape/translation
+		github.com/arandu-io/hesape/session github.com/arandu-io/hesape/support
+		github.com/arandu-io/hesape/translation
 		github.com/arandu-io/hesape/validation github.com/arandu-io/hesape/view
 	`),
 	"foundation/bootstrap": inventoryItems(`
 		github.com/arandu-io/hesape/cache github.com/arandu-io/hesape/config
 		github.com/arandu-io/hesape/database github.com/arandu-io/hesape/exception
 		github.com/arandu-io/hesape/filesystem github.com/arandu-io/hesape/log
-		github.com/arandu-io/hesape/queue
+		github.com/arandu-io/hesape/queue github.com/arandu-io/hesape/support
 		github.com/arandu-io/hesape/view
 	`),
 	// geo is a route-only envelope: the native package owns every handler and
