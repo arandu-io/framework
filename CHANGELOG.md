@@ -2,6 +2,10 @@
 
 ## [v0.68.0](https://github.com/arandu-io/framework/compare/v0.67.0...v0.68.0) - 2026-11-14
 
+**Full Changelog**: https://github.com/arandu-io/framework/compare/v0.67.0...v0.68.0
+
+## [v0.68.0](https://github.com/arandu-io/framework/compare/v0.67.0...v0.68.0) - 2026-11-14
+
 - **bootstrap: `Configuration.Brand`** is the application's name as a visitor's browser is given it, from `APP_NAME` in slug (`Peráta` is `perata`). An unwritten `APP_NAME` is the default brand, `arandu`, so a deployment that never named itself keeps its cookies. An application assigns the field to name itself otherwise.
 - **foundation: the cookies are named after the brand.** The session store, the CSRF issuer and the Application's flash are built over the same `session.WithCookieNames`, so `perata_session`, `perata_csrf_guest`, `perata_flash` and `perata_intended` are written and read by the same value.
 - **foundation: the assets are served under the brand's prefix.** `view.UseBrand` runs when the Application is built, the view module registers `/_perata/assets/{hash}/{name}` beside the old `/_arandu/assets/`, and the brand's namespace is reserved like the framework's own: the route is answered outside the application's pipeline, and a module or an application route cannot answer under it. The token refresh answers at `/_perata/csrf` too (`CSRFRefreshUnder`).
