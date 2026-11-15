@@ -31,9 +31,9 @@ func signInScreen() *Module {
 //
 // The answer was a bare <div class="alert"> with no document around it. To a
 // browser that IS the whole page: an error on a blank background, with no form
-// to type into and no way back except the back button. To htmx it was nothing at
-// all -- htmx swaps no 4xx, so the screen stayed exactly as it was and the
-// person saw a button that did nothing.
+// to type into and no way back except the back button. To YPY it was nothing at
+// all -- a fragment swapped into the body of a screen that had a form on it, and
+// no screen to act on.
 func TestAWrongPasswordIsAnsweredWithTheSignInScreenAndNotABareFragment(t *testing.T) {
 	rec := httptest.NewRecorder()
 	signInScreen().renderLogin(rec, httptest.NewRequest(http.MethodPost, "/auth/login", nil),
@@ -69,23 +69,59 @@ func TestARefusedSignInKeepsTheAddressThatWasTyped(t *testing.T) {
 	}
 }
 
-// The form posts natively rather than through hx-boost, and that is the whole
-// reason the refusal above is visible: htmx's response handling is
-// `{code:"[45]..", swap:false, error:true}`, so a boosted post leaves every 4xx
-// on the floor. The guards' answer -- HX-Refresh -- cannot be used here, because
-// reloading the sign-in screen throws away both the message and the address.
+// The form posts natively rather than through ypy-boost, so the refusal above is
+// the same page at the same status in every client: a boosted post would have
+// YPY swap it in and write a history entry for it, and a browser with scripts off
+// would get the plain page anyway. The guards' answer -- YPY-Refresh -- cannot be
+// used here, because reloading the sign-in screen throws away both the message
+// and the address.
 func TestTheSignInFormPostsInAWayThatCanShowARefusal(t *testing.T) {
 	rec := httptest.NewRecorder()
 	signInScreen().renderLogin(rec, httptest.NewRequest(http.MethodGet, "/auth/login", nil), http.StatusOK, "", nil)
 
 	body := rec.Body.String()
-	if !strings.Contains(body, `<form method="post" action="/auth/login" hx-boost="false"`) {
-		t.Error("the form is boosted, so htmx discards every refusal it answers and the screen does not change")
+	if !strings.Contains(body, `<form method="post" action="/auth/login" ypy-boost="false"`) {
+		t.Error("the form is boosted, so the refusal reaches the person through a swap and not as the page the handler answered")
+	}
+}
+
+// The page drives YPY the native way: the core and the csrf extension are
+// loaded, the token sits in the ypy-csrf meta tag that extension reads, the
+// body boosts what it contains by saying so with :inherited, and nothing asks
+// for a compatibility profile or hands the token to an inherited header.
+func TestTheSignInScreenLoadsYPYAndCarriesTheTokenInTheMetaTag(t *testing.T) {
+	m := signInScreen()
+	rec := httptest.NewRecorder()
+	m.renderLogin(rec, httptest.NewRequest(http.MethodGet, "/auth/login", nil), http.StatusOK, "", nil)
+	body := rec.Body.String()
+
+	field := hiddenFieldPattern.FindStringSubmatch(body)
+	if field == nil {
+		t.Fatalf("no hidden token field:\n%s", body)
+	}
+	for what, want := range map[string]string{
+		"the ypy-csrf meta tag holding the token": `<meta name="ypy-csrf" content="` + field[2] + `">`,
+		"the YPY core":        `ypy.min.js" defer>`,
+		"the csrf extension":  `ypy-csrf.min.js" defer>`,
+		"the inherited boost": `<body ypy-boost:inherited="true">`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the sign-in screen has no %s:\n%s", what, body)
+		}
+	}
+	for what, banned := range map[string]string{
+		"a profile meta tag":        "ypy-config",
+		"a token in a header":       "ypy-headers",
+		"a bare, uninherited boost": `<body ypy-boost="true"`,
+	} {
+		if strings.Contains(body, banned) {
+			t.Errorf("the sign-in screen carries %s (%q)", what, banned)
+		}
 	}
 }
 
 // The token still has to travel: a native post carries it in the hidden field
-// and not in the hx-headers attribute, so the field is submitted back through
+// and not in the ypy-csrf meta tag, so the field is submitted back through
 // the middleware that reads it.
 //
 // Submitted rather than matched against a name written out here, because the

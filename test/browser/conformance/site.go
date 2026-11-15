@@ -12,8 +12,8 @@ import (
 )
 
 // site is the application the suite drives: small pages, each proving one
-// behaviour, with htmx served from the framework's own embedded copy so the
-// waits are proven against the htmx applications run.
+// behaviour, with YPY served from the framework's own embedded copy so the
+// waits are proven against the YPY applications run.
 func site() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(view.AssetPath, view.Handler)
@@ -31,27 +31,27 @@ func site() http.Handler {
 			fmt.Fprint(w, source)
 		})
 	}
-	htmx := `<script src="` + view.Asset("htmx.min.js") + `"></script>`
+	ypy := `<script src="` + view.Asset("ypy.min.js") + `"></script>`
 
 	page("/", `<h1>Conformance</h1><p>The suite every driver passes.</p>`)
 
-	// htmx: the swap lands late and settles later still; the action must not
+	// ypy: the swap lands late and settles later still; the action must not
 	// return before both.
-	page("/htmx", htmx+`
-<button hx-get="/htmx/slow" hx-target="#out" hx-swap="innerHTML settle:300ms">Load</button>
+	page("/ypy", ypy+`
+<button ypy-get="/ypy/slow" ypy-target="#out" ypy-swap="innerHTML settle:300ms">Load</button>
 <div id="out">empty</div>
-<button id="self" hx-get="/htmx/self" hx-swap="outerHTML">Replace me</button>
-<button hx-post="/htmx/nothing" hx-swap="none">Ping</button>
+<button id="self" ypy-get="/ypy/self" ypy-swap="outerHTML">Replace me</button>
+<button ypy-post="/ypy/nothing" ypy-swap="none">Ping</button>
 <p id="pinged"></p>`)
-	mux.HandleFunc("/htmx/slow", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ypy/slow", func(w http.ResponseWriter, r *http.Request) {
 		wait(r, 300*time.Millisecond)
 		fmt.Fprint(w, `<p class="loaded" title="settled">Loaded</p>`)
 	})
-	mux.HandleFunc("/htmx/self", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ypy/self", func(w http.ResponseWriter, r *http.Request) {
 		wait(r, 150*time.Millisecond)
 		fmt.Fprint(w, `<button id="replaced">Replaced</button>`)
 	})
-	mux.HandleFunc("/htmx/nothing", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ypy/nothing", func(w http.ResponseWriter, r *http.Request) {
 		wait(r, 150*time.Millisecond)
 		w.WriteHeader(http.StatusNoContent)
 	})

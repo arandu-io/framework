@@ -39,7 +39,7 @@ func TestTheLicenseTextsAreComplete(t *testing.T) {
 		"the MIT permission grant": "Permission is hereby granted, free of charge",
 		"the MIT notice clause":    "The above copyright notice and this permission notice shall be included",
 		"the Tailwind copyright":   "Tailwind Labs, Inc.",
-		"the 0BSD grant":           "Permission to use, copy, modify, and/or distribute this software",
+		"the YPY copyright":        "HYZIS - SERVICOS DIGITAIS LTDA - EPP",
 	}
 
 	for what, text := range required {

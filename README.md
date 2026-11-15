@@ -23,7 +23,7 @@
 Arandu is a Go framework for web applications, services and APIs, built around
 three things, in this order: **development speed** — a small, predictable
 surface, and a generator that emits a full module (screens, migration, policy)
-in one shot; **performance** — a single compiled binary, HTML over HTMX instead
+in one shot; **performance** — a single compiled binary, HTML over YPY instead
 of a JavaScript bundle, so there is no template runtime, no hydration step and
 no Node in the request path; and **authorization the compiler charges for** — a
 `Grant` has only unexported fields, and reaching the database without one does
@@ -58,17 +58,20 @@ that is `aru doctor`, a lint, not the type system, with the rules
 
 Zero direct third-party dependencies. `golang.org/x/crypto` arrives indirectly,
 through `hesape`, which is the only place it is used; CI refuses a second one.
-11,901 lines of production code and 12,466 of test, across 59 test files —
 `go test -race ./...` passes.
 
 Today, most of what this module exports — `security`, `data`, `http`, `jobs`,
-`events`, `mail`, `observability`, `scheduler`, `storage`, `validation`, `view`,
-`arandutest` — is a compatibility alias: the implementation moved to the sibling
-`hesape` repository, and each package's own doc comment names the import path
-that replaces it. `kernel` and `config` are bridges too, pointing one directory
-across at `foundation` and `foundation/bootstrap`. All of them go in v1.0.0.
-What stays here for good is the boot sequence: `foundation` composes the
-application, and `foundation/bootstrap` reads its typed configuration.
+`events`, `mail`, `observability`, `scheduler`, `storage`, `validation`, `view`
+— is a compatibility alias: the implementation moved to the sibling `hesape`
+repository, and each package's own doc comment names the import path that
+replaces it. `geo` and `webhook` register the native hesape components on the
+router envelope. `kernel` and `config` are bridges too, pointing one directory
+across at `foundation` and `foundation/bootstrap`, and `arandutest` points at
+`test`. All of them go in v1.0.0. What stays here for good is the boot sequence:
+`foundation` composes the application, `foundation/bootstrap` reads its typed
+configuration, and `test` is the kit an application's tests are written with: a
+client and its assertions, a server on a free port, a signed-in session, the
+database assertions and the browser driver.
 
 ## Install
 
@@ -94,7 +97,7 @@ disagree, the doc comment sits next to the code and is the one to trust.
 ## The rest of Arandu
 
 `aru` is the command line; `arandu` is the project skeleton it clones; `hesape`
-is the 47-package collection this module is built from; `examples` is a
+is the package collection this module is built from; `examples` is a
 complete application to read. The database, cache, queue and file adapters used
 to be four repositories of their own; they are `hesape` packages now, each heavy
 driver in a submodule with its own `go.mod`, because Go has no optional
@@ -102,7 +105,7 @@ dependency and a project should pay in `go.sum` only for what it imports.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Before opening a pull request, the three
+See [CONTRIBUTING.md](CONTRIBUTING.md). Before opening a pull request, the
 commands at the top of that file have to pass. CI runs them and four more that
 a laptop has no reason to: a guard on the layout of the test tree, the
 dependency budget, an API diff against the last release that fails an

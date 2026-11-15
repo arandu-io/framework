@@ -11,30 +11,35 @@ the situation you are in.
 
 ## The first thing to know
 
-Twenty packages, and fifteen of them are bridges.
+Twenty top-level directories besides `tests`, and sixteen of them are bridges.
 
 ```sh
 export GOWORK=off
-go list ./... | grep -vc '/tests'                                 # 22
+go list ./... | grep -vc '/tests'                                 # 31
 grep -rl "This package is a bridge" --include='doc.go' . | wc -l  # 15
 ```
 
-Those fifteen are old names pointing at `github.com/arandu-io/hesape`, and every
-one of their doc comments carries the same line and the same death date: removed
-in v1.0.0. A symbol in one of them is either a Go alias — in which case the two
-names are one type to the compiler — or an envelope that translates and holds
-nothing. Two are not quite that and say so in their own `doc.go`: `kernel`
-points one directory across at `foundation` rather than at hesape, and `config`
-is the one bridge that still holds an implementation, because what replaced it
-is not a rename.
+Fifteen packages (fourteen top-level directories and `observability/errorpage`)
+are old names pointing at `github.com/arandu-io/hesape`, and every one of their
+doc comments carries the same line and the same death date: removed in v1.0.0.
+`geo` and `webhook` are two more that the `grep` does not find, because they
+word it differently: each registers a native hesape component on the router
+envelope and translates nothing else. A symbol in a bridge is either a Go alias —
+in which case the two names are one type to the compiler — or an envelope that
+translates and holds nothing. Two are not quite that and say so in their own
+`doc.go`: `kernel` points one directory across at `foundation` rather than at
+hesape, and `config` is the one bridge that still holds an implementation,
+because what replaced it is not a rename. `arandutest` points at `test` in this
+module, not at hesape.
 
-Four packages hold permanent Framework code:
+These packages hold permanent Framework code:
 
 | package | what it owns |
 | --- | --- |
 | `foundation` | the `Application`: `New`, `Boot`, `Run`, `Shutdown`, the pipeline, the module contract |
 | `foundation/bootstrap` | `Configuration` and `LoadConfiguration` — the environment read once, typed |
-| `http/middleware` | the route guards, CSRF, the flash, rate limit, recover, security headers, the observability middleware |
+| `http/middleware` | the route guards, CSRF, the flash, rate limit, recover, security headers, the observability middleware. Most of them forward to `hesape/http/middleware`; `Flash` is not a bridge and stays until hesape answers for it |
+| `test` | the application test kit: `Client` and `Response`, `Serve`, `As`, the database and query assertions, and under it `browser` (with `cdp` and `conformance`), `conformance`, `openapi`, `servertrace` and `trace` |
 | `internal/routes` | the sealed capability that identifies first-party owners of the reserved HTTP namespace; Go refuses imports from application and third-party modules |
 
 `modules/auth` is legacy migration debt, not permanent ownership and never a
@@ -45,8 +50,8 @@ packages originating from `package-skeleton`; no native feature is added there.
 
 **So the first question about any change is which repository it belongs to.**
 A behaviour fix inside `security`, `data`, `view`, `jobs`, `events`, `mail`,
-`observability`, `scheduler`, `storage`, `validation`, `arandutest`, `http` or
-`kernel` almost always belongs in `hesape`, and what belongs here is the line
+`observability`, `scheduler`, `storage`, `validation`, `geo`, `webhook`, `http`
+or `kernel` almost always belongs in `hesape`, and what belongs here is the line
 that reaches it. `.agents/skills/framework-bridge/SKILL.md` is the procedure for
 telling those two apart.
 
@@ -71,15 +76,18 @@ invalid on purpose — `data/testdata/missing_grant` and
 Two things that command does not reach, and CI runs both:
 
 ```sh
-go test -race -count=1 -tags 'integration e2e' ./...
+go test -race -count=1 -tags e2e ./...
 bash tests/test-layout-guard.sh
 ```
 
 `tests/E2E/view/flash_test.go` opens with `//go:build e2e`, and a directory
 whose files are all excluded by a build constraint does not fail — it
-disappears from `./...`. Without the tag the suite is not skipped, it is not
-reported at all: the untagged run prints 29 `ok` lines and the tagged run prints
-30. The layout guard is the other one, and its first rule is the
+disappears from `./...`. Without the tag the suites are not skipped, they are
+not reported at all: three packages (`tests/E2E/modules/auth`,
+`tests/E2E/test/browser` and `tests/E2E/view`) exist only in the tagged run, and
+`diff <(go list ./...) <(go list -tags e2e ./...)` prints them. CI also passes an
+`integration` tag, which no file in this module carries and which changes
+nothing. The layout guard is the other one, and its first rule is the
 expensive one: a file named `DiskTest.go` compiles as ordinary code and none of
 its tests run, with no error and no warning.
 
@@ -91,11 +99,11 @@ sent back. None is missing by accident.
 | A model reaches for | What is here instead |
 | --- | --- |
 | a service container, dependency injection | `Application.Register(mods ...Module)`, a slice, booted in the order it was written |
-| service providers, auto-discovery | `foundation.Module` — `Name()` and `Routes()` — plus twelve optional interfaces the `Application` asks for by type assertion |
+| service providers, auto-discovery | `foundation.Module` — `Name()` and `Routes()` — plus the optional interfaces the `Application` asks a module for (`Bootable`, `Background`, `Closable`, `Migratable`, `Schedulable` and the rest, each declared with its comment) |
 | `config("app.name")`, a settings registry | `bootstrap.Configuration`: one typed struct per component, filled once. A wrong field does not compile |
 | a component that loads its own settings at first use | one reader, one moment, one error. See the argument on `Configuration` |
 | middleware that authorizes | a Policy that issues a `security.Grant`. Middleware answers "is there a session" and stops |
-| an ORM, a query builder on the model | `data.Repository`, parameterised SQL, a Grant before the id |
+| an ORM, a query builder on the model | the Model and query Builder `aru model:build` generates per entity, with a Grant on every terminal; `data.Repository` and parameterised SQL where a query is complex or is a read model |
 | a template runtime that looks a name up at request time | compiled views registered from `init()`; the registry is package-level and there is exactly one of it |
 | `node_modules`, a bundler, a CDN | nothing. There is not even a `go:embed` directive left in this module — the served bytes are hesape's |
 | a migration run at process start | `Application.Migrations()` collects; something else runs them |

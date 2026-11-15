@@ -10,7 +10,7 @@ import (
 	hvalidation "github.com/arandu-io/hesape/validation"
 )
 
-// Errors maps a field to its messages. It serializes straight into the HTMX
+// Errors maps a field to its messages. It serializes straight into the YPY
 // partial that re-renders the form with inline errors.
 //
 // The alias carries the whole message bag with it: the four methods this

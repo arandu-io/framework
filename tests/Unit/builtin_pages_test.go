@@ -98,7 +98,7 @@ func itoa(n int) string {
 
 // TestBuiltinPageStyleIsInTheBody is the other half of the same failure.
 //
-// hx-boost swaps the body and the title and discards the rest of the response.
+// ypy-boost swaps the body and the title and discards the rest of the response.
 // A <style> block in <head> therefore reaches the browser and is thrown away: the
 // page is styled on a direct load and unstyled the moment somebody arrives by
 // clicking a link, which is how everybody arrives.
@@ -127,12 +127,12 @@ func TestBuiltinPageStyleIsInTheBody(t *testing.T) {
 
 		// Only pages that opt into boosting are affected. A page without it is
 		// always loaded whole, head included.
-		bodyAt := strings.Index(text, `<body hx-boost`)
+		bodyAt := strings.Index(text, `<body ypy-boost`)
 		if bodyAt < 0 {
 			return nil
 		}
 		if strings.Contains(text[:bodyAt], "<style>") {
-			t.Errorf("%s has a <style> in <head> on a boosted page: hx-boost keeps the body and the "+
+			t.Errorf("%s has a <style> in <head> on a boosted page: ypy-boost keeps the body and the "+
 				"title and discards the rest, so those rules never apply when the page is reached by a link. "+
 				"Move the block inside <body>", filepath.ToSlash(path))
 		}

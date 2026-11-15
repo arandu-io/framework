@@ -73,8 +73,8 @@ type Page struct {
 	// Token is the CSRF token issued for this request, bound to its session or,
 	// for a visitor with none, to its guest cookie. New fills it from the request
 	// context. It reaches the markup twice: as the hidden field @csrf writes,
-	// and as the hx-headers attribute on <body> that makes every HTMX request
-	// carry it.
+	// and as the ypy-csrf meta tag the extension of that name reads to make
+	// every YPY request that changes state carry it.
 	Token string
 
 	// Authenticated decides which half of the navigation bar is drawn, and
@@ -309,7 +309,7 @@ func (p Page) BrandName() string { return p.AppName }
 // CSRFToken is what @csrf reads to write the hidden field.
 //
 // It is a method rather than the field itself because the field is also
-// interpolated into hx-headers, and one name cannot be both.
+// interpolated into the ypy-csrf meta tag, and one name cannot be both.
 func (p Page) CSRFToken() string { return p.Token }
 
 // Translator is the application's catalogue, or nil when the request carried

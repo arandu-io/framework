@@ -20,10 +20,16 @@ before their first patch.
 ## Before you open a pull request
 
 ```
+export GOWORK=off
 gofmt -l $(find . -name '*.go' -not -path '*/testdata/*' -not -name '*.kyse.go')   # no output
+go build ./...
 go vet ./...
-go test -race ./...
+go test -race -count=1 ./...
 ```
+
+`GOWORK=off` makes the run build what a consumer downloads, rather than what a
+local workspace redirects. The end-to-end suites sit behind the `e2e` build tag,
+which CI passes; see `AGENTS.md`.
 
 CI runs these, along with several other checks; `.github/workflows/ci.yml` is
 what decides, and reading it beats any list kept here, which goes stale. One
@@ -83,7 +89,9 @@ No AI attribution of any kind: no `Co-Authored-By` for an assistant, no
 
 ## Architecture decisions
 
-The decisions this project has already made live at arandu.io/docs, and every
-one that closed a door has an ADR. If your change contradicts one, say so in the
+Every decision this project made that closed a door has an ADR. The first
+fifty-two are public in [arandu-io/docs](https://github.com/arandu-io/docs), under
+`_archive/`; the later ones are kept by the maintainers. The usage guide at
+arandu.io/docs is not where decisions are recorded. If your change contradicts one, say so in the
 pull request and argue for the change of decision — that is a normal thing to
 do, and it is better than a patch that quietly works around it.

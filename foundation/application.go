@@ -28,6 +28,7 @@ import (
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/config"
 	"github.com/arandu-io/hesape/console/scheduling"
+	hfoundation "github.com/arandu-io/hesape/foundation"
 	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/routing"
 	"github.com/arandu-io/hesape/session"
@@ -620,12 +621,13 @@ func (a *Application) mountInternalRoutes() {
 
 	// Development only, and mounted from the same condition that injects the
 	// script -- so there is no arrangement in which a production page listens
-	// for a stream nothing answers. See reload.go.
+	// for an address nothing answers. The route and the middleware are hesape's,
+	// so the address the middleware leaves alone is the one served here.
 	if a.isDev() {
-		internal.Get(reloadPath, a.handleReload).Name("arandu.reload")
+		internal.Get(hfoundation.ReloadPath, hfoundation.HandleReload).Name("arandu.reload")
 		for _, m := range a.modules {
 			if t, ok := capable[ReloadTagger](m); ok {
-				a.reloadTag = []byte(t.ReloadTag(reloadPath))
+				a.reloadTag = []byte(t.ReloadTag(hfoundation.ReloadPath))
 				break
 			}
 		}
@@ -830,7 +832,7 @@ func (a *Application) Handler() http.Handler {
 	// -- the application's own controllers, a generated one, a module's screen,
 	// a route no CSRF protection covers -- finds the same brand. See
 	// carryAppName.
-	outer := append([]fhttp.Middleware{observability.RootLogger(a.log), carryAppName(a.cfg.App.Name), carryTranslator(a.translator), a.carryValidation()}, devReload(a.isDev(), a.reloadTag)...)
+	outer := append([]fhttp.Middleware{observability.RootLogger(a.log), carryAppName(a.cfg.App.Name), carryTranslator(a.translator), a.carryValidation()}, hfoundation.DevReload(a.isDev(), a.reloadTag)...)
 
 	// The framework's own routes skip the application's pipeline, the security
 	// headers an application mounts there included, so they get theirs here.

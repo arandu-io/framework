@@ -133,7 +133,7 @@ func (r *Response) DontSee(text string) *Response {
 
 // RedirectsTo fails unless the response sends the client to that address.
 //
-// It reads HX-Redirect as well as Location, because a handler answering an HTMX
+// It reads YPY-Redirect as well as Location, because a handler answering a YPY
 // request redirects with a header and a 204 -- and a test that only reads
 // Location says "redirected to \"\"" for a response that is correct.
 //

@@ -35,12 +35,13 @@ So a change to what `Text` or `RenderInto` *does* is a change in
 `github.com/arandu-io/hesape/view`. What belongs here is the line that reaches
 it. Read `.agents/skills/framework-bridge/SKILL.md` first.
 
-`Page` and `Layout` are the exception, and `view/doc.go:33-59` states why they
-cannot be aliased: `hesape/view` renamed the four error accessors —
-`FieldError` → `First`, `FieldErrors` → `Get`, `HasErrors` → `Any`,
-`ErrorSummary` → `All` — and `github.com/arandu-io/kyse` declares a two-method
-interface asking for `FieldError`, in a separate module. An alias compiles here
-and breaks the component library in silence. An envelope cannot stand in either:
+`Page` and `Layout` are the exception, and `view/doc.go` ("What is NOT bridged") states why they
+cannot be aliased: `hesape/view` renamed three of the error accessors —
+`FieldErrors` → `Get`, `HasErrors` → `Any`, `ErrorSummary` → `All` — and kept
+`FieldError`, which `First` now answers through. This `Page` answers both
+spellings, and `github.com/arandu-io/kyse` declares an interface in a separate
+module that asks for the old ones. An alias compiles here and breaks the
+component library in silence. An envelope cannot stand in either:
 `Page` is written as a composite literal across the skeleton and the published
 screens, and promoted fields are not addressable in one.
 
@@ -149,7 +150,7 @@ A handler that calls `View` does not always reach a renderer. `renderWith` asks
 `application/vnd.arandu.view+json` — the constant is `http.ViewDataMediaType` —
 is answered by `writeViewData` instead: an `http.ViewData`, carrying the name of
 the view and the values it would have rendered from, as JSON and under
-`Vary: Accept` (`hesape/http/context.go:177-252`). It is content negotiation on
+`Vary: Accept` (`hesape/http/context.go:275-360`). It is content negotiation on
 one address, not a second route and not an API, so nothing here registers a
 route for it and no registry in this package is read on that path.
 

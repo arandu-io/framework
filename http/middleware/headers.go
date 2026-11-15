@@ -11,7 +11,7 @@ import (
 
 // SecurityHeaders applies the default headers.
 //
-// The CSP is restrictive on purpose and still works with HTMX, because HTMX
+// The CSP is restrictive on purpose and still works with YPY, because YPY
 // operates through attributes rather than inline script. There is no global
 // 'unsafe-inline' in this framework.
 //

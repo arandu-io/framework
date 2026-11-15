@@ -104,8 +104,9 @@ starts deciding about records is a second one, and with two of them the one that
 gets forgotten is always the guard: a Policy is written once per entity and
 reached from everywhere, while a guard is mounted per route and the route
 somebody adds next month has none. The argument is written out at
-`http/middleware/auth.go:38-54`, in the file somebody reaches for when a Policy
-feels like too much work.
+`hesape/http/middleware/guards.go:41-58`, in the file somebody reaches for when a
+Policy feels like too much work; `http/middleware/auth.go` here only forwards
+to it.
 
 `RequireAuth` sends a visitor to `middleware.SignInPath` rather than answering
 403, because there is nothing they can do with a 403 and there is something they

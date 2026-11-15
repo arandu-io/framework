@@ -38,11 +38,12 @@ type loginPage struct {
 	// one that keeps pointing at the old screen after the constant moves -- and
 	// a form posting to a 404 loses the password somebody just typed.
 	Action string
-	// Stylesheet and HTMX are content-addressed, so they are read here rather
-	// than written as constants: the URL changes with the bytes, and a
+	// Stylesheet, YPY and YPYCSRF are content-addressed, so they are read here
+	// rather than written as constants: the URL changes with the bytes, and a
 	// hard-coded one would serve last build's stylesheet forever.
 	Stylesheet string
-	HTMX       string
+	YPY        string
+	YPYCSRF    string
 }
 
 // showLogin renders the login form with the request's CSRF token.
@@ -56,9 +57,9 @@ func (m *Module) showLogin(w http.ResponseWriter, r *http.Request) {
 // refusal with a bare <div class="alert"> and no document around it reaches
 // nobody. To a browser that fragment is the whole page -- an error message on a
 // blank background, with no form to type into and no way back except the back
-// button -- and to htmx it is nothing at all, because htmx swaps no 4xx and the
-// sentence goes into a body it discards. A wrong password is the most common
-// refusal this framework answers.
+// button -- and to YPY it is a fragment swapped into whatever the request
+// targeted, which is not where a refusal belongs. A wrong password is the most
+// common refusal this framework answers.
 //
 // The status is the caller's and is unchanged: 401 for wrong credentials, 422
 // for a form that did not validate, 429 for the lockout, all of them with the
@@ -78,7 +79,8 @@ func (m *Module) renderLogin(w http.ResponseWriter, r *http.Request, status int,
 		Errors:     errs,
 		Action:     middleware.SignInPath,
 		Stylesheet: view.URL(view.Stylesheet),
-		HTMX:       view.URL("htmx.min.js"),
+		YPY:        view.URL("ypy.min.js"),
+		YPYCSRF:    view.URL("ypy-csrf.min.js"),
 	})
 }
 
@@ -177,7 +179,7 @@ func (m *Module) doLogout(w http.ResponseWriter, r *http.Request) {
 
 // redirect answers the way the client can act on.
 //
-// Setting HX-Redirect and 200 unconditionally is fine for HTMX and broken for
+// Setting YPY-Redirect and 200 unconditionally is fine for YPY and broken for
 // everything else: a form posted without JavaScript -- a browser with scripts
 // off, a crawler, curl -- gets 200 with an empty body and stays on a blank page,
 // signed in, with no way to know where to go. The rule lives in one shape, and
@@ -201,31 +203,35 @@ func redirect(w http.ResponseWriter, r *http.Request, to string) {
 // navigation. That reads as a broken deploy, and it is the first thing anybody
 // sees.
 //
-// So it loads the application's own stylesheet and carries the same two body
-// attributes every other page carries:
+// So it loads the application's own stylesheet and carries what every other page
+// carries to make YPY work:
 //
-//   - hx-boost, or following a link here does a full page load and the
-//     application stops feeling like one;
-//   - hx-headers, or every HTMX request that changes state fails the CSRF check,
-//     which is the single most common mistake in this stack.
+//   - ypy-boost:inherited on the body, or following a link here does a full page
+//     load and the application stops feeling like one. YPY inherits an attribute
+//     only when it is told to, so a bare ypy-boost on the body would boost
+//     nothing;
+//   - the ypy-csrf meta tag and the extension that reads it, or every YPY request
+//     that changes state fails the CSRF check, which is the single most common
+//     mistake in this stack. The extension sends the token on every same-origin
+//     request that is not a GET, whatever element started it, so no header has to
+//     be inherited down to the form.
 //
-// # Why the form opts out of hx-boost
+// # Why the form opts out of ypy-boost
 //
-// Because a wrong password is a 401, and htmx swaps no 4xx: its response
-// handling is `{code:"[45]..", swap:false, error:true}` in the copy this
-// framework embeds. A boosted form posting to this handler therefore answered
-// every refusal -- wrong password, empty field, lockout -- by leaving the screen
-// exactly as it was. The person typed, pressed the button, and nothing happened
-// at all, which reads as the application being broken rather than as the
-// password being wrong.
+// Because a wrong password is a 401, and the answer to it is a whole page: this
+// screen again, with the error on it. YPY would swap that page in too, as it
+// swaps any error response, but then the refusal reaches the person through the
+// rules a script applies to an error status and through a history entry for a
+// screen they never navigated to, while a browser with scripts off, a crawler
+// and curl get something else. One answer for every client is the point.
 //
-// The guards' fix does not apply here: HX-Refresh reloads, and a reload of the
+// The guards' fix does not apply here: YPY-Refresh reloads, and a reload of the
 // sign-in screen throws away both the message and the address that was typed.
 // So the form posts natively -- a full navigation, exactly what a browser with
 // scripts off already does -- and the answer is this same page with the error on
 // it, in every client, at the status the handler chose. The hidden _token field
 // is what carries the token on that post, which is why it is in the markup
-// beside the hx-headers attribute rather than instead of it.
+// beside the ypy-csrf meta tag rather than instead of it.
 //
 // # Why it carries its own layout CSS
 //
@@ -254,7 +260,7 @@ func redirect(w http.ResponseWriter, r *http.Request, to string) {
 //
 // # Why that <style> is inside <body>
 //
-// Because hx-boost swaps the body and the title, and throws the rest of the
+// Because ypy-boost swaps the body and the title, and throws the rest of the
 // response away. A <style> in <head> arrives at the browser and is discarded, so
 // the screen is styled on a direct load and unstyled the moment somebody reaches
 // it by clicking a link -- which is how everybody reaches it.
@@ -275,9 +281,11 @@ var loginForm = template.Must(template.New("login").Parse(`<!doctype html>
 <title>Sign in</title>
 <meta name="robots" content="noindex">
 <link rel="stylesheet" href="{{.Stylesheet}}">
-<script src="{{.HTMX}}" defer></script>
+<meta name="ypy-csrf" content="{{.CSRFToken}}">
+<script src="{{.YPY}}" defer></script>
+<script src="{{.YPYCSRF}}" defer></script>
 </head>
-<body hx-boost="true" hx-headers='{"X-CSRF-Token": "{{.CSRFToken}}"}'>
+<body ypy-boost:inherited="true">
 <style>
   html { min-height: 100%; }
   body {
@@ -302,7 +310,7 @@ var loginForm = template.Must(template.New("login").Parse(`<!doctype html>
     <section><ul>{{range $field, $msgs := .Errors}}{{range $msgs}}<li>{{$field}}: {{.}}</li>{{end}}{{end}}</ul></section>
   </div>
 {{end}}
-  <form method="post" action="{{.Action}}" hx-boost="false">
+  <form method="post" action="{{.Action}}" ypy-boost="false">
     <input type="hidden" name="_token" value="{{.CSRFToken}}">
     <div class="field">
       <label class="label" for="email">Email</label>

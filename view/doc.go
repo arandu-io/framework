@@ -1,10 +1,10 @@
-// Package view is the view layer: kyse for markup, HTMX for interaction, ui.js
+// Package view is the view layer: kyse for markup, YPY for interaction, ui.js
 // for client behaviour, Tailwind for style. It is a binary and it is never
 // Node.
 //
 // ui.js is delegation rather than a reactive runtime: it binds once on the
 // document, dispatches on data- attributes and evaluates nothing an attribute
-// carries. Markup that HTMX swaps in is therefore live the moment it lands,
+// carries. Markup that YPY swaps in is therefore live the moment it lands,
 // with nothing to initialise, and open, active and selected are read from the
 // ARIA the markup already carries rather than from a second copy of the state.
 // It is also what lets the pages run under a script-src of 'self' with no

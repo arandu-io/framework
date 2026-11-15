@@ -14,7 +14,7 @@ names the situation you are in rather than the topic it covers.
 
 | skill | when it fires |
 | --- | --- |
-| `framework-bridge` | the file you are about to change is one line long, or the package is one of the fifteen that hold no implementation |
+| `framework-bridge` | the file you are about to change is one line long, or the package is one that holds no implementation |
 | `framework-module` | a module, the boot sequence, the pipeline, or a setting read at start |
 | `framework-grant` | anything that reaches stored data, or a signature that will not compile without a Grant |
 | `framework-view` | the runtime a compiled view calls, the registries, or `view.Page` |
@@ -32,7 +32,7 @@ Route the requested code before applying any skill:
   originating from `package-skeleton`
 
 `modules/auth` still contains implementation, but it is migration debt, never a
-precedent or a fifth permanent Framework package. Do not add native surface to
+precedent or a permanent Framework package. Do not add native surface to
 it.
 
 ## Why these exist
@@ -41,15 +41,16 @@ This is a library, and every change compiles into every project that imports it.
 Three of the four skills exist because the three ways to get that wrong here are
 specific and none of them is obvious from the file you are looking at.
 
-The first is writing the fix in the wrong repository. Fifteen of the twenty
-packages here hold no implementation — they are old names pointing at
-`github.com/arandu-io/hesape`, with a death date in their doc comment — so a
+The first is writing the fix in the wrong repository. Most of the
+packages here hold no implementation — fifteen are old names pointing at
+`github.com/arandu-io/hesape`, with a death date in their doc comment, and two
+more only register a native hesape component — so a
 plausible-looking edit to `security/session.go` or `view/render.go` is very
 likely an edit to the wrong module, and the compiler will not say so.
 
 The second is breaking the module contract. `foundation.Module` is the public
-interface of the whole ecosystem, and nine optional interfaces hang off it, each
-asked for exactly once by a type assertion in `foundation/application.go`. A
+interface of the whole ecosystem, and optional interfaces hang off it, each
+asked for at one place through `capable[T]` in `foundation`. A
 module that implements one with the wrong signature is simply never asked, and
 nothing reports it.
 

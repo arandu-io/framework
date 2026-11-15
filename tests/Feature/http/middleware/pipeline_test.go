@@ -190,7 +190,7 @@ func TestSecurityHeaders(t *testing.T) {
 		t.Errorf("CSP = %q", csp)
 	}
 	if strings.Contains(csp, "unsafe-inline") {
-		t.Error("the CSP must never allow unsafe-inline: HTMX does not need it")
+		t.Error("the CSP must never allow unsafe-inline: YPY does not need it")
 	}
 }
 
@@ -230,7 +230,7 @@ func TestHSTSIsProductionOnly(t *testing.T) {
 	}
 }
 
-// TestStatusWriterSupportsFlush protects server-sent events: HTMX streams over
+// TestStatusWriterSupportsFlush protects server-sent events: YPY streams over
 // SSE, and losing Flush behind the wrapper breaks it in a way that is very hard
 // to trace back to a middleware.
 func TestStatusWriterSupportsFlush(t *testing.T) {

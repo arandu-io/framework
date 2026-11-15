@@ -13,7 +13,7 @@ type reservedNamespace = internalroutes.ReservedNamespace
 //
 // It is a kernel.Module and not a plain Mount function an application calls: a
 // function has to be remembered, and a screen that emits three tags against a
-// server nobody mounted gets three 404s -- no stylesheet, no HTMX, no client
+// server nobody mounted gets three 404s -- no stylesheet, no YPY, no client
 // behaviour.
 //
 // A module appears in the Register call next to events, jobs and the scheduler,
