@@ -51,6 +51,9 @@ library stops working until it is converted.
   `Page.Evaluate` follows the names in the YPY guide.
 - **The test client reads the token from the meta tag** when the page it loaded has no form carrying the hidden field,
   so a page that deletes with a button no longer needs a form to be exercised.
+- **The development live-reload comes from `hesape` and respects the policy.** The framework no longer carries its own
+  copy: a page whose `Content-Security-Policy` refuses the script or the request it makes, such as the built-in error
+  pages under `default-src 'none'`, is no longer given the tag.
 
 **How to convert an application**
 

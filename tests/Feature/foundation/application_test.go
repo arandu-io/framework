@@ -64,6 +64,19 @@ func (m *reloadTagModule) ReloadTag(string) string {
 	return `<script data-reload-owner="` + m.name + `"></script>`
 }
 
+// strictPageModule answers a page the way the built-in error pages do: a whole
+// document under a policy that admits nothing.
+type strictPageModule struct{ reloadTagModule }
+
+func (m *strictPageModule) Routes(r *fhttp.Router) {
+	m.reloadTagModule.Routes(r)
+	r.Get("/strict", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'")
+		_, _ = w.Write([]byte("<html><body>strict</body></html>"))
+	})
+}
+
 func (s *stub) Name() string { return s.name }
 
 func (s *stub) Routes(r *fhttp.Router) {
@@ -374,6 +387,70 @@ func TestDevelopmentReloadTagBelongsToItsApplication(t *testing.T) {
 	}
 	if strings.Contains(body, `data-reload-owner="second"`) {
 		t.Errorf("the first application response contains the second application's reload tag: %q", body)
+	}
+}
+
+// The tag is a script and a request to this origin. A page whose policy refuses
+// either is left as the handler wrote it, and the ordinary page of the same
+// application still follows the restart.
+func TestDevelopmentReloadTagIsLeftOffAPageWhosePolicyBlocksIt(t *testing.T) {
+	k := foundation.New(testConfig(config.EnvDev)).
+		Register(&strictPageModule{reloadTagModule{name: "app"}})
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	handler := k.Handler()
+
+	ordinary := httptest.NewRecorder()
+	handler.ServeHTTP(ordinary, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !strings.Contains(ordinary.Body.String(), `data-reload-owner="app"`) {
+		t.Errorf("the ordinary page does not carry the reload tag: %q", ordinary.Body.String())
+	}
+
+	strict := httptest.NewRecorder()
+	handler.ServeHTTP(strict, httptest.NewRequest(http.MethodGet, "/strict", nil))
+	if strings.Contains(strict.Body.String(), "data-reload-owner") {
+		t.Errorf("a page under default-src 'none' was given a script its policy refuses: %q", strict.Body.String())
+	}
+	if got := strict.Header().Get("Content-Security-Policy"); got != "default-src 'none'" {
+		t.Errorf("the policy was changed to %q", got)
+	}
+}
+
+// Development answers which process is serving and production answers nothing,
+// so no page outside development listens for an address nothing serves.
+func TestTheReloadQuestionIsAnsweredInDevelopmentOnly(t *testing.T) {
+	boot := func(env config.Env, m foundation.Module) http.Handler {
+		t.Helper()
+		k := foundation.New(testConfig(env)).Register(m)
+		if err := k.Boot(context.Background()); err != nil {
+			t.Fatalf("Boot in %s: %v", env, err)
+		}
+		return k.Handler()
+	}
+	get := func(h http.Handler, path string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		return rec
+	}
+
+	dev := boot(config.EnvDev, &stub{name: "billing"})
+	answer := get(dev, "/_arandu/reload")
+	if answer.Code != http.StatusOK || strings.TrimSpace(answer.Body.String()) == "" {
+		t.Errorf("/_arandu/reload in development = %d %q, want 200 and the process id", answer.Code, answer.Body.String())
+	}
+	if !strings.Contains(answer.Header().Get("Cache-Control"), "no-store") {
+		t.Errorf("Cache-Control is %q: a cached answer is the old process answering forever", answer.Header().Get("Cache-Control"))
+	}
+
+	prod := boot(config.EnvProd, &stub{name: "billing"})
+	if got := get(prod, "/_arandu/reload").Code; got != http.StatusNotFound {
+		t.Errorf("/_arandu/reload in production = %d, want 404", got)
+	}
+
+	page := get(boot(config.EnvProd, &reloadTagModule{name: "app"}), "/")
+	if strings.Contains(page.Body.String(), "data-reload-owner") {
+		t.Errorf("a production page carries the reload tag: %q", page.Body.String())
 	}
 }
 

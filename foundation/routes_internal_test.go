@@ -11,6 +11,7 @@ import (
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/hesape/config"
 	"github.com/arandu-io/hesape/encryption"
+	hfoundation "github.com/arandu-io/hesape/foundation"
 )
 
 // internalCfg is the configuration the test below reads and nothing else. It
@@ -89,7 +90,7 @@ func TestTheApplicationsInternalSurfaceIsInTheInventory(t *testing.T) {
 			want: []string{
 				internalPrefix + "health [arandu]",
 				internalPrefix + "live [arandu]",
-				reloadPath + " [arandu]",
+				hfoundation.ReloadPath + " [arandu]",
 				observability.ConsolePath + " [arandu]",
 				observability.ConsolePath + "/{id} [arandu]",
 			},
