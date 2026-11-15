@@ -1,6 +1,6 @@
 ---
 name: framework-bridge
-description: Most of this module's top-level packages hold no implementation — fifteen of its packages are old names pointing at github.com/arandu-io/hesape and they are removed in v1.0.0, and geo and webhook only register a native hesape component on the router envelope. Use before changing anything under security, data, http, view, jobs, events, mail, observability, scheduler, storage, validation, arandutest, geo, webhook, config or kernel; when a fix looks like it belongs to one of them; when the request is to "fix this function", "add a method" or "change this behaviour" and the file turns out to be one line long; when adding, renaming or removing an exported symbol anywhere in this module; and when the request mentions "alias", "wrapper", "deprecated", "compatibility", "UPGRADE.md" or "apidiff". Covers how to tell an alias from an envelope, where the change actually goes, the test each bridge carries, and the CI gate that fails a quiet break.
+description: Most of this module's top-level packages hold no implementation — fourteen of its packages are old names pointing at github.com/arandu-io/hesape and they are removed in v1.0.0, and geo and webhook only register a native hesape component on the router envelope. Use before changing anything under security, data, http, view, jobs, events, mail, observability, scheduler, storage, validation, geo, webhook, config or kernel; when a fix looks like it belongs to one of them; when the request is to "fix this function", "add a method" or "change this behaviour" and the file turns out to be one line long; when adding, renaming or removing an exported symbol anywhere in this module; and when the request mentions "alias", "wrapper", "deprecated", "compatibility", "UPGRADE.md" or "apidiff". Covers how to tell an alias from an envelope, where the change actually goes, the test each bridge carries, and the CI gate that fails a quiet break.
 license: MIT
 ---
 
@@ -12,8 +12,8 @@ at it, with a death date on every one.
 
 ```sh
 export GOWORK=off
-go list ./... | grep -vc '/tests'                                 # 31
-grep -rl "This package is a bridge" --include='doc.go' . | wc -l  # 15
+go list ./... | grep -vc '/tests'                                 # 30
+grep -rl "This package is a bridge" --include='doc.go' . | wc -l  # 14
 ```
 
 The permanent implementation is `foundation`, `foundation/bootstrap`,
@@ -21,13 +21,12 @@ The permanent implementation is `foundation`, `foundation/bootstrap`,
 does not), `internal/routes` and the test kit in `test` with its subpackages
 (`test/browser`, `test/browser/cdp`, `test/browser/conformance`,
 `test/conformance`, `test/openapi`, `test/servertrace`, `test/trace`). The
-fifteen bridges the `grep` finds are `security`, `data`, `http`, `view`, `jobs`,
+fourteen bridges the `grep` finds are `security`, `data`, `http`, `view`, `jobs`,
 `events`, `mail`, `observability`, `observability/errorpage`, `scheduler`,
-`storage`, `validation`, `arandutest`, `config` and `kernel`. `geo` and
+`storage`, `validation`, `config` and `kernel`. `geo` and
 `webhook` are two more that the `grep` does not find, because their doc
 comments word it differently: each registers the native hesape component on the
-router envelope and translates nothing else. `arandutest` answers to this
-module's `test`, not to hesape.
+router envelope and translates nothing else.
 
 `modules/auth` is the remaining implementation package in the current tree,
 but it is migration debt, never a precedent or permanent Framework ownership.
@@ -91,10 +90,10 @@ changes a signature is not a bridge.
 **5. Write the test in the bridge's own file, and only about the bridge.**
 
 ```sh
-find tests -name 'bridge_test.go' | wc -l   # 16
+find tests -name 'bridge_test.go' | wc -l   # 15
 ```
 
-Fourteen of the fifteen bridges carry one, and so do `geo` and `http/middleware`.
+Thirteen of the fourteen bridges carry one, and so do `geo` and `http/middleware`.
 `config` is the exception and it is not an
 oversight: it is the one bridge that still holds an implementation rather than
 aliases — its `doc.go` says so — so it has ordinary tests under

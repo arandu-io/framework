@@ -23,14 +23,14 @@ import (
 // is the server's life, so the database under them is a driver that opens and
 // answers nothing.
 func init() {
-	sql.Register("arandutest-serve", inertDriver{})
+	sql.Register("kit-serve", inertDriver{})
 	database.Register(inertConnector{})
 }
 
 type inertConnector struct{}
 
 func (inertConnector) Dialect() database.Dialect { return database.DialectSQLite }
-func (inertConnector) DriverName() string        { return "arandutest-serve" }
+func (inertConnector) DriverName() string        { return "kit-serve" }
 
 type inertDriver struct{}
 

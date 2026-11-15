@@ -19,6 +19,24 @@ down here fails the build.
 
 ---
 
+## v0.70.0 — the arandutest bridge is removed
+
+One package stops compiling, and the change is the import path.
+
+**What stops compiling**
+
+| Before | After |
+|---|---|
+| `github.com/arandu-io/framework/arandutest`, a bridge that is removed | `github.com/arandu-io/framework/test`. `NewClient` and `Client.Get` and `Client.Post` keep their names; `Response.Status`, `OK`, `See`, `DontSee`, `RedirectsTo` and `Body` become `AssertStatus`, `AssertOk`, `AssertSee`, `AssertDontSee`, `AssertRedirect` and `GetContent`; `DrainOutbox` and `Collected` keep theirs; `Subject` is `auth.SubjectFrom` from hesape, and `ActingAs` is `test.As(t, server, subject)`, which signs in through the real session |
+
+**What changes without a compiler error**
+
+- **The databases a test creates on Postgres are named `arandu_test_...`,** where they were `arandutest_...`. The cleanup
+  drops only the new prefix, so a database left behind by an older run under the old one stays until it is dropped by
+  hand.
+
+---
+
 ## v0.69.0 — YPY replaces the hypermedia library
 
 This release requires `hesape` v0.107.0, which embeds YPY and renames what the old library's name was written into.

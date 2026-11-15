@@ -7,7 +7,7 @@
 // DATABASE ... TEMPLATE, which is a fraction of a migration, so the schema is
 // migrated once into a template and every test gets a copy of its own.
 //
-// Every database this package creates is named arandutest_..., and it never
+// Every database this package creates is named arandu_test_..., and it never
 // writes to, drops or alters a database under any other name. The database the
 // connection URL names is only connected to, because a server has to be asked
 // from inside some database to create another.
@@ -33,7 +33,7 @@ import (
 
 // Prefix starts the name of every database this package creates, and is the
 // only prefix it ever drops.
-const Prefix = "arandutest_"
+const Prefix = "arandu_test_"
 
 // Server is a connection to a Postgres server, held to create, clone and drop
 // the databases of a test run.
@@ -304,7 +304,7 @@ func quote(name string) string { return `"` + strings.ReplaceAll(name, `"`, `""`
 
 // advisoryKey is the lock a template's name is held under.
 func advisoryKey(name string) int64 {
-	sum := sha256.Sum256([]byte("arandutest template " + name))
+	sum := sha256.Sum256([]byte("dbclone template " + name))
 	var k int64
 	for _, b := range sum[:8] {
 		k = k<<8 | int64(b)

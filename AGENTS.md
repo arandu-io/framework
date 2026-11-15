@@ -11,15 +11,15 @@ the situation you are in.
 
 ## The first thing to know
 
-Twenty top-level directories besides `tests`, and sixteen of them are bridges.
+Nineteen top-level directories besides `tests`, and fifteen of them are bridges.
 
 ```sh
 export GOWORK=off
-go list ./... | grep -vc '/tests'                                 # 31
-grep -rl "This package is a bridge" --include='doc.go' . | wc -l  # 15
+go list ./... | grep -vc '/tests'                                 # 30
+grep -rl "This package is a bridge" --include='doc.go' . | wc -l  # 14
 ```
 
-Fifteen packages (fourteen top-level directories and `observability/errorpage`)
+Fourteen packages (thirteen top-level directories and `observability/errorpage`)
 are old names pointing at `github.com/arandu-io/hesape`, and every one of their
 doc comments carries the same line and the same death date: removed in v1.0.0.
 `geo` and `webhook` are two more that the `grep` does not find, because they
@@ -29,8 +29,7 @@ in which case the two names are one type to the compiler — or an envelope that
 translates and holds nothing. Two are not quite that and say so in their own
 `doc.go`: `kernel` points one directory across at `foundation` rather than at
 hesape, and `config` is the one bridge that still holds an implementation,
-because what replaced it is not a rename. `arandutest` points at `test` in this
-module, not at hesape.
+because what replaced it is not a rename.
 
 These packages hold permanent Framework code:
 
