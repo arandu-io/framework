@@ -9,18 +9,18 @@ import (
 // The URL of a clone keeps everything the test named but the database: the
 // credentials and the options are what let it connect at all.
 func TestURLForReplacesOnlyTheDatabase(t *testing.T) {
-	got, err := URLFor("postgres://u:p%40ss@db.local:6543/main?sslmode=require&application_name=x", "arandutest_ab_c01")
+	got, err := URLFor("postgres://u:p%40ss@db.local:6543/main?sslmode=require&application_name=x", "arandu_test_ab_c01")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "postgres://u:p%40ss@db.local:6543/arandutest_ab_c01?sslmode=require&application_name=x"
+	want := "postgres://u:p%40ss@db.local:6543/arandu_test_ab_c01?sslmode=require&application_name=x"
 	if got != want {
 		t.Errorf("URLFor answered %q, want %q", got, want)
 	}
 }
 
 func TestURLForRefusesAURLWithNoServer(t *testing.T) {
-	if _, err := URLFor("sqlite:///tmp/x.sqlite", "arandutest_x"); err == nil {
+	if _, err := URLFor("sqlite:///tmp/x.sqlite", "arandu_test_x"); err == nil {
 		t.Error("a URL with no host was accepted as a server to clone on")
 	}
 }

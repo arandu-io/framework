@@ -66,8 +66,7 @@ Today, most of what this module exports — `security`, `data`, `http`, `jobs`,
 repository, and each package's own doc comment names the import path that
 replaces it. `geo` and `webhook` register the native hesape components on the
 router envelope. `kernel` and `config` are bridges too, pointing one directory
-across at `foundation` and `foundation/bootstrap`, and `arandutest` points at
-`test`. All of them go in v1.0.0. What stays here for good is the boot sequence:
+across at `foundation` and `foundation/bootstrap`. All of them go in v1.0.0. What stays here for good is the boot sequence:
 `foundation` composes the application, `foundation/bootstrap` reads its typed
 configuration, and `test` is the kit an application's tests are written with: a
 client and its assertions, a server on a free port, a signed-in session, the

@@ -186,7 +186,7 @@ func TestARelayHeldByAnotherReplicaKeepsGoing(t *testing.T) {
 }
 
 // TestDrainReachesTheHesapeRelay: Drain is what a test uses, through
-// arandutest.DrainOutbox, and it is the one relay method with no ticker in front
+// test.DrainOutbox, and it is the one relay method with no ticker in front
 // of it.
 func TestDrainReachesTheHesapeRelay(t *testing.T) {
 	db, table := newFakeOutbox()

@@ -183,7 +183,7 @@ type Server struct {
 // It is made on the server ARANDU_TEST_DATABASE_URL names, or DATABASE_URL
 // when that is empty, or the one [Database] names.
 //   - Postgres: a copy (CREATE DATABASE ... TEMPLATE) of a template migrated
-//     once, named arandutest_... and dropped when the test ends. The database
+//     once, named arandu_test_... and dropped when the test ends. The database
 //     the URL names is only connected to.
 //   - SQLite: a temporary file.
 //   - [SQLite] puts the test on a temporary file whatever is set.

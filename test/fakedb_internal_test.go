@@ -23,7 +23,7 @@ import (
 // is tested against countQuery, where the statement is built; what is tested
 // here is that the assertion asks the database and believes the answer.
 
-func init() { sql.Register("arandutest-fake", fakeDriver{}) }
+func init() { sql.Register("kit-fake", fakeDriver{}) }
 
 type fakeDriver struct{}
 
@@ -61,7 +61,7 @@ func openFake(t *testing.T) (*sql.DB, *fakeDB) {
 	fakeDBs[dsn] = state
 	fakeMu.Unlock()
 
-	inner, err := sql.Open("arandutest-fake", dsn)
+	inner, err := sql.Open("kit-fake", dsn)
 	if err != nil {
 		t.Fatalf("opening the fake: %v", err)
 	}

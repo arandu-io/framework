@@ -3,16 +3,6 @@ package unit
 // historicalBridgeSurface is the closed list of declarations kept only for
 // import-path compatibility until the bridge packages are removed in v1.0.0.
 var historicalBridgeSurface = bridgeSurface{
-	// Collected carries no method here: it is a Go alias for the hesape type,
-	// so Publish and Names are declared there and reached through this name.
-	// The two entries this list used to hold for them went when the struct did.
-	"arandutest": inventoryItems(`
-		func.ActingAs func.DrainOutbox func.NewClient func.Subject method.Client.Get
-		method.Client.Post method.Response.Body
-		method.Response.DontSee method.Response.Header method.Response.OK
-		method.Response.RedirectsTo method.Response.See method.Response.Status type.Client
-		type.Collected type.Response
-	`),
 	"config": inventoryItems(`
 		const.EnvDev const.EnvProd const.EnvStaging func.Load func.ParseDatabaseURL
 		method.Config.IsDev method.Config.Validate method.DatabaseConfig.DSN
@@ -138,11 +128,6 @@ var historicalBridgeSurface = bridgeSurface{
 // framework-to-Hesape boundary. Internal standard-library imports are not part
 // of this compatibility inventory.
 var allowedHesapeImports = bridgeSurface{
-	// The helpers forward to framework/test, which is this module; hesape/auth
-	// is what ActingAs and Subject write and read.
-	"arandutest": inventoryItems(`
-		github.com/arandu-io/hesape/auth
-	`),
 	"config": inventoryItems(`
 		github.com/arandu-io/hesape/config
 	`),

@@ -57,8 +57,8 @@
 //
 // It is spelled test rather than testing because an import segment called
 // "testing" shadows the standard library package that every _test.go imports;
-// the precedent is net/http/httptest. The databases it creates keep the
-// arandutest_ prefix, which is what the cleanup drops and nothing else is
+// the precedent is net/http/httptest. The databases it creates carry the
+// arandu_test_ prefix, which is what the cleanup drops and nothing else is
 // named.
 //
 // # What it deliberately does not carry
