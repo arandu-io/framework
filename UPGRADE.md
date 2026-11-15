@@ -1042,7 +1042,7 @@ What to check:
 
 An action's error is now answered in the representation the request asked for.
 `Context.WantsJSON` decides it: `Accept` names `application/json`, or the
-request is an XHR that is not htmx. It is the default rule the exception
+request is an XHR that is not YPY. It is the default rule the exception
 handler already applied to a failure that never reached an action; an
 `exception.Config.RenderJSONWhen` an application set is not read here.
 
@@ -1061,7 +1061,7 @@ What to check:
 - **A JSON client that followed the 303** and read the flash, or parsed the
   `text/plain` body of a refusal, reads the problem instead. It receives no
   `Location` and no flash cookie.
-- **An htmx request is answered as a page** whatever it accepts, because it
+- **A YPY request is answered as a page** whatever it accepts, because it
   swaps HTML.
 - **A JSON client no longer needs the flash**: on a router without `WithFlash`
   its rejection is answered 422. A page's rejection there still panics.
@@ -1203,7 +1203,7 @@ message. A body cut off by the size limit is answered 413 through the last row:
 `Bind` and `Validate` return a `PostTooLargeException` that declares it.
 
 The first match in that order wins. A whole page gets the status and the
-standard sentence for it; an htmx request gets the status and `HX-Refresh`, the
+standard sentence for it; a YPY request gets the status and `YPY-Refresh`, the
 same answer the route guards and CSRF give. The error's own text is never
 shown. A declared status outside 400–599 panics, naming the type.
 
@@ -1307,7 +1307,7 @@ move, so a request that sends the token as a header is unaffected.
 
 A view that uses the `@csrf` directive needs no change — the directive writes
 the new spelling as of `hesape` v0.21.0, which this release requires. A form or
-an HTMX request that writes the field by hand does:
+a YPY request that writes the field by hand does:
 
 ```html
 <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">   <!-- before -->
@@ -1613,7 +1613,7 @@ Four things changed and each is doing work:
   `RateLimiter.For` resolves to.
 - **`fhttp.Refuse`** is passed rather than assumed. `Throttle` takes the refusal
   as a parameter because how a 4xx is written belongs to the request layer — this
-  one adds `HX-Refresh`, without which a person over the limit presses the button
+  one adds `YPY-Refresh`, without which a person over the limit presses the button
   and the screen does not change.
 - **The store can fail, and `Allow` could not say so.** `Throttle` lets the
   request through and logs at `ERROR`: a rate limiter that is down must not

@@ -70,24 +70,24 @@ func profileApp(t *testing.T) http.Handler {
 // way a browser does, and reads the sentence on the page -- then reloads, and
 // reads it gone.
 func TestAFormThatWorkedSaysSoOnThePageItLandsOn(t *testing.T) {
-	for _, htmx := range []bool{false, true} {
+	for _, ypy := range []bool{false, true} {
 		handler := profileApp(t)
 		jar := cookieJar{}
 
 		post := httptest.NewRequest(http.MethodPost, "http://example.test/profile", strings.NewReader("name=Ada"))
 		post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		if htmx {
-			post.Header.Set("HX-Request", "true")
+		if ypy {
+			post.Header.Set("YPY-Request", "true")
 		}
 		saved := httptest.NewRecorder()
 		handler.ServeHTTP(saved, post)
 
 		to := saved.Header().Get("Location")
-		if htmx {
-			to = saved.Header().Get("HX-Redirect")
+		if ypy {
+			to = saved.Header().Get("YPY-Redirect")
 		}
 		if to != "/profile" {
-			t.Fatalf("htmx=%v: answered %d to %q, want a redirect to /profile", htmx, saved.Code, to)
+			t.Fatalf("YPY=%v: answered %d to %q, want a redirect to /profile", ypy, saved.Code, to)
 		}
 		jar.take(saved)
 
@@ -97,7 +97,7 @@ func TestAFormThatWorkedSaysSoOnThePageItLandsOn(t *testing.T) {
 		landed := httptest.NewRecorder()
 		handler.ServeHTTP(landed, get)
 		if !strings.Contains(landed.Body.String(), `<p class="status">Perfil salvo.</p>`) {
-			t.Errorf("htmx=%v: the page the form landed on does not say it was saved:\n%s", htmx, landed.Body.String())
+			t.Errorf("YPY=%v: the page the form landed on does not say it was saved:\n%s", ypy, landed.Body.String())
 		}
 
 		jar.take(landed)
@@ -107,7 +107,7 @@ func TestAFormThatWorkedSaysSoOnThePageItLandsOn(t *testing.T) {
 		reloaded := httptest.NewRecorder()
 		handler.ServeHTTP(reloaded, again)
 		if strings.Contains(reloaded.Body.String(), "Perfil salvo.") {
-			t.Errorf("htmx=%v: the status survived to a second page view", htmx)
+			t.Errorf("YPY=%v: the status survived to a second page view", ypy)
 		}
 	}
 }

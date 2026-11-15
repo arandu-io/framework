@@ -6,8 +6,8 @@ package browser
 //
 // It keeps three things:
 //
-//   - the htmx requests in flight, from htmx:beforeRequest until the request
-//     settled (htmx:afterSettle) or ended with nothing to swap;
+//   - the YPY requests in flight, from ypy:beforeRequest until the request
+//     settled (ypy:afterSettle) or ended with nothing to swap;
 //   - a document id, so a wait can tell a new document from the old one;
 //   - the element the last lookup found, so the action that follows acts on
 //     exactly that element.
@@ -23,21 +23,21 @@ const st = { doc: Math.random().toString(36).slice(2) + Date.now().toString(36),
 window.addEventListener("beforeunload", () => { st.leaving = Date.now(); });
 const on = (name, fn) => document.addEventListener(name, fn, true);
 const xhrOf = e => e && e.detail && e.detail.xhr;
-on('htmx:beforeRequest', e => { st.started++; const x = xhrOf(e); if (x) requests.set(x, { phase: 'request', at: Date.now() }); });
-on('htmx:afterSwap', e => { const x = xhrOf(e); if (x && requests.has(x)) requests.set(x, { phase: 'swapped', at: Date.now() }); });
-on('htmx:afterRequest', e => {
+on('ypy:beforeRequest', e => { st.started++; const x = xhrOf(e); if (x) requests.set(x, { phase: 'request', at: Date.now() }); });
+on('ypy:afterSwap', e => { const x = xhrOf(e); if (x && requests.has(x)) requests.set(x, { phase: 'swapped', at: Date.now() }); });
+on('ypy:afterRequest', e => {
   const x = xhrOf(e); if (!x || !requests.has(x)) return;
   const t = e.detail.target;
-  if (requests.get(x).phase === 'swapped' || (t && t.classList && t.classList.contains('htmx-swapping'))) requests.set(x, { phase: 'settling', at: Date.now() });
+  if (requests.get(x).phase === 'swapped' || (t && t.classList && t.classList.contains('ypy-swapping'))) requests.set(x, { phase: 'settling', at: Date.now() });
   else requests.delete(x);
 });
-on('htmx:afterSettle', e => { st.settled++; const x = xhrOf(e); if (x) requests.delete(x); });
+on('ypy:afterSettle', e => { st.settled++; const x = xhrOf(e); if (x) requests.delete(x); });
 document.addEventListener('securitypolicyviolation', e => {
   console.error('` + cspPrefix + `' + (e.blockedURI || 'inline') + ' (' + (e.effectiveDirective || e.violatedDirective) + ')');
 }, true);
 
-const busySelector = '.htmx-request,.htmx-swapping,.htmx-settling';
-const htmxQuiet = () => {
+const busySelector = '.ypy-request,.ypy-swapping,.ypy-settling';
+const ypyQuiet = () => {
   const busy = !!document.querySelector(busySelector);
   for (const [x, r] of requests) {
     // A swap whose settle never reached the document (its elements were
@@ -209,7 +209,7 @@ const reaches = (el, hit) => !!hit && (el === hit || el.contains(hit) || hit.con
 
 window.__arandu = {
   state() {
-    return { doc: st.doc, ready: document.readyState, htmx: htmxQuiet(), animating: animating(), url: location.href, started: st.started, settled: st.settled, leaving: st.leaving ? Date.now() - st.leaving : -1 };
+    return { doc: st.doc, ready: document.readyState, ypy: ypyQuiet(), animating: animating(), url: location.href, started: st.started, settled: st.settled, leaving: st.leaving ? Date.now() - st.leaving : -1 };
   },
   async find(l, action) {
     const res = resolve(l);

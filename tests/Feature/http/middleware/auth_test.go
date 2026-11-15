@@ -175,26 +175,26 @@ func TestARoleGuardSendsAVisitorWithNoSessionToSignInFirst(t *testing.T) {
 	}
 }
 
-// A 303 answered to an HTMX request is followed inside the fragment, so the
+// A 303 answered to a YPY request is followed inside the fragment, so the
 // sign-in screen ends up swapped into a corner of the page it was meant to
-// replace. HX-Redirect with 204 is the answer that client acts on.
-func TestAnHtmxRequestIsToldToNavigateRatherThanSwapTheSignInScreenIn(t *testing.T) {
+// replace. YPY-Redirect with 204 is the answer that client acts on.
+func TestAYPYRequestIsToldToNavigateRatherThanSwapTheSignInScreenIn(t *testing.T) {
 	for name, guard := range map[string]func(http.Handler) http.Handler{
 		"RequireAuth": middleware.RequireAuth(newSessions()),
 		"RequireRole": middleware.RequireRole(newSessions(), "admin"),
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-			r.Header.Set("HX-Request", "true")
+			r.Header.Set("YPY-Request", "true")
 
 			rec := httptest.NewRecorder()
 			guarded(guard).ServeHTTP(rec, r)
 
-			if got := rec.Header().Get("HX-Redirect"); got != middleware.SignInPath {
-				t.Errorf("HX-Redirect = %q, want %q: without it HTMX swaps the whole sign-in page into the fragment", got, middleware.SignInPath)
+			if got := rec.Header().Get("YPY-Redirect"); got != middleware.SignInPath {
+				t.Errorf("YPY-Redirect = %q, want %q: without it YPY swaps the whole sign-in page into the fragment", got, middleware.SignInPath)
 			}
 			if rec.Code != http.StatusNoContent {
-				t.Errorf("status = %d, want 204 -- a body alongside HX-Redirect is swapped in before the browser navigates", rec.Code)
+				t.Errorf("status = %d, want 204 -- a body alongside YPY-Redirect is swapped in before the browser navigates", rec.Code)
 			}
 			if rec.Body.Len() != 0 {
 				t.Errorf("the answer carries a body: %q", rec.Body.String())
@@ -206,17 +206,17 @@ func TestAnHtmxRequestIsToldToNavigateRatherThanSwapTheSignInScreenIn(t *testing
 // The guest guard answers the same two shapes, for the same reason: the person
 // who submitted the sign-in form from a page that is already signed in should
 // end up on the dashboard, not with the dashboard inside the form.
-func TestTheGuestGuardAnswersHtmxTheSameWay(t *testing.T) {
+func TestTheGuestGuardAnswersYPYTheSameWay(t *testing.T) {
 	sessions := newSessions()
 
 	r := signedIn(t, sessions, security.Subject{ID: "u-1", Tenant: "acme"}, http.MethodGet, middleware.SignInPath)
-	r.Header.Set("HX-Request", "true")
+	r.Header.Set("YPY-Request", "true")
 
 	rec := httptest.NewRecorder()
 	guarded(middleware.RedirectIfAuthenticated(sessions, "/dashboard")).ServeHTTP(rec, r)
 
-	if got := rec.Header().Get("HX-Redirect"); got != "/dashboard" {
-		t.Errorf("HX-Redirect = %q, want /dashboard", got)
+	if got := rec.Header().Get("YPY-Redirect"); got != "/dashboard" {
+		t.Errorf("YPY-Redirect = %q, want /dashboard", got)
 	}
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("status = %d, want 204", rec.Code)
@@ -224,15 +224,15 @@ func TestTheGuestGuardAnswersHtmxTheSameWay(t *testing.T) {
 }
 
 // A guard's answer is about who is asking, so no cache shared between people may
-// keep it. The HTMX answer is the dangerous one: 204 is heuristically cacheable,
+// keep it. The YPY answer is the dangerous one: 204 is heuristically cacheable,
 // and a proxy holding the guest guard's "you are already signed in, go to /"
 // serves it to a guest -- who is then bounced off the sign-in screen and cannot
 // sign in at all.
 func TestAGuardsAnswerIsNeverStoredByACacheSharedBetweenPeople(t *testing.T) {
 	sessions := newSessions()
 
-	htmx := func(r *http.Request) *http.Request {
-		r.Header.Set("HX-Request", "true")
+	ypy := func(r *http.Request) *http.Request {
+		r.Header.Set("YPY-Request", "true")
 		return r
 	}
 
@@ -242,11 +242,11 @@ func TestAGuardsAnswerIsNeverStoredByACacheSharedBetweenPeople(t *testing.T) {
 	}{
 		"RequireAuth turning a visitor away": {
 			middleware.RequireAuth(sessions),
-			htmx(httptest.NewRequest(http.MethodGet, "/dashboard", nil)),
+			ypy(httptest.NewRequest(http.MethodGet, "/dashboard", nil)),
 		},
 		"the guest guard turning a signed-in person away": {
 			middleware.RedirectIfAuthenticated(sessions, "/"),
-			htmx(signedIn(t, sessions, security.Subject{ID: "u-1", Tenant: "acme"}, http.MethodGet, middleware.SignInPath)),
+			ypy(signedIn(t, sessions, security.Subject{ID: "u-1", Tenant: "acme"}, http.MethodGet, middleware.SignInPath)),
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -309,36 +309,36 @@ func TestNobodyIsSentBackToTheSignInScreenTheyJustCameFrom(t *testing.T) {
 	}
 }
 
-// htmx swaps neither a 403 nor a 419 -- its response handling is
+// YPY swaps neither a 403 nor a 419 -- its response handling is
 // `{code:"[45]..", swap:false, error:true}` -- so a refusal reaches a person as
 // nothing at all: they press the button and the screen does not change, with the
 // sentence explaining why in a body that was thrown away.
 //
-// HX-Refresh makes the browser reload the page as an ordinary navigation, where
-// the same middleware answers the same refusal to a request htmx is not
+// YPY-Refresh makes the browser reload the page as an ordinary navigation, where
+// the same middleware answers the same refusal to a request YPY is not
 // handling, and the browser renders it. Both refusals do it, because doing it in
 // one of them would be the inconsistency rather than the fix.
-func TestARefusedHtmxRequestIsAnsweredInAShapeThePersonCanSee(t *testing.T) {
+func TestARefusedYPYRequestIsAnsweredInAShapeThePersonCanSee(t *testing.T) {
 	sessions := newSessions()
 
 	r := signedIn(t, sessions,
 		security.Subject{ID: "u-1", Tenant: "acme", Roles: []string{"reader"}}, http.MethodGet, "/admin/")
-	r.Header.Set("HX-Request", "true")
+	r.Header.Set("YPY-Request", "true")
 
 	rec := httptest.NewRecorder()
 	guarded(middleware.RequireRole(sessions, "admin")).ServeHTTP(rec, r)
 
-	if rec.Header().Get("HX-Refresh") != "true" {
-		t.Error("htmx was given nothing to do with this refusal, so the person clicked and nothing happened at all")
+	if rec.Header().Get("YPY-Refresh") != "true" {
+		t.Error("YPY was given nothing to do with this refusal, so the person clicked and nothing happened at all")
 	}
-	// The status is unchanged: what a log, a probe and every non-HTMX client
+	// The status is unchanged: what a log, a probe and every non-YPY client
 	// see is exactly what they saw before.
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403", rec.Code)
 	}
 }
 
-// The other half: a browser that is not running htmx already renders the body,
+// The other half: a browser that is not running YPY already renders the body,
 // and must not be told to reload -- a reload would replace the sentence with the
 // page the person was on and explain nothing.
 func TestAPlainBrowserIsNotToldToReloadOverARefusal(t *testing.T) {
@@ -348,8 +348,8 @@ func TestAPlainBrowserIsNotToldToReloadOverARefusal(t *testing.T) {
 	guarded(middleware.RequireRole(sessions, "admin")).ServeHTTP(rec, signedIn(t, sessions,
 		security.Subject{ID: "u-1", Tenant: "acme", Roles: []string{"reader"}}, http.MethodGet, "/admin/"))
 
-	if got := rec.Header().Get("HX-Refresh"); got != "" {
-		t.Errorf("HX-Refresh = %q on a request no htmx sent", got)
+	if got := rec.Header().Get("YPY-Refresh"); got != "" {
+		t.Errorf("YPY-Refresh = %q on a request no YPY sent", got)
 	}
 	if !strings.Contains(rec.Body.String(), "not open to your account") {
 		t.Errorf("the refusal says nothing a person can read: %q", rec.Body.String())

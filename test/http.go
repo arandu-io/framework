@@ -103,18 +103,18 @@ func (c *Client) ActingAs(s auth.Subject) *Client {
 // WithHeader makes every request from here on carry the header, and returns the
 // client so it reads as one line:
 //
-//	test.NewClient(t, app).WithHeader("HX-Request", "true").Delete("/invoices/1", nil)
+//	test.NewClient(t, app).WithHeader("YPY-Request", "true").Delete("/invoices/1", nil)
 //
 // It is sticky rather than an argument for the same reason the cookie jar is a
 // field: the headers a test needs to set describe the client, not the call. A
-// page that boosts sends HX-Request on everything it fires, and the token a
-// generated view puts in hx-headers sits on the body element, so every request
+// page that boosts sends YPY-Request on everything it fires, and the token a
+// generated view puts in ypy-headers sits on the body element, so every request
 // leaving that page carries it. Passed per call it would have to be repeated on
 // every line, and the line that forgot it would be exercising a different
 // client than the ones around it.
 //
 // An empty value removes the header, which is how a test says "and this one is
-// not an HTMX request" after saying the others were.
+// not a YPY request" after saying the others were.
 //
 // What is set here wins over what the client would send itself -- the
 // Content-Type of a form and the X-CSRF-Token read off the last page are both
@@ -186,7 +186,7 @@ func (c *Client) Delete(path string, form map[string]string) *Response {
 // POST, PUT and PATCH -- a DELETE body is never parsed, whatever it holds -- so
 // a delete that carried the token only in the body would arrive at the guard
 // carrying nothing. That is the same reason the generated markup puts the token
-// in hx-headers rather than in a field: the request that deletes has no form.
+// in ypy-headers rather than in a field: the request that deletes has no form.
 func (c *Client) submit(method, path string, form map[string]string) *Response {
 	c.t.Helper()
 
@@ -381,7 +381,7 @@ func (r *Response) AssertDontSee(text string) *Response {
 
 // AssertRedirect fails unless the response sends the client to that address.
 //
-// It reads HX-Redirect as well as Location, because a handler answering an HTMX
+// It reads YPY-Redirect as well as Location, because a handler answering a YPY
 // request redirects with a header and a 204 -- and a test that only reads
 // Location says "redirected to \"\"" for a response that is correct.
 func (r *Response) AssertRedirect(want string) *Response {
@@ -389,7 +389,7 @@ func (r *Response) AssertRedirect(want string) *Response {
 
 	got := r.rec.Header().Get("Location")
 	if got == "" {
-		got = r.rec.Header().Get("HX-Redirect")
+		got = r.rec.Header().Get("YPY-Redirect")
 	}
 	if got != want {
 		r.t.Errorf("%s redirected to %q, want %q", r.path, got, want)

@@ -19,7 +19,7 @@ import (
 // drivers is what an application writes once in tests/TestCase.go.
 var drivers = browser.Registry{"cdp": cdp.Launch}
 
-// invoices is a small application with named routes, an htmx form and a
+// invoices is a small application with named routes, a YPY form and a
 // confirmation modal, standing in for the server test.Serve starts.
 type invoices struct {
 	mu   sync.Mutex
@@ -43,7 +43,7 @@ func (a *invoices) handler() http.Handler {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Content-Security-Policy", "script-src 'self'")
 		fmt.Fprintf(w, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Invoices</title>
-<meta name="htmx-config" content='{"includeIndicatorStyles":false}'><script src="%s"></script><script src="/app.js"></script></head><body><main>%s</main></body></html>`, view.Asset("htmx.min.js"), body)
+<meta name="ypy-config" content='{"compat":"v2","includeIndicatorStyles":false}'><script src="%s"></script><script src="/app.js"></script></head><body><main>%s</main></body></html>`, view.Asset("ypy-compat.min.js"), body)
 	}
 	mux.HandleFunc("/app.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
@@ -67,7 +67,7 @@ document.addEventListener('invoice-paid', () => document.getElementById('pay').c
 		layout(w, `<h1>Invoice `+id+`</h1><p id="status">`+status+`</p>
 <button data-open="pay">Pay</button>
 <dialog id="pay" aria-labelledby="pay-title"><h2 id="pay-title">Pay invoice `+id+`</h2>
-<form hx-post="/invoices/`+id+`/pay" hx-target="#status" hx-swap="outerHTML">
+<form ypy-post="/invoices/`+id+`/pay" ypy-target="#status" ypy-swap="outerHTML">
 <label for="card">Card number</label><input id="card" name="card" inputmode="numeric">
 <button type="submit">Confirm</button></form></dialog>`)
 	})
@@ -80,7 +80,7 @@ document.addEventListener('invoice-paid', () => document.getElementById('pay').c
 		a.mu.Lock()
 		a.paid[id] = true
 		a.mu.Unlock()
-		w.Header().Set("HX-Trigger", "invoice-paid")
+		w.Header().Set("YPY-Trigger", "invoice-paid")
 		fmt.Fprint(w, `<p id="status">Paid</p>`)
 	})
 	return mux

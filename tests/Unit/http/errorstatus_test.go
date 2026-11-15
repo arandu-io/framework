@@ -39,12 +39,12 @@ func failing(err error) *fhttp.Router {
 	return r
 }
 
-// serve drives one request through the action, as htmx or as a whole page.
-func serve(t *testing.T, err error, htmx bool) *httptest.ResponseRecorder {
+// serve drives one request through the action, as YPY or as a whole page.
+func serve(t *testing.T, err error, ypy bool) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/invoices/42", nil)
-	if htmx {
-		req.Header.Set("HX-Request", "true")
+	if ypy {
+		req.Header.Set("YPY-Request", "true")
 	}
 	rec := httptest.NewRecorder()
 	failing(err).ServeHTTP(rec, req)
@@ -86,8 +86,8 @@ func TestAnErrorThatNamesItsStatusIsAnsweredWithIt(t *testing.T) {
 				if rec.Code != tc.want {
 					t.Fatalf("status = %d, want %d", rec.Code, tc.want)
 				}
-				if got := rec.Header().Get("HX-Refresh"); got != "" {
-					t.Errorf("a whole-page request was answered with HX-Refresh %q", got)
+				if got := rec.Header().Get("YPY-Refresh"); got != "" {
+					t.Errorf("a whole-page request was answered with YPY-Refresh %q", got)
 				}
 				if body := rec.Body.String(); strings.Contains(body, "billing_secret_table") || strings.Contains(body, err.Error()) {
 					t.Errorf("the error's own text reached the person: %q", body)
@@ -100,14 +100,14 @@ func TestAnErrorThatNamesItsStatusIsAnsweredWithIt(t *testing.T) {
 				}
 			})
 
-			t.Run(name+", htmx", func(t *testing.T) {
+			t.Run(name+", YPY", func(t *testing.T) {
 				rec := serve(t, err, true)
 				if rec.Code != tc.want {
 					t.Fatalf("status = %d, want %d", rec.Code, tc.want)
 				}
-				// htmx swaps no 4xx, so the answer it acts on is the reload.
-				if got := rec.Header().Get("HX-Refresh"); got != "true" {
-					t.Errorf("HX-Refresh = %q, want true: without it the click does nothing visible", got)
+				// YPY swaps no 4xx, so the answer it acts on is the reload.
+				if got := rec.Header().Get("YPY-Refresh"); got != "true" {
+					t.Errorf("YPY-Refresh = %q, want true: without it the click does nothing visible", got)
 				}
 			})
 
@@ -126,8 +126,8 @@ func TestAnErrorThatNamesItsStatusIsAnsweredWithIt(t *testing.T) {
 				if body := rec.Body.String(); strings.Contains(body, "billing_secret_table") || strings.Contains(body, err.Error()) {
 					t.Errorf("the error's own text reached the client: %q", body)
 				}
-				if got := rec.Header().Get("HX-Refresh"); got != "" {
-					t.Errorf("a JSON client was answered with HX-Refresh %q", got)
+				if got := rec.Header().Get("YPY-Refresh"); got != "" {
+					t.Errorf("a JSON client was answered with YPY-Refresh %q", got)
 				}
 			})
 		}
@@ -215,7 +215,7 @@ func TestTheHeadersAnErrorCarriesGoOutWithItsStatus(t *testing.T) {
 	}
 	asks := map[string]func(error) *httptest.ResponseRecorder{
 		"whole page": func(err error) *httptest.ResponseRecorder { return serve(t, err, false) },
-		"htmx":       func(err error) *httptest.ResponseRecorder { return serve(t, err, true) },
+		"ypy":        func(err error) *httptest.ResponseRecorder { return serve(t, err, true) },
 		"json":       func(err error) *httptest.ResponseRecorder { return serveJSON(t, failing(err)) },
 	}
 

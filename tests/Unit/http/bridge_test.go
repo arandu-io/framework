@@ -356,16 +356,16 @@ func TestChainStillNestsTheFirstMiddlewareOutermost(t *testing.T) {
 func TestTheThreeAnsweringHelpersStillReachTheirBehaviour(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/invoices", nil)
-	req.Header.Set("HX-Request", "true")
+	req.Header.Set("YPY-Request", "true")
 	fhttp.Redirect(rec, req, "/invoices/1")
-	if rec.Header().Get("HX-Redirect") != "/invoices/1" || rec.Code != http.StatusNoContent {
-		t.Errorf("Redirect answered %d with HX-Redirect %q", rec.Code, rec.Header().Get("HX-Redirect"))
+	if rec.Header().Get("YPY-Redirect") != "/invoices/1" || rec.Code != http.StatusNoContent {
+		t.Errorf("Redirect answered %d with YPY-Redirect %q", rec.Code, rec.Header().Get("YPY-Redirect"))
 	}
 
 	rec = httptest.NewRecorder()
 	fhttp.Refuse(rec, req, http.StatusForbidden, "not open to your account")
-	if rec.Code != http.StatusForbidden || rec.Header().Get("HX-Refresh") != "true" {
-		t.Errorf("Refuse answered %d with HX-Refresh %q", rec.Code, rec.Header().Get("HX-Refresh"))
+	if rec.Code != http.StatusForbidden || rec.Header().Get("YPY-Refresh") != "true" {
+		t.Errorf("Refuse answered %d with YPY-Refresh %q", rec.Code, rec.Header().Get("YPY-Refresh"))
 	}
 
 	away := httptest.NewRequest(http.MethodPost, "/invoices", nil)

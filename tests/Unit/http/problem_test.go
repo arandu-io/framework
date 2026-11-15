@@ -53,7 +53,7 @@ func setsCookie(rec *httptest.ResponseRecorder, name string) bool {
 // A client that wants JSON has no form to be sent back to, so a rejection is
 // answered in the body: 422, a problem document, and the messages keyed by the
 // field each belongs to. A failed Validate is the same rejection, and so is an
-// XHR that is not htmx, which is how a script that never set Accept asks.
+// XHR that is not YPY, which is how a script that never set Accept asks.
 func TestAJSONClientGetsTheValidationProblem(t *testing.T) {
 	messages := map[string][]string{
 		"title": {"this field is required"},
@@ -135,13 +135,13 @@ func TestAnEmptyRejectionPanicsForAJSONClientToo(t *testing.T) {
 	t.Fatal("an empty rejection was answered")
 }
 
-// htmx sends X-Requested-With and swaps HTML, so it is answered as a page even
+// YPY sends X-Requested-With and swaps HTML, so it is answered as a page even
 // when it says it accepts JSON: a problem document swapped into a div is
 // neither a page nor an answer.
-func TestHTMXIsAnsweredAsAPageWhateverItAccepts(t *testing.T) {
+func TestYPYIsAnsweredAsAPageWhateverItAccepts(t *testing.T) {
 	ask := func(err error) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/invoices/42", nil)
-		req.Header.Set("HX-Request", "true")
+		req.Header.Set("YPY-Request", "true")
 		req.Header.Set("X-Requested-With", "XMLHttpRequest")
 		req.Header.Set("Accept", "application/json")
 		rec := httptest.NewRecorder()
@@ -150,17 +150,17 @@ func TestHTMXIsAnsweredAsAPageWhateverItAccepts(t *testing.T) {
 	}
 
 	rejected := ask(validation.Errors{"title": {"this field is required"}})
-	if rejected.Header().Get("HX-Redirect") == "" {
-		t.Errorf("a rejection to htmx was not sent back with HX-Redirect; status %d", rejected.Code)
+	if rejected.Header().Get("YPY-Redirect") == "" {
+		t.Errorf("a rejection to YPY was not sent back with YPY-Redirect; status %d", rejected.Code)
 	}
 
 	refused := ask(security.ErrForbidden)
-	if refused.Code != http.StatusForbidden || refused.Header().Get("HX-Refresh") != "true" {
-		t.Errorf("a refusal to htmx = %d with HX-Refresh %q, want 403 and true", refused.Code, refused.Header().Get("HX-Refresh"))
+	if refused.Code != http.StatusForbidden || refused.Header().Get("YPY-Refresh") != "true" {
+		t.Errorf("a refusal to YPY = %d with YPY-Refresh %q, want 403 and true", refused.Code, refused.Header().Get("YPY-Refresh"))
 	}
 	for _, rec := range []*httptest.ResponseRecorder{rejected, refused} {
 		if rec.Header().Get("Content-Type") == exception.ProblemContentType {
-			t.Error("htmx was answered with a problem document")
+			t.Error("YPY was answered with a problem document")
 		}
 	}
 }

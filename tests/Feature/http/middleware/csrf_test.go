@@ -46,7 +46,7 @@ func TestCSRFAcceptsTheHeader(t *testing.T) {
 }
 
 // TestCSRFAcceptsTheFormField covers the plain HTML form, which must keep working
-// for anyone who is not using HTMX.
+// for anyone who is not using YPY.
 func TestCSRFAcceptsTheFormField(t *testing.T) {
 	h, csrf := csrfHandler("session-1")
 	token, err := csrf.Issue("session-1")
@@ -236,7 +236,7 @@ func TestCSRFLetsSafeMethodsThrough(t *testing.T) {
 }
 
 // TestCSRFGuardsEveryWriteMethod: protecting POST only is a common and expensive
-// mistake, because HTMX issues PUT, PATCH and DELETE directly.
+// mistake, because YPY issues PUT, PATCH and DELETE directly.
 func TestCSRFGuardsEveryWriteMethod(t *testing.T) {
 	h, _ := csrfHandler("session-1")
 
@@ -249,15 +249,15 @@ func TestCSRFGuardsEveryWriteMethod(t *testing.T) {
 	}
 }
 
-// An expired token reaches a person as nothing at all under HTMX: htmx does not
+// An expired token reaches a person as nothing at all under YPY: YPY does not
 // swap a 419, so the sentence telling them to reload was in a body that was
 // thrown away, and the button they pressed simply did nothing.
 //
-// HX-Refresh reloads the page, which is the only useful reaction to a token that
+// YPY-Refresh reloads the page, which is the only useful reaction to a token that
 // is no longer valid -- the reload brings a fresh one. The role guard answers the
 // same way for the same reason; changing one of the two would have left the
-// framework refusing an HTMX request in two different shapes.
-func TestAnExpiredTokenTellsHtmxToReloadRatherThanLeavingTheScreenUnchanged(t *testing.T) {
+// framework refusing a YPY request in two different shapes.
+func TestAnExpiredTokenTellsYPYToReloadRatherThanLeavingTheScreenUnchanged(t *testing.T) {
 	h, _ := csrfHandler("session-1")
 
 	for name, r := range map[string]*http.Request{
@@ -267,13 +267,13 @@ func TestAnExpiredTokenTellsHtmxToReloadRatherThanLeavingTheScreenUnchanged(t *t
 	} {
 		t.Run(name, func(t *testing.T) {
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			r.Header.Set("HX-Request", "true")
+			r.Header.Set("YPY-Request", "true")
 
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, r)
 
-			if rec.Header().Get("HX-Refresh") != "true" {
-				t.Error("htmx was given nothing to do, so the form did nothing and said nothing")
+			if rec.Header().Get("YPY-Refresh") != "true" {
+				t.Error("YPY was given nothing to do, so the form did nothing and said nothing")
 			}
 			if rec.Code != middleware.StatusCSRFExpired {
 				t.Errorf("status = %d, want %d unchanged", rec.Code, middleware.StatusCSRFExpired)
@@ -291,8 +291,8 @@ func TestAPlainFormPostIsNotToldToReload(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/invoices", nil))
 
-	if got := rec.Header().Get("HX-Refresh"); got != "" {
-		t.Errorf("HX-Refresh = %q on a request no htmx sent", got)
+	if got := rec.Header().Get("YPY-Refresh"); got != "" {
+		t.Errorf("YPY-Refresh = %q on a request no YPY sent", got)
 	}
 	// And it has to name the field a form actually carries. A refusal that
 	// spells it any other way is the first thing somebody reads when a form

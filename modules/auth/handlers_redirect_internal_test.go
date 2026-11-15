@@ -9,23 +9,23 @@ import (
 // TestRedirectAnswersWhatTheClientCanActOn pins the branch, because the version
 // without it left a browser on a blank page.
 //
-// Signing in used to answer 200 with HX-Redirect and no body, whatever asked.
-// HTMX reads that header and navigates; nothing else does. A form posted with
+// Signing in used to answer 200 with YPY-Redirect and no body, whatever asked.
+// YPY reads that header and navigates; nothing else does. A form posted with
 // scripts off got a successful, empty, silent page -- the session was created
 // and the person was left staring at white.
 //
 // It is the same rule http.Context.Redirect applies, and the reason this test
 // exists is that having the rule in two places is what let one of them be wrong.
 func TestRedirectAnswersWhatTheClientCanActOn(t *testing.T) {
-	t.Run("HTMX gets the header it reads", func(t *testing.T) {
+	t.Run("YPY gets the header it reads", func(t *testing.T) {
 		rec := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
-		r.Header.Set("HX-Request", "true")
+		r.Header.Set("YPY-Request", "true")
 
 		redirect(rec, r, "/dashboard")
 
-		if got := rec.Header().Get("HX-Redirect"); got != "/dashboard" {
-			t.Errorf("HX-Redirect = %q, want /dashboard", got)
+		if got := rec.Header().Get("YPY-Redirect"); got != "/dashboard" {
+			t.Errorf("YPY-Redirect = %q, want /dashboard", got)
 		}
 		if rec.Code != http.StatusNoContent {
 			t.Errorf("status = %d, want 204", rec.Code)

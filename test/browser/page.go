@@ -21,7 +21,7 @@ import (
 //
 // Every action waits before it acts and after: for its element to be the only
 // visible match, enabled, still and not covered; and for the page to settle --
-// the document loaded, htmx quiet (every request settled or ended with nothing
+// the document loaded, YPY quiet (every request settled or ended with nothing
 // to swap), the network idle and animations finished. There is no sleep to
 // add, and no wait to call.
 //
@@ -397,16 +397,16 @@ func (p *Page) networkBusy() string {
 type pageState struct {
 	Doc       string `json:"doc"`
 	Ready     string `json:"ready"`
-	HTMX      bool   `json:"htmx"`
+	YPY       bool   `json:"ypy"`
 	Animating bool   `json:"animating"`
 	URL       string `json:"url"`
 	Leaving   int64  `json:"leaving"`
 }
 
-const stateExpression = `(window.__arandu ? window.__arandu.state() : {doc: '', ready: document.readyState, htmx: true, animating: false, url: location.href, leaving: -1})`
+const stateExpression = `(window.__arandu ? window.__arandu.state() : {doc: '', ready: document.readyState, ypy: true, animating: false, url: location.href, leaving: -1})`
 
 // settle waits until the page is still: the document complete and not being
-// left, htmx quiet, the network idle and no finite animation running.
+// left, YPY quiet, the network idle and no finite animation running.
 func (p *Page) settle(ctx context.Context) error {
 	waiting := ""
 	for {
@@ -425,8 +425,8 @@ func (p *Page) settle(ctx context.Context) error {
 				waiting = "the document is " + s.Ready
 			case s.Leaving >= 0 && s.Leaving < 2000:
 				waiting = "the document is being left for another"
-			case !s.HTMX:
-				waiting = "htmx requests have not settled"
+			case !s.YPY:
+				waiting = "YPY requests have not settled"
 			case s.Animating:
 				waiting = "animations are running"
 			default:
@@ -713,7 +713,7 @@ func (p *Page) CheckIn(l Locator, want bool) {
 }
 
 // Submit submits the form of the field filled last, or the only form on the
-// page, the way pressing Enter in it does: the submit event fires, so htmx and
+// page, the way pressing Enter in it does: the submit event fires, so YPY and
 // validation see it.
 func (p *Page) Submit() {
 	p.t.Helper()

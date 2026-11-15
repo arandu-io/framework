@@ -31,8 +31,8 @@ func signInScreen() *Module {
 //
 // The answer was a bare <div class="alert"> with no document around it. To a
 // browser that IS the whole page: an error on a blank background, with no form
-// to type into and no way back except the back button. To htmx it was nothing at
-// all -- htmx swaps no 4xx, so the screen stayed exactly as it was and the
+// to type into and no way back except the back button. To YPY it was nothing at
+// all -- YPY swaps no 4xx, so the screen stayed exactly as it was and the
 // person saw a button that did nothing.
 func TestAWrongPasswordIsAnsweredWithTheSignInScreenAndNotABareFragment(t *testing.T) {
 	rec := httptest.NewRecorder()
@@ -69,23 +69,23 @@ func TestARefusedSignInKeepsTheAddressThatWasTyped(t *testing.T) {
 	}
 }
 
-// The form posts natively rather than through hx-boost, and that is the whole
-// reason the refusal above is visible: htmx's response handling is
+// The form posts natively rather than through ypy-boost, and that is the whole
+// reason the refusal above is visible: YPY's response handling is
 // `{code:"[45]..", swap:false, error:true}`, so a boosted post leaves every 4xx
-// on the floor. The guards' answer -- HX-Refresh -- cannot be used here, because
+// on the floor. The guards' answer -- YPY-Refresh -- cannot be used here, because
 // reloading the sign-in screen throws away both the message and the address.
 func TestTheSignInFormPostsInAWayThatCanShowARefusal(t *testing.T) {
 	rec := httptest.NewRecorder()
 	signInScreen().renderLogin(rec, httptest.NewRequest(http.MethodGet, "/auth/login", nil), http.StatusOK, "", nil)
 
 	body := rec.Body.String()
-	if !strings.Contains(body, `<form method="post" action="/auth/login" hx-boost="false"`) {
-		t.Error("the form is boosted, so htmx discards every refusal it answers and the screen does not change")
+	if !strings.Contains(body, `<form method="post" action="/auth/login" ypy-boost="false"`) {
+		t.Error("the form is boosted, so YPY discards every refusal it answers and the screen does not change")
 	}
 }
 
 // The token still has to travel: a native post carries it in the hidden field
-// and not in the hx-headers attribute, so the field is submitted back through
+// and not in the ypy-headers attribute, so the field is submitted back through
 // the middleware that reads it.
 //
 // Submitted rather than matched against a name written out here, because the

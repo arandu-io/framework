@@ -177,7 +177,7 @@ func TestEveryVerbAResourceRegistersReachesTheHandler(t *testing.T) {
 
 // A delete has no form to hide a field in, and net/http never parses a DELETE
 // body into one. The token therefore has to arrive in the header, which is what
-// the generated markup does with hx-headers: a client that sent it only in the
+// the generated markup does with ypy-headers: a client that sent it only in the
 // body would arrive at the guard carrying nothing, and the only way to make the
 // test pass would be to turn the guard off.
 func TestADeleteCarriesTheTokenWhereAGuardCanReadIt(t *testing.T) {
@@ -239,29 +239,29 @@ func echoHeader(t *testing.T, name string) http.Handler {
 }
 
 // A header set on the client is sent by every request afterwards, not just the
-// next one: a page that boosts fires HX-Request on everything it sends, and a
+// next one: a page that boosts fires YPY-Request on everything it sends, and a
 // seam that held for one call would describe a client nobody has.
 func TestAHeaderHoldsForEveryLaterRequest(t *testing.T) {
-	client := test.NewClient(t, echoHeader(t, "HX-Request"))
+	client := test.NewClient(t, echoHeader(t, "YPY-Request"))
 
-	client.Get("/").AssertSee("HX-Request is nothing")
+	client.Get("/").AssertSee("YPY-Request is nothing")
 
-	client.WithHeader("HX-Request", "true")
-	client.Get("/").AssertSee("HX-Request is true")
-	client.Post("/", nil).AssertSee("HX-Request is true")
-	client.Delete("/", nil).AssertSee("HX-Request is true")
+	client.WithHeader("YPY-Request", "true")
+	client.Get("/").AssertSee("YPY-Request is true")
+	client.Post("/", nil).AssertSee("YPY-Request is true")
+	client.Delete("/", nil).AssertSee("YPY-Request is true")
 }
 
-// Saying a request is not an HTMX one after saying the others were is the other
+// Saying a request is not a YPY one after saying the others were is the other
 // half of the seam. Without it a test would have to build a second client to
 // ask the same handler the same question the other way.
 func TestAnEmptyValueRemovesTheHeader(t *testing.T) {
-	client := test.NewClient(t, echoHeader(t, "HX-Request")).WithHeader("HX-Request", "true")
+	client := test.NewClient(t, echoHeader(t, "YPY-Request")).WithHeader("YPY-Request", "true")
 
-	client.Get("/").AssertSee("HX-Request is true")
+	client.Get("/").AssertSee("YPY-Request is true")
 
-	client.WithHeader("HX-Request", "")
-	client.Get("/").AssertSee("HX-Request is nothing")
+	client.WithHeader("YPY-Request", "")
+	client.Get("/").AssertSee("YPY-Request is nothing")
 }
 
 // The client reads a token off the last page and sends it. A test that wants to
@@ -283,17 +283,17 @@ func TestAHeaderTheTestSetsReplacesTheOneTheClientInferred(t *testing.T) {
 	client.Delete("/invoices/1", nil).AssertSee("guard read stolen")
 }
 
-// The path the generator emits, end to end: hx-delete on a button, the token in
-// hx-headers because there is no form to hide it in, and a handler that answers
-// an HTMX request with HX-Redirect and no body. AssertRedirect could already
+// The path the generator emits, end to end: ypy-delete on a button, the token in
+// ypy-headers because there is no form to hide it in, and a handler that answers
+// a YPY request with YPY-Redirect and no body. AssertRedirect could already
 // read that header; until now nothing could provoke it.
-func TestTheHTMXDeleteThePayloadGeneratorEmitsIsReachable(t *testing.T) {
+func TestTheYPYDeleteThePayloadGeneratorEmitsIsReachable(t *testing.T) {
 	client := test.NewClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			_, _ = w.Write([]byte(tokenPage))
 			return
 		}
-		if r.Method != http.MethodDelete || r.Header.Get("HX-Request") == "" {
+		if r.Method != http.MethodDelete || r.Header.Get("YPY-Request") == "" {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -301,12 +301,12 @@ func TestTheHTMXDeleteThePayloadGeneratorEmitsIsReachable(t *testing.T) {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		w.Header().Set("HX-Redirect", "/invoices")
+		w.Header().Set("YPY-Redirect", "/invoices")
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
 	client.Get("/invoices/1")
-	client.WithHeader("HX-Request", "true").
+	client.WithHeader("YPY-Request", "true").
 		Delete("/invoices/1", nil).
 		AssertStatus(http.StatusNoContent).
 		AssertRedirect("/invoices")

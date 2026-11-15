@@ -23,7 +23,7 @@
 Arandu is a Go framework for web applications, services and APIs, built around
 three things, in this order: **development speed** — a small, predictable
 surface, and a generator that emits a full module (screens, migration, policy)
-in one shot; **performance** — a single compiled binary, HTML over HTMX instead
+in one shot; **performance** — a single compiled binary, HTML over YPY instead
 of a JavaScript bundle, so there is no template runtime, no hydration step and
 no Node in the request path; and **authorization the compiler charges for** — a
 `Grant` has only unexported fields, and reaching the database without one does

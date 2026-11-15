@@ -343,38 +343,38 @@ func TestAnAddressWithAScopeIsStillOneAddress(t *testing.T) {
 }
 
 // The rate limit is the third refusal in this package, and it refused in a shape
-// htmx throws away: its response handling is `{code:"[45]..", swap:false,
+// YPY throws away: its response handling is `{code:"[45]..", swap:false,
 // error:true}`, so the person pressed the button once too often and the screen
 // did not change at all -- which reads as the application being broken, and the
 // next thing anybody does about a button that did nothing is press it again.
 //
-// HX-Refresh reloads the page as an ordinary navigation, and that request is not
-// an htmx one, so the same limit answers the same refusal and the browser
+// YPY-Refresh reloads the page as an ordinary navigation, and that request is not
+// a YPY one, so the same limit answers the same refusal and the browser
 // renders it. Nothing in the throttle itself decides this: it comes from the
 // Refuse handed to it, which is why it is measured here, with the Refuse an
 // application passes.
 func TestSomebodyOverTheRateLimitIsToldSoInAShapeTheirScreenCanShow(t *testing.T) {
 	h := throttled(t, cache.NewArrayStore(), cache.PerMinute(1), middleware.KeyByIP)
 
-	htmx := func() *http.Request {
+	ypy := func() *http.Request {
 		r := httptest.NewRequest(http.MethodGet, "/inbox/rows", nil)
-		r.Header.Set("HX-Request", "true")
+		r.Header.Set("YPY-Request", "true")
 		return r
 	}
-	h.ServeHTTP(httptest.NewRecorder(), htmx())
+	h.ServeHTTP(httptest.NewRecorder(), ypy())
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, htmx())
+	h.ServeHTTP(rec, ypy())
 
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("status = %d, want 429 -- the status is what a log and a probe read, and it does not change", rec.Code)
 	}
-	if rec.Header().Get("HX-Refresh") != "true" {
-		t.Error("htmx was given nothing to do with this refusal, so the person clicked and nothing happened at all")
+	if rec.Header().Get("YPY-Refresh") != "true" {
+		t.Error("YPY was given nothing to do with this refusal, so the person clicked and nothing happened at all")
 	}
 }
 
-// The other half: a browser that is not running htmx already renders the body,
+// The other half: a browser that is not running YPY already renders the body,
 // and telling it to reload would replace the sentence with the page the person
 // was on and explain nothing.
 func TestAPlainBrowserOverTheRateLimitIsNotToldToReload(t *testing.T) {
@@ -384,8 +384,8 @@ func TestAPlainBrowserOverTheRateLimitIsNotToldToReload(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/inbox", nil))
 
-	if got := rec.Header().Get("HX-Refresh"); got != "" {
-		t.Errorf("HX-Refresh = %q on a request no htmx sent", got)
+	if got := rec.Header().Get("YPY-Refresh"); got != "" {
+		t.Errorf("YPY-Refresh = %q on a request no YPY sent", got)
 	}
 	// The sentence and the header have to agree: two different numbers of
 	// seconds is worse than one of them being absent.

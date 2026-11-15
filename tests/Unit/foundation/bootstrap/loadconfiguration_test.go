@@ -823,7 +823,7 @@ func TestTheReloadScriptFollowsDebugAndNothingElse(t *testing.T) {
 		t.Error("the reload script is on with debug off")
 	}
 	if !cfg.View.Fragments {
-		t.Error("fragments are off; every HTMX swap would re-render the chrome around the part that changed")
+		t.Error("fragments are off; every YPY swap would re-render the chrome around the part that changed")
 	}
 }
 

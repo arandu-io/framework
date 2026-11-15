@@ -86,7 +86,7 @@ import (
 // middleware mounts with the route, under the same IsDev, and a project that
 // never heard of any of this gets it.
 //
-// It injects only into a document that has a </body>. An HTMX fragment does not,
+// It injects only into a document that has a </body>. A YPY fragment does not,
 // so a swap never receives a second EventSource -- which would otherwise
 // accumulate one connection per interaction until the browser's six-per-origin
 // limit closed the page down.
@@ -241,7 +241,7 @@ func (h *htmlRecorder) finish() {
 		return
 	}
 	body := h.buf.Bytes()
-	// The close tag is the test for a whole document. An HTMX fragment has no
+	// The close tag is the test for a whole document. A YPY fragment has no
 	// </body>, and injecting into one would add a listener per swap.
 	if at := bytes.LastIndex(body, []byte("</body>")); at >= 0 && len(h.reloadTag) > 0 {
 		out := make([]byte, 0, len(body)+len(h.reloadTag))

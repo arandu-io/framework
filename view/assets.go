@@ -76,9 +76,9 @@ func Assets() []Asset { return hview.Assets() }
 // callers this bridge carries wrote Asset.
 type Asset = hview.Registration
 
-// URL returns the versioned path of an asset: /_arandu/assets/<hash>/htmx.min.js
+// URL returns the versioned path of an asset: /_arandu/assets/<hash>/ypy-compat.min.js
 //
-// The hash comes from the content, so upgrading HTMX changes the URL and no
+// The hash comes from the content, so upgrading YPY changes the URL and no
 // browser serves a stale script -- without anyone remembering to bump a version.
 //
 // The name it forwards to is [github.com/arandu-io/hesape/view.Asset], and

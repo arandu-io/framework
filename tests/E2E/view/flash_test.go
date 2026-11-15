@@ -25,7 +25,7 @@ import (
 //
 // A form was submitted, it was rejected, the messages existed -- and the person
 // saw the form again with nothing on it. The messages were in a 422 body that
-// htmx threw away, and even where they were not, nothing carried them across the
+// YPY threw away, and even where they were not, nothing carried them across the
 // redirect that followed. Every hop below is a real one: a real router, a real
 // kernel pipeline, a real cookie going into a browser and coming back out, and a
 // real view rendering from view.Page.
@@ -176,15 +176,15 @@ func TestAPasswordOneCharacterShortComesBackOnTheScreen(t *testing.T) {
 	}
 }
 
-// TestARejectedFormUnderHTMXLandsOnTheSameScreen is the same journey made by the
+// TestARejectedFormUnderYPYLandsOnTheSameScreen is the same journey made by the
 // client that made the original bug invisible.
 //
-// htmx does not swap a 4xx, so the 422 that used to answer here was fetched,
-// discarded, and never seen. HX-Redirect makes the browser navigate, and the
+// YPY does not swap a 4xx, so the 422 that used to answer here was fetched,
+// discarded, and never seen. YPY-Redirect makes the browser navigate, and the
 // navigation is an ordinary page request -- so the message arrives by the same
 // route as for a client with no JavaScript at all, which is the point of
 // answering a rejection with a redirect rather than with a body.
-func TestARejectedFormUnderHTMXLandsOnTheSameScreen(t *testing.T) {
+func TestARejectedFormUnderYPYLandsOnTheSameScreen(t *testing.T) {
 	handler := signupApp(t)
 	jar := cookieJar{}
 
@@ -192,15 +192,15 @@ func TestARejectedFormUnderHTMXLandsOnTheSameScreen(t *testing.T) {
 	post := httptest.NewRequest(http.MethodPost, "http://example.test/signup", form)
 	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	post.Header.Set("Referer", "http://example.test/signup")
-	post.Header.Set("HX-Request", "true")
+	post.Header.Set("YPY-Request", "true")
 	rejected := httptest.NewRecorder()
 	handler.ServeHTTP(rejected, post)
 
-	if to := rejected.Header().Get("HX-Redirect"); to != "/signup" {
-		t.Fatalf("HX-Redirect = %q, want %q -- htmx would have thrown the answer away", to, "/signup")
+	if to := rejected.Header().Get("YPY-Redirect"); to != "/signup" {
+		t.Fatalf("YPY-Redirect = %q, want %q -- YPY would have thrown the answer away", to, "/signup")
 	}
 	if rejected.Code != http.StatusNoContent {
-		t.Fatalf("answered %d, want %d: a body alongside HX-Redirect is swapped in before the browser navigates",
+		t.Fatalf("answered %d, want %d: a body alongside YPY-Redirect is swapped in before the browser navigates",
 			rejected.Code, http.StatusNoContent)
 	}
 	jar.take(rejected)
@@ -212,14 +212,14 @@ func TestARejectedFormUnderHTMXLandsOnTheSameScreen(t *testing.T) {
 	handler.ServeHTTP(landed, get)
 
 	if !strings.Contains(landed.Body.String(), "must be at least 12 characters") {
-		t.Errorf("the HTMX journey ended on a page with no message on it:\n%s", landed.Body.String())
+		t.Errorf("the YPY journey ended on a page with no message on it:\n%s", landed.Body.String())
 	}
 }
 
 // TestTheFlashIsNotSpentByTheFragmentTheLandingPageFires is the failure mode of
 // consuming the flash on anything that asks.
 //
-// A page fires its own hx-get on arrival -- a table, a counter, a notification
+// A page fires its own ypy-get on arrival -- a table, a counter, a notification
 // poll. If that request spent the one-shot flash, the page underneath it would
 // render with nothing on it, and the bug would come back in a form that only
 // appears on screens busy enough to have a fragment.
@@ -238,7 +238,7 @@ func TestTheFlashIsNotSpentByTheFragmentTheLandingPageFires(t *testing.T) {
 	// What XHR sends: */*, not text/html.
 	fragment := httptest.NewRequest(http.MethodGet, "http://example.test/signup", nil)
 	fragment.Header.Set("Accept", "*/*")
-	fragment.Header.Set("HX-Request", "true")
+	fragment.Header.Set("YPY-Request", "true")
 	jar.put(fragment)
 	swap := httptest.NewRecorder()
 	handler.ServeHTTP(swap, fragment)

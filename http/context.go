@@ -22,7 +22,7 @@ import (
 //
 // The alias is what keeps it one type rather than two. It also carries the
 // accessors the move added -- Header, Path, Method, IP, BearerToken, Cookie,
-// IsHTMX, WantsJSON, User, RedirectRoute -- which is a widening of the surface
+// IsYPY, WantsJSON, User, RedirectRoute -- which is a widening of the surface
 // and not a change to any signature that already existed.
 //
 // Context.Validate is the one name that did not survive: it had no caller
@@ -41,7 +41,7 @@ type Renderer = hhttp.Renderer
 // Redirect is Context.Redirect for the code that holds a raw ResponseWriter: a
 // middleware, or a handler registered with Get rather than Action.
 //
-// An HTMX request gets HX-Redirect and 204, because a 302 would be followed
+// A YPY request gets YPY-Redirect and 204, because a 302 would be followed
 // inside the fragment and nest the whole page in a div. Everything else gets
 // 303, which after a POST is what tells the browser to GET the next address
 // instead of posting the body to it again.
@@ -54,7 +54,7 @@ func Redirect(w http.ResponseWriter, r *http.Request, to string) { hhttp.Redirec
 // Refuse answers a refusal that the person in front of the browser can see.
 //
 // The status and the sentence are the caller's and are unchanged: 403 stays 403
-// and 419 stays 419. What it adds is HX-Refresh, because htmx swaps no 4xx --
+// and 419 stays 419. What it adds is YPY-Refresh, because YPY swaps no 4xx --
 // without it a guard's 403 reached somebody as a button that did nothing.
 func Refuse(w http.ResponseWriter, r *http.Request, status int, message string) {
 	hhttp.Refuse(w, r, status, message)

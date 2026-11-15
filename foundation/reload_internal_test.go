@@ -44,11 +44,11 @@ func TestADocumentIsGivenTheReloadScript(t *testing.T) {
 	}
 }
 
-// The one that matters most. An HTMX swap replaces a fragment, and a fragment
+// The one that matters most. A YPY swap replaces a fragment, and a fragment
 // carrying the script would open one EventSource per interaction -- until the
 // browser's six-per-origin limit is reached and the page stops working, which
 // looks like anything except a dev-server feature.
-func TestAnHTMXFragmentIsLeftAlone(t *testing.T) {
+func TestAYPYFragmentIsLeftAlone(t *testing.T) {
 	rec := serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(`<li id="comment-4">Said something</li>`))

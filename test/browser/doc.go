@@ -26,7 +26,7 @@
 // There is nothing to wait for by hand. Each action waits for its element to
 // be visible, enabled, still and not covered, then acts with the pointer or
 // the keyboard, then waits for the page to settle: the document loaded, every
-// htmx request settled or ended with nothing to swap, the network idle, the
+// YPY request settled or ended with nothing to swap, the network idle, the
 // animations over. Each expectation retries until it holds or the step's
 // timeout passes, and then says what it last saw.
 //
