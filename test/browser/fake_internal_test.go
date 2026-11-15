@@ -45,7 +45,7 @@ func (f *fakeDriver) Evaluate(ctx context.Context, expression string, result any
 	var answer any
 	switch {
 	case expression == stateExpression:
-		answer = map[string]any{"doc": "d", "ready": "complete", "ypy": true, "animating": false, "url": "http://app.test/", "leaving": -1}
+		answer = map[string]any{"doc": "d", "ready": "complete", "ypyIdle": true, "animating": false, "url": "http://app.test/", "leaving": -1}
 	case strings.Contains(expression, "dom:"):
 		answer = map[string]any{"url": "http://app.test/", "dom": "<html><body>fake</body></html>"}
 	case strings.HasSuffix(expression, "text()"):

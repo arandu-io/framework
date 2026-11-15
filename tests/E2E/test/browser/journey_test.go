@@ -43,7 +43,7 @@ func (a *invoices) handler() http.Handler {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Content-Security-Policy", "script-src 'self'")
 		fmt.Fprintf(w, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Invoices</title>
-<meta name="ypy-config" content='{"compat":"v2","includeIndicatorStyles":false}'><script src="%s"></script><script src="/app.js"></script></head><body><main>%s</main></body></html>`, view.Asset("ypy-compat.min.js"), body)
+<script src="%s"></script><script src="/app.js"></script></head><body><main>%s</main></body></html>`, view.Asset("ypy.min.js"), body)
 	}
 	mux.HandleFunc("/app.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")

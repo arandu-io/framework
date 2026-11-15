@@ -116,6 +116,11 @@ func TestActingAsAcceptsADeclaredGuest(t *testing.T) {
 // that loads it has a token to send afterwards.
 const tokenPage = `<form method="post"><input type="hidden" name="_token" value="tok-1"></form>`
 
+// metaTokenPage is a page with no form: the token is in the ypy-csrf meta tag
+// the way a page that deletes with a button carries it.
+const metaTokenPage = `<html><head><meta name="ypy-csrf" content="tok-1"></head>` +
+	`<body><button ypy-delete="/invoices/1">Delete</button></body></html>`
+
 // tokenOf reads the token off a request the way a guard reads it: the header
 // first, then the parsed form. The order is not a preference -- net/http parses
 // a body into the form only for POST, PUT and PATCH, so on a DELETE the header
@@ -177,7 +182,7 @@ func TestEveryVerbAResourceRegistersReachesTheHandler(t *testing.T) {
 
 // A delete has no form to hide a field in, and net/http never parses a DELETE
 // body into one. The token therefore has to arrive in the header, which is what
-// the generated markup does with ypy-headers: a client that sent it only in the
+// the generated markup does with the ypy-csrf meta tag: a client that sent it only in the
 // body would arrive at the guard carrying nothing, and the only way to make the
 // test pass would be to turn the guard off.
 func TestADeleteCarriesTheTokenWhereAGuardCanReadIt(t *testing.T) {
@@ -284,13 +289,13 @@ func TestAHeaderTheTestSetsReplacesTheOneTheClientInferred(t *testing.T) {
 }
 
 // The path the generator emits, end to end: ypy-delete on a button, the token in
-// ypy-headers because there is no form to hide it in, and a handler that answers
+// the ypy-csrf meta tag because there is no form to hide it in, and a handler that answers
 // a YPY request with YPY-Redirect and no body. AssertRedirect could already
 // read that header; until now nothing could provoke it.
 func TestTheYPYDeleteThePayloadGeneratorEmitsIsReachable(t *testing.T) {
 	client := test.NewClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			_, _ = w.Write([]byte(tokenPage))
+			_, _ = w.Write([]byte(metaTokenPage))
 			return
 		}
 		if r.Method != http.MethodDelete || r.Header.Get("YPY-Request") == "" {
@@ -353,4 +358,26 @@ func TestATokenInTheFormReplacesTheOneOnThePage(t *testing.T) {
 
 	client.Get("/invoices/1")
 	client.Post("/invoices/1", nil).AssertSee("form carries tok-1")
+}
+
+// The meta tag is read whichever order its attributes are written in, because
+// the page that carries it is not written by this client.
+func TestTheClientReadsTheTokenFromTheMetaTagInEitherAttributeOrder(t *testing.T) {
+	for name, page := range map[string]string{
+		"name first":    `<meta name="ypy-csrf" content="tok-9">`,
+		"content first": `<meta content="tok-9" name="ypy-csrf">`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := test.NewClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet {
+					_, _ = w.Write([]byte(page))
+					return
+				}
+				_, _ = w.Write([]byte("header " + r.Header.Get("X-CSRF-Token")))
+			}))
+
+			client.Get("/invoices/1")
+			client.Delete("/invoices/1", nil).AssertSee("header tok-9")
+		})
+	}
 }

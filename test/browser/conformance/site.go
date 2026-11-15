@@ -31,7 +31,7 @@ func site() http.Handler {
 			fmt.Fprint(w, source)
 		})
 	}
-	ypy := `<script src="` + view.Asset("ypy-compat.min.js") + `"></script>`
+	ypy := `<script src="` + view.Asset("ypy.min.js") + `"></script>`
 
 	page("/", `<h1>Conformance</h1><p>The suite every driver passes.</p>`)
 
