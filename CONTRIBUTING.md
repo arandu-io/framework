@@ -20,10 +20,16 @@ before their first patch.
 ## Before you open a pull request
 
 ```
+export GOWORK=off
 gofmt -l $(find . -name '*.go' -not -path '*/testdata/*' -not -name '*.kyse.go')   # no output
+go build ./...
 go vet ./...
-go test -race ./...
+go test -race -count=1 ./...
 ```
+
+`GOWORK=off` makes the run build what a consumer downloads, rather than what a
+local workspace redirects. The end-to-end suites sit behind the `e2e` build tag,
+which CI passes; see `AGENTS.md`.
 
 CI runs these, along with several other checks; `.github/workflows/ci.yml` is
 what decides, and reading it beats any list kept here, which goes stale. One
