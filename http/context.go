@@ -54,8 +54,9 @@ func Redirect(w http.ResponseWriter, r *http.Request, to string) { hhttp.Redirec
 // Refuse answers a refusal that the person in front of the browser can see.
 //
 // The status and the sentence are the caller's and are unchanged: 403 stays 403
-// and 419 stays 419. What it adds is YPY-Refresh, because YPY swaps no 4xx --
-// without it a guard's 403 reached somebody as a button that did nothing.
+// and 419 stays 419. What it adds is YPY-Refresh, because YPY swaps an error
+// response into the target of the request -- without it a guard's 403 reached
+// somebody as a sentence dropped into the middle of the page they were on.
 func Refuse(w http.ResponseWriter, r *http.Request, status int, message string) {
 	hhttp.Refuse(w, r, status, message)
 }

@@ -76,7 +76,7 @@ func Assets() []Asset { return hview.Assets() }
 // callers this bridge carries wrote Asset.
 type Asset = hview.Registration
 
-// URL returns the versioned path of an asset: /_arandu/assets/<hash>/ypy-compat.min.js
+// URL returns the versioned path of an asset: /_arandu/assets/<hash>/ypy.min.js
 //
 // The hash comes from the content, so upgrading YPY changes the URL and no
 // browser serves a stale script -- without anyone remembering to bump a version.

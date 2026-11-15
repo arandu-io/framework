@@ -179,8 +179,9 @@ func TestAPasswordOneCharacterShortComesBackOnTheScreen(t *testing.T) {
 // TestARejectedFormUnderYPYLandsOnTheSameScreen is the same journey made by the
 // client that made the original bug invisible.
 //
-// YPY does not swap a 4xx, so the 422 that used to answer here was fetched,
-// discarded, and never seen. YPY-Redirect makes the browser navigate, and the
+// A 422 that carried the messages in its body would be swapped into the form
+// that sent it, and the person would be left on a screen a reload re-posts.
+// YPY-Redirect makes the browser navigate, and the
 // navigation is an ordinary page request -- so the message arrives by the same
 // route as for a client with no JavaScript at all, which is the point of
 // answering a rejection with a redirect rather than with a body.

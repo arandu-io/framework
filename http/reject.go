@@ -19,9 +19,8 @@ import (
 // from, with the messages and with what was typed still in the boxes.
 //
 // The answer to a rejected form is a redirect, not a body. A 422 carrying the
-// messages in the markup is thrown away by YPY unless the layout has
-// reconfigured its response handling, and even where it was swapped in a reload
-// re-posted the form.
+// messages in the markup is swapped by YPY into whatever the request
+// targeted, and a reload of it re-posts the form.
 //
 // The errs parameter keeps the framework's validation.Errors rather than
 // naming hesape's, so the signature every caller is written against is

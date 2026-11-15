@@ -105,7 +105,8 @@ func TestAnErrorThatNamesItsStatusIsAnsweredWithIt(t *testing.T) {
 				if rec.Code != tc.want {
 					t.Fatalf("status = %d, want %d", rec.Code, tc.want)
 				}
-				// YPY swaps no 4xx, so the answer it acts on is the reload.
+				// YPY would swap the sentence into the page, so the answer it
+				// acts on is the reload.
 				if got := rec.Header().Get("YPY-Refresh"); got != "true" {
 					t.Errorf("YPY-Refresh = %q, want true: without it the click does nothing visible", got)
 				}

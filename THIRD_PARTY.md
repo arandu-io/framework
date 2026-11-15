@@ -27,18 +27,21 @@ it, and where a reader would take it for the file a browser receives.
 
 ---
 
-## YPY — `ypy-compat.min.js`
+## YPY — `ypy.min.js` and `ypy-csrf.min.js`
 
 | | |
 |---|---|
-| Version | 0.1.0-dev (the file reports `0.1.0-dev-compat` at run time) |
+| Version | 0.1.0-dev |
 | Author | HYZIS - SERVICOS DIGITAIS LTDA - EPP |
 | Home | none published yet; the public address is recorded here when the first release is tagged |
 | License | MIT |
 
-The compatibility build of YPY: the core plus the layer that reproduces the
-behaviour of the 2.x line, which the pages this framework draws pin with
-`"compat":"v2"` in the `ypy-config` meta tag.
+The core of YPY, the hypermedia framework the pages this framework draws are
+written for, and its `ypy-csrf` extension, which sends the token of the
+`ypy-csrf` meta tag on every request that changes state. HYZIS wrote it and it
+is not a third party in the sense of the rest of this list; it is recorded here
+because it is a separate work with its own licence, embedded by hesape and
+therefore redistributed in every binary.
 
 ```
 The MIT License (MIT)

@@ -20,9 +20,10 @@ const StatusCSRFExpired = hmiddleware.StatusCSRFExpired
 // session sessionIDFrom names or, for a visitor with none, to a guest cookie.
 // The token it issued is put on the request context, where view.New reads it.
 // A form carries it as the hidden field @csrf writes, and a YPY page sends
-// it as a header on every request, from the body:
+// it as a header on every request that changes state, from a meta tag the
+// ypy-csrf extension reads:
 //
-//	<body ypy-headers='{"X-CSRF-Token": "{{ .CSRFToken }}"}'>
+//	<meta name="ypy-csrf" content="{{ .CSRFToken }}">
 //
 // It is hesape/http/middleware.CSRFProtect under its old name.
 func CSRFProtect(c *security.CSRF, sessionIDFrom func(*http.Request) string, opts ...CSRFOption) func(http.Handler) http.Handler {

@@ -19,6 +19,46 @@ down here fails the build.
 
 ---
 
+## v0.69.0 — YPY replaces the hypermedia library
+
+This release requires `hesape` v0.107.0, which embeds YPY and renames what the old library's name was written into.
+One method of `Context` goes with its name, and every page that carries an attribute, a header or an event of the old
+library stops working until it is converted.
+
+**What stops compiling, or stops working at start**
+
+| Before | After |
+|---|---|
+| The `Context` method that carried the old library's name | `Context.IsYPY`: the same rule, the request carries `YPY-Request`, and the same `Vary` entry |
+| `view.URL` or `view.Asset` with the old library's script name | `view.URL("ypy.min.js")`, and `view.URL("ypy-csrf.min.js")` for the extension that sends the token |
+
+**What changes without a compiler error**
+
+- **Headers.** The framework reads `YPY-Request` and writes `YPY-Redirect`, `YPY-Refresh` and `Vary: YPY-Request`. A
+  proxy, a cache rule or a client that matched the old names has to match these. The client does not send
+  `X-Requested-With`: the code that told a script's request from a page's reads `YPY-Request`, and still reads
+  `X-Requested-With` for a script of its own.
+- **CSRF.** A page gives the token to YPY in `<meta name="ypy-csrf" content="{{ .CSRFToken }}">` and loads
+  `ypy-csrf.min.js`. The extension sends it on every same-origin request that is not a GET, whatever element started
+  it, and renews it from the `YPY-CSRF` response header. A body attribute that carried the token in a header is no
+  longer how a page does it. A form still carries the hidden `_token` field, which is what a post without scripts uses.
+- **Only the native behavior.** There is no compatibility layer and no profile: the default swap is a morph, an
+  attribute reaches its descendants only with `:inherited` (`ypy-boost:inherited="true"` on `<body>`), and an error
+  response is swapped by the rules of `ypy-error-*` instead of being dropped. The sign-in screen the framework ships is
+  written that way, and still posts its form natively so a refusal is one page in every client.
+- **Events and states.** `test/browser` follows `ypy:before:request` to `ypy:finally:request` and the `ypy-request`,
+  `ypy-swapping` and `ypy-settling` classes to know when the page is idle. A test that read the old events through
+  `Page.Evaluate` follows the names in the YPY guide.
+- **The test client reads the token from the meta tag** when the page it loaded has no form carrying the hidden field,
+  so a page that deletes with a button no longer needs a form to be exercised.
+
+**How to convert an application**
+
+Run `ypy migrate --write .` from the YPY checkout, replace the script with the one `view.Asset("ypy.min.js")` names,
+and work through what `ypy check .` lists: it separates what breaks from what only behaves differently.
+
+---
+
 ## v0.68.0 — the cookies, the storage keys and the asset path carry the application's name
 
 This release requires `hesape` v0.106.0. `bootstrap.Configuration` has a new field, `Brand`, read from `APP_NAME`, and
@@ -1042,7 +1082,7 @@ What to check:
 
 An action's error is now answered in the representation the request asked for.
 `Context.WantsJSON` decides it: `Accept` names `application/json`, or the
-request is an XHR that is not YPY. It is the default rule the exception
+request is an XHR that is not one from the old library. It is the default rule the exception
 handler already applied to a failure that never reached an action; an
 `exception.Config.RenderJSONWhen` an application set is not read here.
 
@@ -1061,7 +1101,7 @@ What to check:
 - **A JSON client that followed the 303** and read the flash, or parsed the
   `text/plain` body of a refusal, reads the problem instead. It receives no
   `Location` and no flash cookie.
-- **A YPY request is answered as a page** whatever it accepts, because it
+- **A request from the old library is answered as a page** whatever it accepts, because it
   swaps HTML.
 - **A JSON client no longer needs the flash**: on a router without `WithFlash`
   its rejection is answered 422. A page's rejection there still panics.
@@ -1203,7 +1243,8 @@ message. A body cut off by the size limit is answered 413 through the last row:
 `Bind` and `Validate` return a `PostTooLargeException` that declares it.
 
 The first match in that order wins. A whole page gets the status and the
-standard sentence for it; a YPY request gets the status and `YPY-Refresh`, the
+standard sentence for it; a request from the old library gets the status and its
+refresh header, the
 same answer the route guards and CSRF give. The error's own text is never
 shown. A declared status outside 400–599 panics, naming the type.
 
@@ -1307,7 +1348,7 @@ move, so a request that sends the token as a header is unaffected.
 
 A view that uses the `@csrf` directive needs no change — the directive writes
 the new spelling as of `hesape` v0.21.0, which this release requires. A form or
-a YPY request that writes the field by hand does:
+a request of the old library that writes the field by hand does:
 
 ```html
 <input type="hidden" name="_csrf" value="{{ .CSRFToken }}">   <!-- before -->
@@ -1613,7 +1654,7 @@ Four things changed and each is doing work:
   `RateLimiter.For` resolves to.
 - **`fhttp.Refuse`** is passed rather than assumed. `Throttle` takes the refusal
   as a parameter because how a 4xx is written belongs to the request layer — this
-  one adds `YPY-Refresh`, without which a person over the limit presses the button
+  one adds the old library's refresh header, without which a person over the limit presses the button
   and the screen does not change.
 - **The store can fail, and `Allow` could not say so.** `Throttle` lets the
   request through and logs at `ERROR`: a rate limiter that is down must not

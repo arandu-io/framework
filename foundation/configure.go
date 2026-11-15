@@ -503,8 +503,9 @@ func (m *Middleware) pipeline(a *Application, d *Drivers, exceptions *exception.
 	)
 	out = append(out, m.beforeThrottle...)
 	out = append(out,
-		// The refusal adds YPY-Refresh, without which somebody over the limit
-		// presses the button and the screen does not change.
+		// The refusal adds YPY-Refresh, without which the sentence of a
+		// refusal is swapped into the page somebody was on, in the place the
+		// request targeted.
 		hmiddleware.Throttle(d.Limiter, m.throttle, middleware.KeyBySession(d.Sessions), hhttp.Refuse),
 		middleware.CSRFProtect(d.CSRF, d.Sessions.IDFromRequest, middleware.CSRFExcept(append(m.moduleExcept, m.csrfExcept...)...), httpmiddleware.CSRFRefreshUnder(s.Framework.Brand)),
 		httpmiddleware.OverrideMethod(),
