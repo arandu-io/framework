@@ -367,7 +367,7 @@ func (d *Drivers) WrapMail(wrap func(next mail.Transport) (mail.Transport, error
 	return nil
 }
 
-// mailTransport picks the transport MAIL_URL asked for. There are five, and a
+// mailTransport picks the transport MAIL_URL asked for. There are six, and a
 // scheme that matches none is refused when the settings are read.
 func mailTransport(cfg bootstrap.Mail) mail.Transport {
 	switch cfg.Mailer {
@@ -382,9 +382,11 @@ func mailTransport(cfg bootstrap.Mail) mail.Transport {
 	case bootstrap.MailerArray:
 		return &mail.Array{}
 	case bootstrap.MailerResend:
-		return mail.Resend{Key: cfg.Key}
+		return mail.Resend{Key: cfg.Key, Endpoint: cfg.Endpoint}
 	case bootstrap.MailerSendGrid:
 		return mail.SendGrid{Key: cfg.Key}
+	case bootstrap.MailerMeeng:
+		return mail.Meeng{Key: cfg.Key, Endpoint: cfg.Endpoint}
 	default:
 		return mail.Log{}
 	}

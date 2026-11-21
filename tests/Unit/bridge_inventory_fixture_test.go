@@ -49,10 +49,11 @@ var historicalBridgeSurface = bridgeSurface{
 		func.New func.Render method.Address.String method.Address.Valid method.Array.Last
 		method.Array.Name method.Array.Reset method.Array.Send method.Array.Sent method.Log.Name
 		method.Log.Send method.Mailer.To method.Mailer.ToAddress method.Mailer.Transport
+		method.Meeng.Name method.Meeng.Send
 		method.Pending.BCC method.Pending.CC method.Pending.Send method.Resend.Name
 		method.Resend.Send method.SMTP.Name method.SMTP.Send method.SendGrid.Name
 		method.SendGrid.Send type.Address type.Array type.Content type.Envelope type.ErrRetryable
-		type.Log type.Mailable type.Mailer type.Message type.Pending type.Renderer type.Resend
+		type.Log type.Mailable type.Mailer type.Meeng type.Message type.Pending type.Renderer type.Resend
 		type.SMTP type.SendGrid type.Transport var.ErrNoRecipient
 	`),
 	"observability": inventoryItems(`

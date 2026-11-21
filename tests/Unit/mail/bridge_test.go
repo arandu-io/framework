@@ -15,6 +15,7 @@ package unit
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -223,6 +224,51 @@ func TestAProviderFailureIsStillRetryable(t *testing.T) {
 	}
 }
 
+// TestMeengPostsToTheAPIAndKeepsNothingBack proves the shell reaches hesape's
+// transport: the key becomes the Bearer, the body is the API's, and a failure
+// the API marks as worth retrying is still one.
+func TestMeengPostsToTheAPIAndKeepsNothingBack(t *testing.T) {
+	var auth string
+	var body map[string]any
+	status := http.StatusOK
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth = r.Header.Get("Authorization")
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(`{"emailId":"em_1"}`))
+	}))
+	defer server.Close()
+
+	message := mail.Message{
+		Envelope: mail.Envelope{
+			From:    mail.Address{Email: "app@example.test"},
+			To:      []mail.Address{{Email: "reader@example.test"}},
+			Subject: "Welcome",
+			Tags:    []string{"welcome"},
+		},
+		Text: "hello",
+	}
+	if err := (mail.Meeng{Key: "mg_test", Endpoint: server.URL}).Send(context.Background(), message); err != nil {
+		t.Fatalf("the message was not accepted: %v", err)
+	}
+	if auth != "Bearer mg_test" {
+		t.Errorf("the key did not reach the API: %q", auth)
+	}
+	if body["subject"] != "Welcome" || body["text"] != "hello" {
+		t.Errorf("body = %v", body)
+	}
+	if _, ok := body["tags"]; ok {
+		t.Error("a tag was sent to an API that refuses fields it does not name")
+	}
+
+	status = http.StatusTooManyRequests
+	err := mail.Meeng{Key: "mg_test", Endpoint: server.URL}.Send(context.Background(), message)
+	var retryable mail.ErrRetryable
+	if !errors.As(err, &retryable) {
+		t.Errorf("a rate limit answered %v, which no job can tell from a rejected address", err)
+	}
+}
+
 // TestTheShippedTransportsAnswerTheirNames is the shell around each of the five,
 // checked by the one method that needs no network.
 func TestTheShippedTransportsAnswerTheirNames(t *testing.T) {
@@ -232,6 +278,7 @@ func TestTheShippedTransportsAnswerTheirNames(t *testing.T) {
 		"array":    &mail.Array{},
 		"resend":   mail.Resend{},
 		"sendgrid": mail.SendGrid{},
+		"meeng":    mail.Meeng{},
 	} {
 		if got := transport.Name(); got != want {
 			t.Errorf("the transport named %q answers %q", want, got)

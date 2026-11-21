@@ -13,7 +13,8 @@
 //	hesape/mail            the vocabulary and the Mailer: Mailable, Envelope,
 //	                       Content, Message, Render, ErrNoRecipient, ErrRetryable
 //	hesape/mail/transport  the five transports that shipped here: SMTP, Log,
-//	                       Array, Resend, SendGrid
+//	                       Array, Resend, SendGrid, and Meeng, which MAIL_URL
+//	                       names with the meeng:// scheme
 //
 // The death date above is what keeps this from being a second way to import one
 // type. Nothing here holds an implementation: no message is rendered, no address
