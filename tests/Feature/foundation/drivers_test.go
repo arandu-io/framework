@@ -57,6 +57,18 @@ func TestTheMailURLPicksTheTransport(t *testing.T) {
 	}{
 		{"array://", func(tr mail.Transport) bool { _, ok := tr.(*mail.Array); return ok }},
 		{"resend://re_key", func(tr mail.Transport) bool { r, ok := tr.(mail.Resend); return ok && r.Key == "re_key" }},
+		{"resend://re_key?endpoint=https://api.meeng.dev/emails", func(tr mail.Transport) bool {
+			r, ok := tr.(mail.Resend)
+			return ok && r.Key == "re_key" && r.Endpoint == "https://api.meeng.dev/emails"
+		}},
+		{"meeng://mg_key@meeng.dev", func(tr mail.Transport) bool {
+			m, ok := tr.(mail.Meeng)
+			return ok && m.Key == "mg_key" && m.Endpoint == ""
+		}},
+		{"meeng://mg_key@staging.meeng.test", func(tr mail.Transport) bool {
+			m, ok := tr.(mail.Meeng)
+			return ok && m.Key == "mg_key" && m.Endpoint == "https://staging.meeng.test/api/v1/emails"
+		}},
 		{"sendgrid://SG.key", func(tr mail.Transport) bool { r, ok := tr.(mail.SendGrid); return ok && r.Key == "SG.key" }},
 		{"smtp://u:p@smtp.example.test:2525", func(tr mail.Transport) bool {
 			s, ok := tr.(mail.SMTP)

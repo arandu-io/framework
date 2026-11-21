@@ -23,6 +23,8 @@ const (
 	MailerResend Mailer = "resend"
 	// MailerSendGrid is SendGrid, over one HTTPS call.
 	MailerSendGrid Mailer = "sendgrid"
+	// MailerMeeng is Meeng.dev, over one HTTPS call to its public API.
+	MailerMeeng Mailer = "meeng"
 	// MailerArray keeps messages in memory, for tests to read.
 	MailerArray Mailer = "array"
 )
@@ -34,7 +36,22 @@ const (
 //	MAIL_URL=smtps://user:password@smtp.example.com   implicit TLS on 465
 //	MAIL_URL=resend://re_xxxxxxxx
 //	MAIL_URL=sendgrid://SG.xxxxxxxx
+//	MAIL_URL=meeng://mg_xxxxxxxx@meeng.dev            the API, https://meeng.dev/api/v1/emails
 //	MAIL_URL=array://                                 what tests read
+//
+// Sending through Meeng.dev is the API above, and SMTP to its relay is the
+// second way in, for when an API call cannot be made:
+// smtp://meeng:mg_xxxxxxxx@smtp.meeng.dev:587.
+//
+// A host other than meeng.dev in a meeng:// URL is where the call goes, as
+// https://<host>/api/v1/emails, for a test or a development server.
+//
+// resend:// takes an endpoint of its own, for a provider that answers the same
+// API from another address: resend://re_xxxxxxxx?endpoint=https://api.example.com/emails
+// posts there instead of to resend.com. Meeng.dev also serves a Resend-compatible API at
+// https://api.meeng.dev/emails, so resend://<key>?endpoint=https://api.meeng.dev/emails
+// is an emergency route, for when the meeng:// one is the one that is down.
+// meeng:// is the route to configure first.
 //
 // One URL rather than seven variables: the scheme is the transport, so a
 // configuration cannot say resend and carry an SMTP host. The sender is not
@@ -54,8 +71,14 @@ type Mail struct {
 	// session sends the password in the clear.
 	Encryption string
 
-	// Key authenticates with Resend or SendGrid, and it is the host of the URL.
+	// Key authenticates with Resend, SendGrid or Meeng. It is the host of a
+	// resend:// or sendgrid:// URL and the user of a meeng:// one.
 	Key string
+
+	// Endpoint is the URL the message is posted to, whole, when the URL named
+	// one: the endpoint query of resend://, or the host of a meeng:// URL that
+	// is not meeng.dev. Empty is the provider's own address.
+	Endpoint string
 
 	// FromAddress and FromName are the envelope every message leaves with.
 	FromAddress string
@@ -85,7 +108,7 @@ func loadMailSettings(base Configuration) (Mail, error) {
 	if cfg.Mailer == MailerLog && base.App.Env.IsProduction() {
 		return Mail{}, fmt.Errorf("MAIL_URL=log:// is forbidden in production, and it is the value when MAIL_URL is unset: " +
 			"the log transport writes every message, password-reset codes included, into the log; " +
-			"set MAIL_URL to smtp://, smtps://, resend:// or sendgrid://")
+			"set MAIL_URL to smtp://, smtps://, resend://, sendgrid:// or meeng://")
 	}
 	cfg.FromAddress = env("MAIL_FROM_ADDRESS", "no-reply@localhost")
 	cfg.FromName = env("MAIL_FROM_NAME", base.App.Name)
@@ -145,10 +168,74 @@ func parseMailURL(raw string) (Mail, error) {
 		if cfg.Key == "" {
 			return Mail{}, fmt.Errorf("MAIL_URL carries no API key for %s", u.Scheme)
 		}
+		if cfg.Mailer == MailerResend {
+			endpoint, err := resendEndpoint(u)
+			if err != nil {
+				return Mail{}, err
+			}
+			cfg.Endpoint = endpoint
+		}
+
+	case MailerMeeng:
+		if u.User == nil || u.User.Username() == "" {
+			return Mail{}, fmt.Errorf("MAIL_URL carries no API key for meeng; write meeng://<key>@meeng.dev")
+		}
+		if _, hasPassword := u.User.Password(); hasPassword {
+			return Mail{}, fmt.Errorf("MAIL_URL for meeng carries a password; the API key is the whole user part, meeng://<key>@meeng.dev")
+		}
+		if u.Host == "" {
+			return Mail{}, fmt.Errorf("MAIL_URL names no host for meeng; write meeng://<key>@meeng.dev")
+		}
+		cfg.Key = u.User.Username()
+		// meeng.dev is the platform and needs no endpoint; any other host is a
+		// test or development server, reached over HTTPS at the API's path.
+		if !strings.EqualFold(u.Host, "meeng.dev") {
+			cfg.Endpoint = "https://" + u.Host + "/api/v1/emails"
+		}
 
 	default:
-		return Mail{}, fmt.Errorf("MAIL_URL uses unsupported scheme %q; expected log, smtp, smtps, resend, sendgrid or array", u.Scheme)
+		return Mail{}, fmt.Errorf("MAIL_URL uses unsupported scheme %q; expected log, smtp, smtps, resend, sendgrid, meeng or array", u.Scheme)
 	}
 
 	return cfg, nil
+}
+
+// resendEndpoint reads the endpoint query of a resend:// URL: where the message
+// is posted when it is not resend.com. It is empty when the URL carries none.
+//
+// A query name it does not know is refused, because a misspelt endpoint that
+// was ignored would send the message to resend.com, to a key that provider
+// never issued. The scheme must be https: the key travels in the request, and
+// plain http is accepted only to a host on this machine, for a test server.
+func resendEndpoint(u *url.URL) (string, error) {
+	query := u.Query()
+	for name := range query {
+		if name != "endpoint" {
+			return "", fmt.Errorf("MAIL_URL for resend has the unknown query %q; the only one is endpoint", name)
+		}
+	}
+	raw := query.Get("endpoint")
+	if raw == "" {
+		if _, ok := query["endpoint"]; ok {
+			return "", fmt.Errorf("MAIL_URL for resend has an empty endpoint")
+		}
+		return "", nil
+	}
+
+	target, err := url.Parse(raw)
+	if err != nil || target.Host == "" {
+		return "", fmt.Errorf("MAIL_URL for resend has invalid endpoint %q", raw)
+	}
+	switch target.Scheme {
+	case "https":
+	case "http":
+		switch target.Hostname() {
+		case "localhost", "127.0.0.1", "::1":
+		default:
+			return "", fmt.Errorf("MAIL_URL for resend has the endpoint %q, which sends the key in the clear; use https", raw)
+		}
+	default:
+		return "", fmt.Errorf("MAIL_URL for resend has the endpoint %q; expected an https URL", raw)
+	}
+	return raw, nil
 }

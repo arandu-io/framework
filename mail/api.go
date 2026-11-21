@@ -1,8 +1,10 @@
-// The two provider transports, answered by
-// github.com/arandu-io/hesape/mail/transport -- the same two names there, with
-// a third, Postmark, and a fourth that is not a provider, Failover. Neither of
+// The three provider transports, answered by
+// github.com/arandu-io/hesape/mail/transport -- the same three names there, with
+// a fourth, Postmark, and a fifth that is not a provider, Failover. Neither of
 // those two is reachable through this package: a bridge carries the old surface
-// across and does not grow one.
+// across and does not grow one. Meeng is the exception, and the only one: it is
+// the transport MAIL_URL=meeng:// builds, so the framework that reads that URL
+// has to be able to name it, and it is declared here the way Resend is.
 //
 // Shells rather than aliases, for the reason transport.go gives: hesape's Send
 // answers a receipt as well as an error.
@@ -98,7 +100,47 @@ func (t SendGrid) Send(ctx context.Context, m Message) error {
 	return err
 }
 
+// Meeng sends through meeng.dev, over its public API.
+//
+// The fields are already the same as transport.Meeng, and Send is the one
+// difference: an error here, a receipt as well there. This package's Message
+// has no attachments, so the refusal hesape makes for one never applies to what
+// is sent through it.
+type Meeng struct {
+	// Key is the API key, `mg_...`, restricted to sending.
+	Key string
+
+	// Endpoint overrides the URL the message is posted to, whole. Empty is
+	// https://meeng.dev/api/v1/emails.
+	Endpoint string
+
+	// Timeout bounds the request.
+	Timeout time.Duration
+
+	// Client is the HTTP client. Empty builds one with Timeout.
+	Client *http.Client
+}
+
+func (t Meeng) hesape() transport.Meeng {
+	return transport.Meeng{
+		Key:      t.Key,
+		Endpoint: t.Endpoint,
+		Timeout:  t.Timeout,
+		Client:   t.Client,
+	}
+}
+
+// Name identifies the transport in a log line.
+func (t Meeng) Name() string { return t.hesape().Name() }
+
+// Send posts the message.
+func (t Meeng) Send(ctx context.Context, m Message) error {
+	_, err := t.hesape().Send(ctx, m.hesape())
+	return err
+}
+
 var (
 	_ Transport = Resend{}
 	_ Transport = SendGrid{}
+	_ Transport = Meeng{}
 )

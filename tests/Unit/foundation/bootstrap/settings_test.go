@@ -156,6 +156,13 @@ func TestASectionThatCannotBeUsedStopsTheBootNamingItself(t *testing.T) {
 		{"unknown log format", map[string]string{"LOG_FORMAT": "yaml"}, []string{"LOG_FORMAT", "json", "text"}},
 		{"retired mail variable", map[string]string{"MAIL_HOST": "smtp.example.test"}, []string{"MAIL_HOST", "MAIL_URL"}},
 		{"unknown mail scheme", map[string]string{"MAIL_URL": "pigeon://coop"}, []string{"MAIL_URL", `"pigeon"`}},
+		{"meeng without a key", map[string]string{"MAIL_URL": "meeng://meeng.dev"}, []string{"MAIL_URL", "meeng", "key"}},
+		{"meeng with the key as a password", map[string]string{"MAIL_URL": "meeng://user:mg_key@meeng.dev"}, []string{"MAIL_URL", "meeng", "password"}},
+		{"meeng without a host", map[string]string{"MAIL_URL": "meeng://mg_key@"}, []string{"MAIL_URL", "meeng", "host"}},
+		{"resend with a misspelt query", map[string]string{"MAIL_URL": "resend://re_key?endpont=https://api.meeng.dev/emails"}, []string{"MAIL_URL", "resend", `"endpont"`}},
+		{"resend with an empty endpoint", map[string]string{"MAIL_URL": "resend://re_key?endpoint="}, []string{"MAIL_URL", "resend", "empty endpoint"}},
+		{"resend with an endpoint in the clear", map[string]string{"MAIL_URL": "resend://re_key?endpoint=http://api.meeng.dev/emails"}, []string{"MAIL_URL", "resend", "https"}},
+		{"resend with an endpoint that is not a URL", map[string]string{"MAIL_URL": "resend://re_key?endpoint=api.meeng.dev"}, []string{"MAIL_URL", "resend", "api.meeng.dev"}},
 		{"the log mailer in production", map[string]string{"APP_ENV": "prod", "APP_URL": "https://x.example", "HTTP_ADDR": ":8080", "MAIL_URL": "log://"}, []string{"MAIL_URL", "log", "production"}},
 		{"no mailer in production", map[string]string{"APP_ENV": "prod", "APP_URL": "https://x.example", "HTTP_ADDR": ":8080"}, []string{"MAIL_URL", "log", "production"}},
 		{"retired session variable", map[string]string{"SESSION_SECURE": "false"}, []string{"SESSION_SECURE", "SESSION_SECURE_COOKIE"}},
@@ -173,6 +180,38 @@ func TestASectionThatCannotBeUsedStopsTheBootNamingItself(t *testing.T) {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("error = %q, want it to contain %q", err, want)
 				}
+			}
+		})
+	}
+}
+
+// TestMeengAndTheResendEndpointAreReadFromTheMailURL: meeng:// carries the key
+// as the user and the platform as the host, a host that is not the platform
+// becomes the endpoint, and resend:// takes an endpoint of its own.
+func TestMeengAndTheResendEndpointAreReadFromTheMailURL(t *testing.T) {
+	for _, c := range []struct {
+		url      string
+		mailer   bootstrap.Mailer
+		key      string
+		endpoint string
+	}{
+		{"meeng://mg_key@meeng.dev", bootstrap.MailerMeeng, "mg_key", ""},
+		{"meeng://mg_key@MEENG.DEV", bootstrap.MailerMeeng, "mg_key", ""},
+		{"meeng://mg_key@staging.meeng.test", bootstrap.MailerMeeng, "mg_key", "https://staging.meeng.test/api/v1/emails"},
+		{"meeng://mg_key@127.0.0.1:8443", bootstrap.MailerMeeng, "mg_key", "https://127.0.0.1:8443/api/v1/emails"},
+		{"resend://re_key", bootstrap.MailerResend, "re_key", ""},
+		{"resend://re_key?endpoint=https://api.meeng.dev/emails", bootstrap.MailerResend, "re_key", "https://api.meeng.dev/emails"},
+		{"resend://re_key?endpoint=http://127.0.0.1:9000/emails", bootstrap.MailerResend, "re_key", "http://127.0.0.1:9000/emails"},
+		{"sendgrid://SG.key", bootstrap.MailerSendGrid, "SG.key", ""},
+	} {
+		t.Run(c.url, func(t *testing.T) {
+			s, err := settingsWith(t, map[string]string{"MAIL_URL": c.url})
+			if err != nil {
+				t.Fatalf("LoadSettings: %v", err)
+			}
+			if s.Mail.Mailer != c.mailer || s.Mail.Key != c.key || s.Mail.Endpoint != c.endpoint {
+				t.Errorf("mail = {%s %q %q}, want {%s %q %q}",
+					s.Mail.Mailer, s.Mail.Key, s.Mail.Endpoint, c.mailer, c.key, c.endpoint)
 			}
 		})
 	}
